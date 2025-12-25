@@ -1,10 +1,12 @@
 import requests
 import pandas as pd
-import credentials
+import streamlit as st
 
 def get_time_report(year, report_id=284796):
-    api_key = credentials.get("BIGTIME_API_KEY").strip()
-    firm_id = credentials.get("BIGTIME_FIRM_ID").strip()
+    """Fetch BigTime time report data for a given year."""
+    api_key = st.secrets["BIGTIME_API_KEY"].strip()
+    firm_id = st.secrets["BIGTIME_FIRM_ID"].strip()
+    
     url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/{report_id}"
     
     headers = {
@@ -13,7 +15,6 @@ def get_time_report(year, report_id=284796):
         "Accept": "application/json"
     }
     
-    # CLAUDE'S FIX: Use DT_BEGIN and DT_END in uppercase
     payload = {
         "DT_BEGIN": f"{year}-01-01",
         "DT_END": f"{year}-12-31"
@@ -35,8 +36,12 @@ def get_time_report(year, report_id=284796):
             column_names = [field.get('FieldNm') for field in field_list]
             df = pd.DataFrame(data_rows, columns=column_names)
             
-            # Map columns to your engine's expected names
-            mapping = {'tmstaffnm': 'Staff Member', 'tmchgbillbase': 'Billable ($)', 'tmclientnm': 'Client'}
+            # Map columns to expected names
+            mapping = {
+                'tmstaffnm': 'Staff Member',
+                'tmchgbillbase': 'Billable ($)',
+                'tmclientnm': 'Client'
+            }
             df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
             
             print(f"✅ BigTime Success: Found {len(df)} entries.")
