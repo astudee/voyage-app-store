@@ -1,21 +1,18 @@
 import requests
 import pandas as pd
-import credentials
+import streamlit as st
 import base64
 import json
 import os
-import sys
 
-# 1. SET PATHS FOR THE TOKEN VAULT
-IN_COLAB = 'google.colab' in sys.modules
-PROG_PATH = '/content/drive/Shareddrives/Finance and Legal/Programs/functions' if IN_COLAB else './functions'
-VAULT_PATH = os.path.join(PROG_PATH, 'token_vault.json')
+# Token vault path - store in temp directory for Streamlit
+VAULT_PATH = '/tmp/qb_token_vault.json'
 
 def get_vault_token():
-    """Reads the current Refresh Token from the private JSON vault."""
+    """Reads the current Refresh Token from the vault file or falls back to secrets."""
     if not os.path.exists(VAULT_PATH):
-        # Fallback to credentials.py if vault doesn't exist yet
-        return credentials.get("QB_REFRESH_TOKEN").strip()
+        # Fallback to Streamlit secrets if vault doesn't exist yet
+        return st.secrets["QB_REFRESH_TOKEN"].strip()
     
     with open(VAULT_PATH, 'r') as f:
         vault = json.load(f)
@@ -32,8 +29,8 @@ def get_access_token():
     """Uses the Vaulted Refresh Token to get a new temporary Access Token."""
     url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
     
-    client_id = credentials.get("QB_CLIENT_ID").strip()
-    client_secret = credentials.get("QB_CLIENT_SECRET").strip()
+    client_id = st.secrets["QB_CLIENT_ID"].strip()
+    client_secret = st.secrets["QB_CLIENT_SECRET"].strip()
     
     # Get the latest token from the vault (computer managed)
     refresh_token = get_vault_token()
@@ -58,8 +55,7 @@ def get_access_token():
     if response.status_code == 200:
         data = response.json()
         
-        # KEY ADDITION: Capture the new refresh token QuickBooks just sent back
-        # If we don't save this, the next run will fail with "invalid_grant"
+        # Save the new refresh token QuickBooks sent back
         new_refresh_token = data.get('refresh_token')
         if new_refresh_token:
             save_vault_token(new_refresh_token)
@@ -72,7 +68,7 @@ def get_access_token():
 def get_consulting_income(year):
     """Pull P&L Detail report for Consulting Income (cash basis)"""
     token = get_access_token()
-    realm_id = credentials.get("QB_REALM_ID").strip()
+    realm_id = st.secrets["QB_REALM_ID"].strip()
     
     if not token: 
         return pd.DataFrame()
@@ -114,7 +110,7 @@ def get_consulting_income(year):
         consulting_section = find_consulting_income(rows)
         
         if not consulting_section:
-            print("  ⚠️  Could not find 'Consulting Income' account in report")
+            print("   ⚠️  Could not find 'Consulting Income' account in report")
             return pd.DataFrame()
         
         detail_rows = consulting_section.get('Rows', {}).get('Row', [])
@@ -144,7 +140,7 @@ def get_consulting_income(year):
             print(f"   Total consulting income: ${total:,.2f}")
             return df
         else:
-            print("  ⚠️  No transactions found for Consulting Income")
+            print("   ⚠️  No transactions found for Consulting Income")
             return pd.DataFrame()
     
     print(f"❌ QB Report Error: {response.status_code}")
