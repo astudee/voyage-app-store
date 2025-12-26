@@ -5,6 +5,10 @@ Home page with dynamic app listing
 
 import streamlit as st
 import os
+import sys
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(__file__))
 
 # Page config
 st.set_page_config(
@@ -13,28 +17,35 @@ st.set_page_config(
     layout="wide"
 )
 
-# Check authentication
-def check_auth():
-    """Simple password authentication"""
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    
-    if not st.session_state.authenticated:
-        st.title("🔐 Login Required")
-        password = st.text_input("Enter password:", type="password")
-        
-        if st.button("Login"):
-            correct_password = os.environ.get("APP_PASSWORD", "voyage2024")
-            if password == correct_password:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect password")
-        st.stop()
-    
-    return True
+# Simple authentication check
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
 
-check_auth()
+if not st.session_state.authenticated:
+    st.title("🔐 Voyage Advisory Login")
+    st.markdown("Please enter your credentials to access the internal tools.")
+    
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login", type="primary", use_container_width=True)
+        
+        if submit:
+            # Check against passwords dictionary in secrets
+            try:
+                passwords = st.secrets.get("passwords", {})
+                correct_password = passwords.get(username)
+                
+                if correct_password and password == correct_password:
+                    st.session_state.authenticated = True
+                    st.session_state.username = username
+                    st.success(f"✅ Welcome, {username}!")
+                    st.rerun()
+                else:
+                    st.error("❌ Invalid username or password")
+            except Exception as e:
+                st.error(f"Authentication error: {str(e)}")
+    st.stop()
 
 # Header
 st.title("⛵ Voyage Advisory Internal Tools")
