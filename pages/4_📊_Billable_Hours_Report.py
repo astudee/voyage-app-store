@@ -108,6 +108,49 @@ def get_bigtime_report(start_date, end_date, report_id=284796):
 
 st.title("📊 Billable Hours Report")
 
+# Staff Override Section
+with st.expander("⚙️ Staff Classification Overrides (Optional)"):
+    st.markdown("""
+    Override the automatic classification for specific staff members.
+    Useful for recently terminated employees or special cases.
+    """)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        override_name = st.text_input(
+            "Staff Name",
+            placeholder="e.g., Victor Alao",
+            key="override_name"
+        )
+    with col2:
+        override_category = st.selectbox(
+            "Force Classification As:",
+            options=["Active Employee", "Contractor", "Inactive"],
+            key="override_category"
+        )
+    
+    if st.button("➕ Add Override", key="add_override"):
+        if override_name:
+            if 'staff_overrides' not in st.session_state:
+                st.session_state.staff_overrides = {}
+            st.session_state.staff_overrides[override_name] = override_category
+            st.success(f"✅ Added override: {override_name} → {override_category}")
+    
+    # Show current overrides
+    if 'staff_overrides' not in st.session_state:
+        st.session_state.staff_overrides = {}
+    
+    if st.session_state.staff_overrides:
+        st.subheader("Current Overrides:")
+        for name, category in st.session_state.staff_overrides.items():
+            col_a, col_b = st.columns([3, 1])
+            with col_a:
+                st.write(f"**{name}** → {category}")
+            with col_b:
+                if st.button("🗑️ Remove", key=f"remove_{name}"):
+                    del st.session_state.staff_overrides[name]
+                    st.rerun()
+
 # Configuration
 st.sidebar.header("Report Configuration")
 
@@ -520,24 +563,30 @@ def load_active_employees():
         return set()
 
 
-def classify_staff(name, active_employees, staff_hours_by_month, all_month_periods):
+def classify_staff(name, active_employees, staff_hours_by_month, all_month_periods, overrides=None):
     """
     Classify staff as Active Employee, Contractor, or Inactive
     
     Logic:
-    1. If in Voyage_Global_Config Staff tab → Active Employee
-    2. If has billable hours in last 2 months → Contractor  
-    3. Otherwise → Inactive
+    1. Check overrides first (manual classification)
+    2. If in Voyage_Global_Config Staff tab → Active Employee
+    3. If has billable hours in last 2 months → Contractor  
+    4. Otherwise → Inactive
     
     Args:
         name: Staff member name
         active_employees: Set of active employee names from config
         staff_hours_by_month: Dict of {period: hours} for this staff member
         all_month_periods: List of all periods in the report (sorted)
+        overrides: Dict of manual staff classifications
     
     Returns:
         str: 'Active Employee', 'Contractor', or 'Inactive'
     """
+    # Check overrides first
+    if overrides and name in overrides:
+        return overrides[name]
+    
     if name in active_employees:
         return 'Active Employee'
     
@@ -642,10 +691,14 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Classify staff based on recent activity
             all_periods = sorted(pivot.columns[:-1])  # Exclude 'Total' column
             staff_classifications = {}
+            overrides = st.session_state.get('staff_overrides', {})
+            
             for name in pivot.index:
                 if name != 'OVERALL TOTALS':
                     staff_hours = {period: pivot.loc[name, period] for period in all_periods}
-                    staff_classifications[name] = classify_staff(name, active_employees, staff_hours, all_periods)
+                    staff_classifications[name] = classify_staff(
+                        name, active_employees, staff_hours, all_periods, overrides
+                    )
             
             # Calculate capacity rows
             capacity_rows = []
@@ -665,13 +718,20 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Round all values to 1 decimal place
             pivot = pivot.round(1)
             
+            # Sort by name (index)
+            pivot = pivot.sort_index()
+            
             # Display results by category
             st.header("Billable Hours Report")
             st.subheader(f"{start_date.strftime('%B %Y')} - {end_date.strftime('%B %Y')}")
             
+            # Show override notice if any are active
+            if overrides:
+                st.info(f"ℹ️ {len(overrides)} staff classification override(s) active")
+            
             # Create styled dataframe for each category
             for category in ['Active Employee', 'Contractor', 'Inactive']:
-                staff_in_category = [k for k, v in staff_classifications.items() if v == category]
+                staff_in_category = sorted([k for k, v in staff_classifications.items() if v == category])
                 
                 if not staff_in_category:
                     continue
@@ -719,11 +779,11 @@ if st.sidebar.button("Generate Report", type="primary"):
             
             output = BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # Write each category to separate sheet
+                # Write each category to separate sheet (sorted by name)
                 for category in ['Active Employee', 'Contractor', 'Inactive']:
-                    staff_in_category = [k for k, v in staff_classifications.items() if v == category]
+                    staff_in_category = sorted([k for k, v in staff_classifications.items() if v == category])
                     if staff_in_category:
-                        category_data = pivot.loc[staff_in_category]
+                        category_data = pivot.loc[staff_in_category].sort_index()
                         category_data.to_excel(writer, sheet_name=category.replace(' ', '_'))
                 
                 # Write capacity reference
@@ -742,40 +802,44 @@ if st.sidebar.button("Generate Report", type="primary"):
                 )
             
             with col2:
-                email_address = st.text_input(
-                    "Email report to:",
-                    placeholder="email@example.com",
-                    key="email_input"
-                )
-                
-                if st.button("📧 Send Email", disabled=not email_address):
-                    # Send email via Gmail API using service account
-                    try:
-                        from googleapiclient.discovery import build
-                        from google.oauth2 import service_account
-                        import base64
-                        from email.mime.multipart import MIMEMultipart
-                        from email.mime.base import MIMEBase
-                        from email.mime.text import MIMEText
-                        from email import encoders
-                        
-                        # Get service account credentials with Gmail scope
-                        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-                        credentials = service_account.Credentials.from_service_account_info(
-                            service_account_info,
-                            scopes=['https://www.googleapis.com/auth/gmail.send'],
-                            subject='astudee@voyageadvisory.com'  # Impersonate this user
-                        )
-                        
-                        gmail_service = build('gmail', 'v1', credentials=credentials)
-                        
-                        # Create email message
-                        msg = MIMEMultipart()
-                        msg['From'] = 'astudee@voyageadvisory.com'
-                        msg['To'] = email_address
-                        msg['Subject'] = f"Billable Hours Report - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}"
-                        
-                        body = f"""
+                # Create a form to prevent page refresh on Enter
+                with st.form(key='email_form', clear_on_submit=False):
+                    email_address = st.text_input(
+                        "Email report to:",
+                        placeholder="email@example.com",
+                        key="email_input_form"
+                    )
+                    
+                    email_submit = st.form_submit_button("📧 Send Email")
+                    
+                    if email_submit and email_address:
+                        # Send email via Gmail API using service account
+                        try:
+                            from googleapiclient.discovery import build
+                            from google.oauth2 import service_account
+                            import base64
+                            from email.mime.multipart import MIMEMultipart
+                            from email.mime.base import MIMEBase
+                            from email.mime.text import MIMEText
+                            from email import encoders
+                            
+                            # Get service account credentials with Gmail scope
+                            service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                            credentials = service_account.Credentials.from_service_account_info(
+                                service_account_info,
+                                scopes=['https://www.googleapis.com/auth/gmail.send'],
+                                subject='astudee@voyageadvisory.com'  # Impersonate this user
+                            )
+                            
+                            gmail_service = build('gmail', 'v1', credentials=credentials)
+                            
+                            # Create email message
+                            msg = MIMEMultipart()
+                            msg['From'] = 'astudee@voyageadvisory.com'
+                            msg['To'] = email_address
+                            msg['Subject'] = f"Billable Hours Report - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}"
+                            
+                            body = f"""
 Attached is the Billable Hours Report for {start_date.strftime('%B %Y')} through {end_date.strftime('%B %Y')}.
 
 Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -789,46 +853,46 @@ Summary:
 Best regards,
 Voyage Advisory Reporting System
 """
-                        msg.attach(MIMEText(body, 'plain'))
-                        
-                        # Attach Excel file
-                        output.seek(0)
-                        part = MIMEBase('application', 'octet-stream')
-                        part.set_payload(output.read())
-                        encoders.encode_base64(part)
-                        part.add_header(
-                            'Content-Disposition',
-                            f'attachment; filename=billable_hours_report_{start_date.strftime("%Y%m")}-{end_date.strftime("%Y%m")}.xlsx'
-                        )
-                        msg.attach(part)
-                        
-                        # Encode message
-                        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                        
-                        # Send via Gmail API
-                        message_body = {'raw': raw_message}
-                        sent_message = gmail_service.users().messages().send(
-                            userId='me',
-                            body=message_body
-                        ).execute()
-                        
-                        st.success(f"✅ Email sent successfully to {email_address}!")
-                        
-                    except Exception as e:
-                        st.error(f"❌ Error sending email: {str(e)}")
-                        st.info("💡 Make sure the Gmail API scope is enabled in your Google Workspace admin console for the service account.")
-                        with st.expander("🔧 Setup Instructions"):
-                            st.markdown("""
-                            To enable email sending:
+                            msg.attach(MIMEText(body, 'plain'))
                             
-                            1. Go to [Google Workspace Admin Console](https://admin.google.com)
-                            2. Navigate to **Security → API Controls → Domain-wide Delegation**
-                            3. Find your service account client ID
-                            4. Add this scope: `https://www.googleapis.com/auth/gmail.send`
-                            5. Save and try again
+                            # Attach Excel file
+                            output.seek(0)
+                            part = MIMEBase('application', 'octet-stream')
+                            part.set_payload(output.read())
+                            encoders.encode_base64(part)
+                            part.add_header(
+                                'Content-Disposition',
+                                f'attachment; filename=billable_hours_report_{start_date.strftime("%Y%m")}-{end_date.strftime("%Y%m")}.xlsx'
+                            )
+                            msg.attach(part)
                             
-                            Your service account email: `voyage-app-executor@voyage-app-store.iam.gserviceaccount.com`
-                            """)
+                            # Encode message
+                            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                            
+                            # Send via Gmail API
+                            message_body = {'raw': raw_message}
+                            sent_message = gmail_service.users().messages().send(
+                                userId='me',
+                                body=message_body
+                            ).execute()
+                            
+                            st.success(f"✅ Email sent successfully to {email_address}!")
+                            
+                        except Exception as e:
+                            st.error(f"❌ Error sending email: {str(e)}")
+                            st.info("💡 Make sure the Gmail API scope is enabled in your Google Workspace admin console for the service account.")
+                            with st.expander("🔧 Setup Instructions"):
+                                st.markdown("""
+                                To enable email sending:
+                                
+                                1. Go to [Google Workspace Admin Console](https://admin.google.com)
+                                2. Navigate to **Security → API Controls → Domain-wide Delegation**
+                                3. Find your service account client ID
+                                4. Add this scope: `https://www.googleapis.com/auth/gmail.send`
+                                5. Save and try again
+                                
+                                Your service account email: `voyage-app-executor@voyage-app-store.iam.gserviceaccount.com`
+                                """)
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
