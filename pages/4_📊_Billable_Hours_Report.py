@@ -708,11 +708,11 @@ if st.sidebar.button("Generate Report", type="primary"):
             st.subheader("Monthly Capacity Reference")
             capacity_df = pd.DataFrame({
                 'Month': [f"{calendar.month_abbr[m['month']]}-{m['year'] % 100}" for m in month_cols],
-                'Monthly Capacity': [monthly_capacity[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')] for m in month_cols],
-                'Capacity @ 1840': [153.33] * len(month_cols),
-                'Capacity * 80%': [capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')] for m in month_cols]
+                'Monthly Capacity': [round(monthly_capacity[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols],
+                'Capacity @ 1840': [153.3] * len(month_cols),
+                'Capacity * 80%': [round(capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols]
             })
-            st.dataframe(capacity_df.style.format("{:.1f}"), use_container_width=True)
+            st.dataframe(capacity_df, use_container_width=True)
             
             # Export to Excel
             st.subheader("Export Report")
@@ -749,20 +749,29 @@ if st.sidebar.button("Generate Report", type="primary"):
                 )
                 
                 if st.button("📧 Send Email", disabled=not email_address):
-                    # Send email with attachment
+                    # Send email via Gmail API using service account
                     try:
-                        import smtplib
+                        from googleapiclient.discovery import build
+                        from google.oauth2 import service_account
+                        import base64
                         from email.mime.multipart import MIMEMultipart
                         from email.mime.base import MIMEBase
                         from email.mime.text import MIMEText
                         from email import encoders
                         
-                        # Gmail SMTP settings (using your notification email)
-                        sender_email = st.secrets.get("NOTIFICATION_EMAIL", "reports@voyageadvisory.com")
+                        # Get service account credentials with Gmail scope
+                        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                        credentials = service_account.Credentials.from_service_account_info(
+                            service_account_info,
+                            scopes=['https://www.googleapis.com/auth/gmail.send'],
+                            subject='astudee@voyageadvisory.com'  # Impersonate this user
+                        )
                         
-                        # Create message
+                        gmail_service = build('gmail', 'v1', credentials=credentials)
+                        
+                        # Create email message
                         msg = MIMEMultipart()
-                        msg['From'] = sender_email
+                        msg['From'] = 'astudee@voyageadvisory.com'
                         msg['To'] = email_address
                         msg['Subject'] = f"Billable Hours Report - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}"
                         
@@ -793,13 +802,33 @@ Voyage Advisory Reporting System
                         )
                         msg.attach(part)
                         
-                        # Send via Gmail (this won't work without app password, but structure is here)
-                        # You'll need to configure SMTP credentials in secrets
-                        st.info("📧 Email functionality requires SMTP configuration. Please use the download button for now.")
+                        # Encode message
+                        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                        
+                        # Send via Gmail API
+                        message_body = {'raw': raw_message}
+                        sent_message = gmail_service.users().messages().send(
+                            userId='me',
+                            body=message_body
+                        ).execute()
+                        
+                        st.success(f"✅ Email sent successfully to {email_address}!")
                         
                     except Exception as e:
-                        st.error(f"Error sending email: {str(e)}")
-                        st.info("Please use the download button instead.")
+                        st.error(f"❌ Error sending email: {str(e)}")
+                        st.info("💡 Make sure the Gmail API scope is enabled in your Google Workspace admin console for the service account.")
+                        with st.expander("🔧 Setup Instructions"):
+                            st.markdown("""
+                            To enable email sending:
+                            
+                            1. Go to [Google Workspace Admin Console](https://admin.google.com)
+                            2. Navigate to **Security → API Controls → Domain-wide Delegation**
+                            3. Find your service account client ID
+                            4. Add this scope: `https://www.googleapis.com/auth/gmail.send`
+                            5. Save and try again
+                            
+                            Your service account email: `voyage-app-executor@voyage-app-store.iam.gserviceaccount.com`
+                            """)
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
