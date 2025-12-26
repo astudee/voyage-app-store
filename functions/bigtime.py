@@ -1,11 +1,28 @@
 import requests
 import pandas as pd
-import streamlit as st
+import sys
+
+# Detect environment and load credentials accordingly
+try:
+    import streamlit as st
+    IN_STREAMLIT = True
+except ImportError:
+    IN_STREAMLIT = False
+    # Only import credentials if not in Streamlit
+    sys.path.append('./functions')
+    import credentials
+
+def get_config(key):
+    """Get configuration value from Streamlit secrets or credentials.py"""
+    if IN_STREAMLIT:
+        return st.secrets[key].strip()
+    else:
+        return credentials.get(key).strip()
 
 def get_time_report(year, report_id=284796):
     """Fetch BigTime time report data for a given year."""
-    api_key = st.secrets["BIGTIME_API_KEY"].strip()
-    firm_id = st.secrets["BIGTIME_FIRM_ID"].strip()
+    api_key = get_config("BIGTIME_API_KEY")
+    firm_id = get_config("BIGTIME_FIRM_ID")
     
     url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/{report_id}"
     
