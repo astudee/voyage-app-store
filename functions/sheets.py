@@ -1,27 +1,65 @@
+import os
+import sys
 import pandas as pd
 import gspread
-import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import json
+
+# Detect environment and load credentials accordingly
+try:
+    import streamlit as st
+    IN_STREAMLIT = True
+except ImportError:
+    IN_STREAMLIT = False
+    # Only import credentials if not in Streamlit
+    sys.path.append('./functions')
+    import credentials
+
+def get_config(key):
+    """Get configuration value from Streamlit secrets or credentials.py"""
+    if IN_STREAMLIT:
+        return st.secrets[key]
+    else:
+        return credentials.get(key)
 
 def get_client():
     """
-    Authenticate with Google Sheets using service account from Streamlit secrets.
+    Universal Authentication for Google Sheets:
+    - Works in Streamlit (uses secrets)
+    - Works in Colab (uses service account file)
+    - Works locally (uses service account file)
     """
-    # Get service account credentials from Streamlit secrets
-    # The service account key should be stored as a JSON string in secrets
-    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-    
     SCOPES = [
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/drive'
     ]
     
-    creds = service_account.Credentials.from_service_account_info(
-        service_account_info,
-        scopes=SCOPES
-    )
+    if IN_STREAMLIT:
+        # Use service account from Streamlit secrets
+        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+        creds = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES
+        )
+    else:
+        # Use service account file from filesystem
+        IN_COLAB = 'google.colab' in sys.modules
+        if IN_COLAB:
+            PROG_PATH = '/content/drive/Shareddrives/Finance and Legal/Programs/functions'
+        else:
+            PROG_PATH = './functions'
+        
+        KEY_FILE = os.path.join(PROG_PATH, 'service_account_key.json')
+        
+        if not os.path.exists(KEY_FILE):
+            raise FileNotFoundError(
+                f"❌ Missing credentials! Ensure '{KEY_FILE}' exists in your functions folder."
+            )
+        
+        creds = service_account.Credentials.from_service_account_file(
+            KEY_FILE,
+            scopes=SCOPES
+        )
     
     return gspread.authorize(creds)
 
@@ -33,7 +71,7 @@ def get_drive_client():
 def move_file_to_folder(file_id, folder_id):
     """
     Moves a Drive file (e.g., Google Sheet) into a specific folder.
-    Required for Shared Drives.
+    Works with Shared Drives.
     """
     drive = get_drive_client()
     
@@ -63,7 +101,7 @@ def create_report_spreadsheet(report_name):
     sh = gc.create(report_name)
     
     # Move to reports folder
-    reports_folder_id = st.secrets["REPORTS_FOLDER_ID"]
+    reports_folder_id = get_config("REPORTS_FOLDER_ID")
     move_file_to_folder(file_id=sh.id, folder_id=reports_folder_id)
     
     print(f"✅ Report created in reports folder: {sh.url}")
