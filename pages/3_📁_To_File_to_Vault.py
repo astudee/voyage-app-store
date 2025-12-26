@@ -12,9 +12,9 @@ sys.path.append('./functions')
 
 import sheets
 
-st.set_page_config(page_title="Document Vault", page_icon="📁", layout="wide")
+st.set_page_config(page_title="To File to Vault", page_icon="📄", layout="wide")
 
-st.title("📁 Document Vault Processor")
+st.title("📄 To File to Vault")
 st.markdown("Automatically classify and file contracts and documents using AI")
 
 # Get config from secrets
@@ -305,10 +305,20 @@ def build_document_filename(analysis):
 def get_files_from_drive(folder_id):
     """Get list of PDF files from Google Drive folder."""
     try:
-        # Use the sheets module's drive client
-        drive_client = sheets.get_drive_client()
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
         
-        results = drive_client.files().list(
+        # Get credentials
+        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+        SCOPES = ['https://www.googleapis.com/auth/drive']
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES
+        )
+        
+        drive_service = build('drive', 'v3', credentials=credentials)
+        
+        results = drive_service.files().list(
             q=f"'{folder_id}' in parents and mimeType='application/pdf' and trashed=false",
             fields='files(id, name)',
             supportsAllDrives=True,
@@ -323,9 +333,20 @@ def get_files_from_drive(folder_id):
 def get_file_content(file_id):
     """Download file content from Google Drive."""
     try:
-        drive_client = sheets.get_drive_client()
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
         
-        request = drive_client.files().get_media(
+        # Get credentials
+        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+        SCOPES = ['https://www.googleapis.com/auth/drive']
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES
+        )
+        
+        drive_service = build('drive', 'v3', credentials=credentials)
+        
+        request = drive_service.files().get_media(
             fileId=file_id,
             supportsAllDrives=True
         )
@@ -339,10 +360,21 @@ def get_file_content(file_id):
 def rename_and_move_file(file_id, new_name, target_folder_id):
     """Rename file and move to target folder."""
     try:
-        drive_client = sheets.get_drive_client()
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
+        
+        # Get credentials
+        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+        SCOPES = ['https://www.googleapis.com/auth/drive']
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES
+        )
+        
+        drive_service = build('drive', 'v3', credentials=credentials)
         
         # Get current parents
-        file = drive_client.files().get(
+        file = drive_service.files().get(
             fileId=file_id,
             fields='parents',
             supportsAllDrives=True
@@ -351,7 +383,7 @@ def rename_and_move_file(file_id, new_name, target_folder_id):
         previous_parents = ','.join(file.get('parents', []))
         
         # Update file
-        drive_client.files().update(
+        drive_service.files().update(
             fileId=file_id,
             body={'name': new_name},
             addParents=target_folder_id,
