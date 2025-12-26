@@ -79,8 +79,22 @@ def get_gmail_service():
 def get_drive_service():
     """Get Drive service."""
     try:
-        drive_client = sheets.get_drive_client()
-        return drive_client
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
+        
+        # Get credentials from Streamlit secrets
+        service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+        
+        SCOPES = [
+            'https://www.googleapis.com/auth/drive'
+        ]
+        
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=SCOPES
+        )
+        
+        return build('drive', 'v3', credentials=credentials)
     except Exception as e:
         st.error(f"Error creating Drive service: {e}")
         return None
