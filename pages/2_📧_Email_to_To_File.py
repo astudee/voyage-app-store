@@ -68,8 +68,8 @@ def get_gmail_service():
             scopes=SCOPES
         )
         
-        # Delegate to the vault email account
-        delegated_credentials = credentials.with_subject('vault@voyageadvisory.com')
+        # Delegate to your actual email account (vault@ is just an alias)
+        delegated_credentials = credentials.with_subject('astudee@voyageadvisory.com')
         
         return build('gmail', 'v1', credentials=delegated_credentials)
     except Exception as e:
@@ -294,8 +294,8 @@ def remove_label(gmail_service, msg_id, label_id):
 
 st.info(f"""
 **How it works:**
-1. Emails sent to `vault@voyageadvisory.com` get the "Vault" label
-2. This app processes those emails
+1. Emails sent to `vault@voyageadvisory.com` (alias for astudee@) get the "Vault" label
+2. This app processes those emails from your inbox
 3. If email has attachments → saves attachments to Drive
 4. If email has no attachments → converts email to PDF and saves
 5. Removes "Vault" label after processing
@@ -304,7 +304,8 @@ st.info(f"""
 with st.expander("⚙️ Configuration"):
     st.write("**Settings:**")
     st.code(f"Target Folder: {VAULT_FOLDER_ID}")
-    st.code(f"Email Account: vault@voyageadvisory.com")
+    st.code(f"Email Account: astudee@voyageadvisory.com")
+    st.code(f"Email Alias: vault@voyageadvisory.com")
     st.code(f"Label: {LABEL_NAME}")
     st.code(f"Max per run: {MAX_EMAILS_PER_RUN}")
     st.code(f"Service Account: {SERVICE_ACCOUNT_EMAIL}")
