@@ -459,6 +459,24 @@ if st.sidebar.button("Generate Report", type="primary"):
             
             output.seek(0)
             
+            # Store report data in session state for email sending
+            st.session_state.bonus_report_data = {
+                'excel_file': output.getvalue(),
+                'filename': f"bonus_report_{year}_{as_of_date.strftime('%Y%m%d')}.xlsx",
+                'as_of_date': as_of_date,
+                'summary': {
+                    'ytd_total_cost': results_df['YTD_Total_Cost'].sum(),
+                    'ytd_bonuses': results_df['YTD_Total_Bonus'].sum(),
+                    'ytd_fica': results_df['YTD_FICA'].sum(),
+                    'ytd_401k': results_df['YTD_401k'].sum(),
+                    'proj_total_cost': results_df['Proj_Total_Cost'].sum(),
+                    'proj_bonuses': results_df['Proj_Total_Bonus'].sum(),
+                    'proj_fica': results_df['Proj_FICA'].sum(),
+                    'proj_401k': results_df['Proj_401k'].sum(),
+                    'employee_count': len(results_df)
+                }
+            }
+            
             st.download_button(
                 label="📥 Download Excel Report",
                 data=output.getvalue(),
@@ -466,6 +484,8 @@ if st.sidebar.button("Generate Report", type="primary"):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True
             )
+            
+            st.info("📧 To email this report, use the 'Email Report' section in the sidebar →")
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
@@ -512,3 +532,83 @@ else:
         - Based on current run rate annualized to year-end
         - YTD Hours / Progress% = Projected Annual Hours
         """)
+
+# Email functionality - placed at end so it's always evaluated
+if 'bonus_report_data' in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📧 Email Report")
+    
+    email_to = st.sidebar.text_input(
+        "Send to:",
+        placeholder="email@example.com",
+        key="bonus_email_input"
+    )
+    
+    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_bonus_email")
+    
+    if send_clicked:
+        if not email_to:
+            st.sidebar.error("Enter an email address")
+        else:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.base import MIMEBase
+                from email.mime.text import MIMEText
+                from email import encoders
+                
+                rd = st.session_state.bonus_report_data
+                
+                creds = service_account.Credentials.from_service_account_info(
+                    st.secrets["SERVICE_ACCOUNT_KEY"],
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+                
+                gmail = build('gmail', 'v1', credentials=creds)
+                
+                msg = MIMEMultipart()
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['To'] = email_to
+                msg['Subject'] = f"Bonus Report - YTD through {rd['as_of_date'].strftime('%b %d, %Y')}"
+                
+                body = f"""Bonus Report
+
+Period: January 1, {rd['as_of_date'].year} - {rd['as_of_date'].strftime('%B %d, %Y')}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+YTD Summary:
+- Total Cost: ${rd['summary']['ytd_total_cost']:,.0f}
+- Bonuses: ${rd['summary']['ytd_bonuses']:,.0f}
+- FICA (7.65%): ${rd['summary']['ytd_fica']:,.0f}
+- 401k Match (4%): ${rd['summary']['ytd_401k']:,.0f}
+
+Projected Year-End:
+- Total Cost: ${rd['summary']['proj_total_cost']:,.0f}
+- Bonuses: ${rd['summary']['proj_bonuses']:,.0f}
+- FICA (7.65%): ${rd['summary']['proj_fica']:,.0f}
+- 401k Match (4%): ${rd['summary']['proj_401k']:,.0f}
+
+Employees: {rd['summary']['employee_count']}
+
+Best regards,
+Voyage Advisory"""
+                
+                msg.attach(MIMEText(body, 'plain'))
+                
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(rd['excel_file'])
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename={rd["filename"]}')
+                msg.attach(part)
+                
+                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+                
+                st.sidebar.success(f"✅ Sent to {email_to}!")
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ {type(e).__name__}")
+                st.sidebar.code(str(e))
