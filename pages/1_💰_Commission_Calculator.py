@@ -5,6 +5,11 @@ from datetime import datetime
 import gspread
 from google.auth import default
 
+# Authentication check - shared session state from Home page
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.error("🔐 Please log in through the Home page")
+    st.stop()
+
 # Add functions to path
 sys.path.append('./functions')
 
@@ -320,6 +325,9 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     }).round(2)
     final_summary.columns = ['Salesperson', 'Total_Commission']
     
+    # Calculate Total Due (only positive amounts)
+    final_summary['Total_Due'] = final_summary['Total_Commission'].apply(lambda x: max(0, x))
+    
     category_summary = all_commissions.groupby(['Salesperson', 'Category'], as_index=False).agg({
         'Commission_Amount': 'sum'
     }).round(2)
@@ -330,6 +338,15 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     }).rename(columns={'Amount': 'Total_Revenue', 'TransactionDate': 'Transactions'})
     revenue_by_client = revenue_by_client.sort_values('Total_Revenue', ascending=False)
     
+    # Store in session state for email
+    st.session_state.commission_report_data = {
+        'year': year,
+        'final_summary': final_summary,
+        'category_summary': category_summary,
+        'all_commissions': all_commissions,
+        'revenue_by_client': revenue_by_client
+    }
+    
     # ============================================================
     # PHASE 7: DISPLAY RESULTS
     # ============================================================
@@ -339,6 +356,18 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     st.header("📊 Results Summary")
     
     # Summary metrics
+    total_commission = final_summary['Total_Commission'].sum()
+    total_due = final_summary['Total_Due'].sum()
+    
+    col_total1, col_total2 = st.columns(2)
+    with col_total1:
+        st.metric("Total Commission", f"${total_commission:,.2f}")
+    with col_total2:
+        st.metric("Total Amount Due", f"${total_due:,.2f}", help="Sum of positive commission amounts only")
+    
+    st.divider()
+    
+    # Individual salesperson metrics
     cols = st.columns(len(final_summary))
     for idx, (_, row) in enumerate(final_summary.iterrows()):
         with cols[idx]:
@@ -394,17 +423,29 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     
     try:
         from io import BytesIO
+        import openpyxl
+        from openpyxl.utils.dataframe import dataframe_to_rows
         
         # Create Excel file in memory
         output = BytesIO()
         
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # Tab 1: Overall Summary
+            # Tab 1: Overall Summary with Total Due column
             overall_df = pd.DataFrame({
                 'Salesperson': final_summary['Salesperson'],
-                'Total Commission': final_summary['Total_Commission']
+                'Total Commission': final_summary['Total_Commission'],
+                'Total Due': final_summary['Total_Due']
             })
             overall_df.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Add Totals row to Summary sheet
+            workbook = writer.book
+            summary_sheet = writer.sheets['Summary']
+            
+            last_row = len(overall_df) + 2
+            summary_sheet.cell(row=last_row, column=1, value='Totals')
+            summary_sheet.cell(row=last_row, column=2, value=total_commission)
+            summary_sheet.cell(row=last_row, column=3, value=total_due)
             
             # Tab 2: Category Breakdown
             category_summary.to_excel(writer, sheet_name='By_Category', index=False)
@@ -420,29 +461,70 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             revenue_export = revenue_export.rename(columns={'Client_Normalized': 'Client'})
             revenue_export.to_excel(writer, sheet_name='Revenue_by_Client', index=False)
             
-            # Tab 5+: Individual salesperson tabs
+            # Tab 5+: Individual salesperson tabs with category breakdown above ledger
             for salesperson in final_summary['Salesperson'].unique():
                 sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
+                sp_categories = category_summary[category_summary['Salesperson'] == salesperson].copy()
+                sp_total = sp_categories['Commission_Amount'].sum()
+                
+                # Excel sheet names limited to 31 chars
+                sheet_name = salesperson.replace(' ', '_')[:31]
+                
+                # Create new sheet
+                ws = workbook.create_sheet(title=sheet_name)
+                
+                # Add header
+                ws.cell(row=1, column=1, value='Totals')
+                ws.cell(row=2, column=1, value='Salesperson')
+                ws.cell(row=2, column=2, value='Category')
+                ws.cell(row=2, column=3, value='Commission_Amount')
+                
+                # Add category breakdown
+                row_num = 3
+                for _, cat_row in sp_categories.iterrows():
+                    ws.cell(row=row_num, column=1, value=salesperson)
+                    ws.cell(row=row_num, column=2, value=cat_row['Category'])
+                    ws.cell(row=row_num, column=3, value=cat_row['Commission_Amount'])
+                    row_num += 1
+                
+                # Add total row
+                ws.cell(row=row_num, column=2, value='Total Due')
+                ws.cell(row=row_num, column=3, value=max(0, sp_total))
+                row_num += 2
+                
+                # Add ledger header
+                ws.cell(row=row_num, column=1, value='Ledger')
+                row_num += 1
+                
+                # Add ledger columns
                 sp_commissions_sorted = sp_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
                 sp_ledger = sp_commissions_sorted[['Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
                 sp_ledger = sp_ledger.rename(columns={'Client': 'Client or Resource'})
                 
-                # Excel sheet names limited to 31 chars
-                sheet_name = salesperson.replace(' ', '_')[:31]
-                sp_ledger.to_excel(writer, sheet_name=sheet_name, index=False)
+                # Write ledger to sheet
+                for r in dataframe_to_rows(sp_ledger, index=False, header=True):
+                    for col_idx, value in enumerate(r, 1):
+                        ws.cell(row=row_num, column=col_idx, value=value)
+                    row_num += 1
         
         # Get the Excel data
         excel_data = output.getvalue()
         report_timestamp = datetime.now().strftime('%Y-%m-%d_%H%M')
-        filename = f"Commission_Report_{report_timestamp}.xlsx"
+        filename = f"Commission_Report_{year}_{report_timestamp}.xlsx"
+        
+        # Store for email
+        st.session_state.commission_report_data['excel_file'] = excel_data
+        st.session_state.commission_report_data['filename'] = filename
         
         st.download_button(
             label="📥 Download Excel Report",
             data=excel_data,
             file_name=filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            type="primary"
+            use_container_width=True
         )
+        
+        st.info("📧 To email this report, use the 'Email Report' section in the sidebar →")
         
     except Exception as e:
         st.error(f"❌ Export failed: {e}")
@@ -460,7 +542,7 @@ else:
         3. Pulls **BigTime** time entries for delivery and referral commissions
         4. Calculates commissions based on date ranges and rates
         5. Applies offsets (salaries, benefits, etc.)
-        6. Exports detailed report to Google Sheets
+        6. Exports detailed report to Excel with email capability
         
         **Commission Types:**
         - **Client Commission** - % of revenue from specific clients
@@ -468,3 +550,80 @@ else:
         - **Referral Commission** - % of referred staff's work
         - **Offsets** - Salaries, benefits, prior payments
         """)
+
+# Email functionality - placed at end so it's always evaluated
+if 'commission_report_data' in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📧 Email Report")
+    
+    email_to = st.sidebar.text_input(
+        "Send to:",
+        placeholder="email@example.com",
+        key="commission_email_input"
+    )
+    
+    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_commission_email")
+    
+    if send_clicked:
+        if not email_to:
+            st.sidebar.error("Enter an email address")
+        else:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.base import MIMEBase
+                from email.mime.text import MIMEText
+                from email import encoders
+                
+                rd = st.session_state.commission_report_data
+                
+                creds = service_account.Credentials.from_service_account_info(
+                    st.secrets["SERVICE_ACCOUNT_KEY"],
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+                
+                gmail = build('gmail', 'v1', credentials=creds)
+                
+                msg = MIMEMultipart()
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['To'] = email_to
+                msg['Subject'] = f"Commission Report - {rd['year']}"
+                
+                # Build summary for email body
+                total_comm = rd['final_summary']['Total_Commission'].sum()
+                total_due = rd['final_summary']['Total_Due'].sum()
+                
+                body = f"""Commission Report for {rd['year']}
+
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+Summary:
+- Total Commission: ${total_comm:,.2f}
+- Total Amount Due: ${total_due:,.2f}
+
+Breakdown by Salesperson:
+"""
+                for _, row in rd['final_summary'].iterrows():
+                    body += f"- {row['Salesperson']}: ${row['Total_Commission']:,.2f}\n"
+                
+                body += "\nBest regards,\nVoyage Advisory"
+                
+                msg.attach(MIMEText(body, 'plain'))
+                
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(rd['excel_file'])
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename={rd["filename"]}')
+                msg.attach(part)
+                
+                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+                
+                st.sidebar.success(f"✅ Sent to {email_to}!")
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ {type(e).__name__}")
+                st.sidebar.code(str(e))
