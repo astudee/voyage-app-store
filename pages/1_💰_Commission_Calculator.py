@@ -390,100 +390,64 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     # ============================================================
     
     st.divider()
+    st.subheader("📥 Export Report")
     
-    if st.button("📥 Download Excel Report", type="secondary"):
-        with st.spinner("Creating Excel report..."):
-            try:
-                from io import BytesIO
+    try:
+        from io import BytesIO
+        
+        # Create Excel file in memory
+        output = BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Tab 1: Overall Summary
+            overall_df = pd.DataFrame({
+                'Salesperson': final_summary['Salesperson'],
+                'Total Commission': final_summary['Total_Commission']
+            })
+            overall_df.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Tab 2: Category Breakdown
+            category_summary.to_excel(writer, sheet_name='By_Category', index=False)
+            
+            # Tab 3: Full Ledger
+            ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+            ledger_export = ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
+            ledger_export = ledger_export.rename(columns={'Client': 'Client or Resource'})
+            ledger_export.to_excel(writer, sheet_name='Full_Ledger', index=False)
+            
+            # Tab 4: Revenue by Client
+            revenue_export = revenue_by_client.reset_index()
+            revenue_export = revenue_export.rename(columns={'Client_Normalized': 'Client'})
+            revenue_export.to_excel(writer, sheet_name='Revenue_by_Client', index=False)
+            
+            # Tab 5+: Individual salesperson tabs
+            for salesperson in final_summary['Salesperson'].unique():
+                sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
+                sp_commissions_sorted = sp_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+                sp_ledger = sp_commissions_sorted[['Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
+                sp_ledger = sp_ledger.rename(columns={'Client': 'Client or Resource'})
                 
-                # Create Excel file in memory
-                output = BytesIO()
-                
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    # Tab 1: Overall Summary
-                    overall_summary_data = pd.DataFrame([
-                        ['COMMISSION REPORT', year],
-                        ['', ''],
-                        ['SUMMARY BY SALESPERSON', ''],
-                    ])
-                    
-                    overall_summary_data = pd.concat([
-                        overall_summary_data,
-                        pd.DataFrame([['Salesperson', 'Total Commission']]),
-                        final_summary[['Salesperson', 'Total_Commission']],
-                        pd.DataFrame([['', '']]),
-                        pd.DataFrame([['BREAKDOWN BY CATEGORY', '']]),
-                        pd.DataFrame([['Salesperson', 'Category', 'Amount']]),
-                        category_summary[['Salesperson', 'Category', 'Commission_Amount']]
-                    ], ignore_index=True)
-                    
-                    overall_summary_data.to_excel(writer, sheet_name='Overall_Summary', index=False, header=False)
-                    
-                    # Tab 2: Full Ledger
-                    ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
-                    ledger_export = ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
-                    ledger_export = ledger_export.rename(columns={'Client': 'Client or Resource'})
-                    ledger_export.to_excel(writer, sheet_name='Full_Ledger', index=False)
-                    
-                    # Tab 3: Revenue by Client
-                    revenue_export = revenue_by_client.reset_index()
-                    revenue_export = revenue_export.rename(columns={'Client_Normalized': 'Client'})
-                    revenue_export.to_excel(writer, sheet_name='Revenue_by_Client', index=False)
-                    
-                    # Tab 4+: Individual salesperson tabs
-                    for salesperson in final_summary['Salesperson'].unique():
-                        sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
-                        sp_summary = final_summary[final_summary['Salesperson'] == salesperson]
-                        sp_categories = category_summary[category_summary['Salesperson'] == salesperson]
-                        
-                        # Create summary section
-                        sp_data = pd.DataFrame([
-                            [f'COMMISSION REPORT: {salesperson.upper()}', ''],
-                            [f'Year: {year}', ''],
-                            ['', ''],
-                            ['SUMMARY', ''],
-                            ['Total Commission', sp_summary.iloc[0]['Total_Commission']],
-                            ['', ''],
-                            ['BREAKDOWN BY CATEGORY', ''],
-                            ['Category', 'Amount']
-                        ])
-                        
-                        sp_data = pd.concat([
-                            sp_data,
-                            sp_categories[['Category', 'Commission_Amount']],
-                            pd.DataFrame([['', '']]),
-                            pd.DataFrame([['COMMISSION LEDGER', '']]),
-                            pd.DataFrame([['Client or Resource', 'Category', 'Date', 'Invoice Amount', 'Rate', 'Commission', 'Source']]),
-                        ], ignore_index=True)
-                        
-                        # Add ledger entries
-                        sp_commissions_sorted = sp_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
-                        sp_ledger = sp_commissions_sorted[['Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
-                        
-                        sp_data = pd.concat([sp_data, sp_ledger], ignore_index=True)
-                        
-                        # Excel sheet names limited to 31 chars
-                        sheet_name = salesperson.replace(' ', '_')[:31]
-                        sp_data.to_excel(writer, sheet_name=sheet_name, index=False, header=False)
-                
-                # Prepare download
-                excel_data = output.getvalue()
-                report_timestamp = datetime.now().strftime('%Y-%m-%d_%H%M')
-                filename = f"Commission_Report_{report_timestamp}.xlsx"
-                
-                st.download_button(
-                    label="⬇️ Click to Download",
-                    data=excel_data,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                
-                st.success("✅ Excel report ready for download!")
-                
-            except Exception as e:
-                st.error(f"❌ Export failed: {e}")
-                import traceback
-                st.code(traceback.format_exc())
+                # Excel sheet names limited to 31 chars
+                sheet_name = salesperson.replace(' ', '_')[:31]
+                sp_ledger.to_excel(writer, sheet_name=sheet_name, index=False)
+        
+        # Get the Excel data
+        excel_data = output.getvalue()
+        report_timestamp = datetime.now().strftime('%Y-%m-%d_%H%M')
+        filename = f"Commission_Report_{report_timestamp}.xlsx"
+        
+        st.download_button(
+            label="📥 Download Excel Report",
+            data=excel_data,
+            file_name=filename,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary"
+        )
+        
+    except Exception as e:
+        st.error(f"❌ Export failed: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 else:
     st.info("👆 Click the button above to calculate commissions for the selected year")
