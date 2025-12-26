@@ -184,6 +184,102 @@ end_date = date(end_year, end_month, end_day)
 
 st.sidebar.write(f"Report Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
+# Email section in sidebar (always visible if report exists)
+if 'report_data' in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📧 Email Report")
+    
+    email_address = st.sidebar.text_input(
+        "Send to:",
+        placeholder="email@example.com",
+        key="email_address_input"
+    )
+    
+    if st.sidebar.button("📧 Send Email", type="secondary", use_container_width=True):
+        if not email_address:
+            st.sidebar.error("Please enter an email address")
+        else:
+            # Send email via Gmail API
+            with st.spinner("Sending email..."):
+                try:
+                    from googleapiclient.discovery import build
+                    from google.oauth2 import service_account
+                    import base64
+                    from email.mime.multipart import MIMEMultipart
+                    from email.mime.base import MIMEBase
+                    from email.mime.text import MIMEText
+                    from email import encoders
+                    
+                    report_data = st.session_state.report_data
+                    
+                    # Get service account credentials with Gmail scope
+                    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                    credentials = service_account.Credentials.from_service_account_info(
+                        service_account_info,
+                        scopes=['https://www.googleapis.com/auth/gmail.send'],
+                        subject='astudee@voyageadvisory.com'
+                    )
+                    
+                    gmail_service = build('gmail', 'v1', credentials=credentials)
+                    
+                    # Create email message
+                    msg = MIMEMultipart()
+                    msg['From'] = 'astudee@voyageadvisory.com'
+                    msg['To'] = email_address
+                    msg['Subject'] = f"Billable Hours Report - {report_data['start_date'].strftime('%b %Y')} to {report_data['end_date'].strftime('%b %Y')}"
+                    
+                    body = f"""
+Attached is the Billable Hours Report for {report_data['start_date'].strftime('%B %Y')} through {report_data['end_date'].strftime('%B %Y')}.
+
+Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Summary:
+- Total entries: {report_data['summary']['total_entries']:,}
+- Active Employees: {report_data['summary']['active_employees']}
+- Contractors: {report_data['summary']['contractors']}
+- Inactive: {report_data['summary']['inactive']}
+
+Best regards,
+Voyage Advisory Reporting System
+"""
+                    msg.attach(MIMEText(body, 'plain'))
+                    
+                    # Attach Excel file
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(report_data['excel_file'])
+                    encoders.encode_base64(part)
+                    part.add_header(
+                        'Content-Disposition',
+                        f'attachment; filename={report_data["filename"]}'
+                    )
+                    msg.attach(part)
+                    
+                    # Encode message
+                    raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                    
+                    # Send via Gmail API
+                    message_body = {'raw': raw_message}
+                    sent_message = gmail_service.users().messages().send(
+                        userId='me',
+                        body=message_body
+                    ).execute()
+                    
+                    st.sidebar.success(f"✅ Email sent to {email_address}!")
+                    
+                except Exception as e:
+                    st.sidebar.error(f"❌ Error: {str(e)}")
+                    with st.sidebar.expander("🔧 Setup Help"):
+                        st.markdown("""
+                        **Gmail API Setup Required:**
+                        
+                        1. Go to [Google Admin Console](https://admin.google.com)
+                        2. Security → API Controls → Domain-wide Delegation
+                        3. Find service account client ID
+                        4. Add scope: `https://www.googleapis.com/auth/gmail.send`
+                        5. Save and retry
+                        """)
+
+
 
 # Federal holidays for capacity calculation
 FEDERAL_HOLIDAYS_2024 = [
@@ -791,108 +887,33 @@ if st.sidebar.button("Generate Report", type="primary"):
             
             output.seek(0)
             
+            # Store report data in session state for email sending
+            st.session_state.report_data = {
+                'excel_file': output.getvalue(),
+                'filename': f"billable_hours_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
+                'start_date': start_date,
+                'end_date': end_date,
+                'summary': {
+                    'total_entries': len(df),
+                    'active_employees': len([k for k, v in staff_classifications.items() if v == 'Active Employee']),
+                    'contractors': len([k for k, v in staff_classifications.items() if v == 'Contractor']),
+                    'inactive': len([k for k, v in staff_classifications.items() if v == 'Inactive'])
+                }
+            }
+            
             col1, col2 = st.columns(2)
             
             with col1:
                 st.download_button(
                     label="📥 Download Excel Report",
-                    data=output,
+                    data=output.getvalue(),
                     file_name=f"billable_hours_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
             
             with col2:
-                # Create a form to prevent page refresh on Enter
-                with st.form(key='email_form', clear_on_submit=False):
-                    email_address = st.text_input(
-                        "Email report to:",
-                        placeholder="email@example.com",
-                        key="email_input_form"
-                    )
-                    
-                    email_submit = st.form_submit_button("📧 Send Email")
-                    
-                    if email_submit and email_address:
-                        # Send email via Gmail API using service account
-                        try:
-                            from googleapiclient.discovery import build
-                            from google.oauth2 import service_account
-                            import base64
-                            from email.mime.multipart import MIMEMultipart
-                            from email.mime.base import MIMEBase
-                            from email.mime.text import MIMEText
-                            from email import encoders
-                            
-                            # Get service account credentials with Gmail scope
-                            service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-                            credentials = service_account.Credentials.from_service_account_info(
-                                service_account_info,
-                                scopes=['https://www.googleapis.com/auth/gmail.send'],
-                                subject='astudee@voyageadvisory.com'  # Impersonate this user
-                            )
-                            
-                            gmail_service = build('gmail', 'v1', credentials=credentials)
-                            
-                            # Create email message
-                            msg = MIMEMultipart()
-                            msg['From'] = 'astudee@voyageadvisory.com'
-                            msg['To'] = email_address
-                            msg['Subject'] = f"Billable Hours Report - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}"
-                            
-                            body = f"""
-Attached is the Billable Hours Report for {start_date.strftime('%B %Y')} through {end_date.strftime('%B %Y')}.
-
-Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-Summary:
-- Total entries: {len(df):,}
-- Active Employees: {len([k for k, v in staff_classifications.items() if v == 'Active Employee'])}
-- Contractors: {len([k for k, v in staff_classifications.items() if v == 'Contractor'])}
-- Inactive: {len([k for k, v in staff_classifications.items() if v == 'Inactive'])}
-
-Best regards,
-Voyage Advisory Reporting System
-"""
-                            msg.attach(MIMEText(body, 'plain'))
-                            
-                            # Attach Excel file
-                            output.seek(0)
-                            part = MIMEBase('application', 'octet-stream')
-                            part.set_payload(output.read())
-                            encoders.encode_base64(part)
-                            part.add_header(
-                                'Content-Disposition',
-                                f'attachment; filename=billable_hours_report_{start_date.strftime("%Y%m")}-{end_date.strftime("%Y%m")}.xlsx'
-                            )
-                            msg.attach(part)
-                            
-                            # Encode message
-                            raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                            
-                            # Send via Gmail API
-                            message_body = {'raw': raw_message}
-                            sent_message = gmail_service.users().messages().send(
-                                userId='me',
-                                body=message_body
-                            ).execute()
-                            
-                            st.success(f"✅ Email sent successfully to {email_address}!")
-                            
-                        except Exception as e:
-                            st.error(f"❌ Error sending email: {str(e)}")
-                            st.info("💡 Make sure the Gmail API scope is enabled in your Google Workspace admin console for the service account.")
-                            with st.expander("🔧 Setup Instructions"):
-                                st.markdown("""
-                                To enable email sending:
-                                
-                                1. Go to [Google Workspace Admin Console](https://admin.google.com)
-                                2. Navigate to **Security → API Controls → Domain-wide Delegation**
-                                3. Find your service account client ID
-                                4. Add this scope: `https://www.googleapis.com/auth/gmail.send`
-                                5. Save and try again
-                                
-                                Your service account email: `voyage-app-executor@voyage-app-store.iam.gserviceaccount.com`
-                                """)
+                st.write("📧 **Email Report**")
+                st.write("Enter email below and click 'Send Email' button in sidebar →")
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
