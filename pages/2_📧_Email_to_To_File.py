@@ -159,7 +159,7 @@ def decode_base64(data):
     
     return base64.b64decode(data)
 
-def get_attachments(message):
+def get_attachments(message, gmail_service, msg_id):
     """Extract real attachments (not inline images)."""
     attachments = []
     
@@ -175,11 +175,15 @@ def get_attachments(message):
                 # Skip inline images
                 continue
             
+            # Get attachment data
             if 'data' in part['body']:
                 data = part['body']['data']
             elif 'attachmentId' in part['body']:
-                # Need to fetch attachment separately
-                continue  # We'll handle this separately
+                # Fetch attachment by ID
+                attachment_id = part['body']['attachmentId']
+                data = fetch_attachment(gmail_service, msg_id, attachment_id)
+                if not data:
+                    continue
             else:
                 continue
             
@@ -384,7 +388,7 @@ if st.button("🚀 Process Vault Emails", type="primary", disabled=st.session_st
             subject_clean = sanitize_filename(subject)
             
             # Get attachments
-            attachments = get_attachments(message)
+            attachments = get_attachments(message, gmail_service, msg_id)
             
             # Process based on attachments
             if attachments:
