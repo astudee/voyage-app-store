@@ -79,12 +79,12 @@ def get_bigtime_report(start_date, end_date, report_id=284796):
             df = pd.DataFrame(data_rows, columns=column_names)
             
             # Map BigTime column names to expected names
-            # Common mappings from BigTime API
+            # Based on actual BigTime API response
             mapping = {
                 'tmstaffnm': 'Staff Member',
                 'tmdt': 'Date',
-                'tmhrs': 'Billable',
-                'tmchgbillbase': 'Billable ($)',
+                'tmhrsbill': 'Billable',  # Billable hours
+                'tmchgbillbase': 'Billable ($)',  # Billable amount
                 'tmclientnm': 'Client',
                 'tmprojectnm': 'Project'
             }
