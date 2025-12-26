@@ -8,14 +8,32 @@ import pandas as pd
 import calendar
 from datetime import date, datetime, timedelta
 from io import BytesIO
-import sys
-sys.path.append('/home/claude')
+import os
 
-from functions import auth, sheets
+# Authentication check
+def check_auth():
+    """Simple password authentication"""
+    if 'authenticated' not in st.session_state:
+        st.session_state.authenticated = False
+    
+    if not st.session_state.authenticated:
+        st.title("🔐 Login Required")
+        password = st.text_input("Enter password:", type="password")
+        
+        if st.button("Login"):
+            # Check against environment variable or hardcoded password
+            correct_password = os.environ.get("APP_PASSWORD", "voyage2024")
+            if password == correct_password:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("Incorrect password")
+        st.stop()
+    
+    return True
 
-# Authentication
-if not auth.check_auth():
-    st.stop()
+# Check authentication
+check_auth()
 
 st.title("📊 Billable Hours Report")
 
@@ -139,12 +157,51 @@ def get_month_columns(start_date, end_date):
 def load_active_employees():
     """Load active employees from Voyage_Global_Config Staff tab"""
     try:
-        # Try to load from Google Sheets first
-        # TODO: Add Google Sheets integration
-        # For now, using uploaded file
-        staff_df = pd.read_excel('/mnt/user-data/uploads/Voyage_Global_Config.xlsx', sheet_name='Staff')
-        active_employees = set(staff_df['Staff_Name'].tolist())
-        return active_employees
+        # Try Google Sheets first if available
+        try:
+            import gspread
+            from google.oauth2 import service_account
+            
+            # Get credentials from Streamlit secrets
+            service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
+            spreadsheet_id = st.secrets.get("SHEET_CONFIG_ID")
+            
+            if service_account_info and spreadsheet_id:
+                credentials = service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+                )
+                gc = gspread.authorize(credentials)
+                
+                # Open the spreadsheet
+                sh = gc.open_by_key(spreadsheet_id)
+                worksheet = sh.worksheet('Staff')
+                data = worksheet.get_all_records()
+                staff_df = pd.DataFrame(data)
+                active_employees = set(staff_df['Staff_Name'].tolist())
+                st.success(f"✅ Loaded {len(active_employees)} active employees from Google Sheets")
+                return active_employees
+        except Exception as e:
+            st.warning(f"Could not load from Google Sheets: {str(e)}")
+            # Fall through to file uploader
+        
+        # Fallback to uploaded file
+        uploaded_file = st.file_uploader(
+            "Upload Voyage_Global_Config.xlsx",
+            type=['xlsx'],
+            key='config_uploader',
+            help="Upload the Excel file containing the Staff tab"
+        )
+        
+        if uploaded_file:
+            staff_df = pd.read_excel(uploaded_file, sheet_name='Staff')
+            active_employees = set(staff_df['Staff_Name'].tolist())
+            st.success(f"✅ Loaded {len(active_employees)} active employees from uploaded file")
+            return active_employees
+        else:
+            st.warning("⚠️ Please upload Voyage_Global_Config.xlsx to continue")
+            st.stop()
+            
     except Exception as e:
         st.error(f"Error loading staff configuration: {str(e)}")
         return set()
@@ -191,16 +248,34 @@ def apply_color_coding(val, capacity):
 
 
 if st.sidebar.button("Generate Report", type="primary"):
-    with st.spinner("Fetching data from BigTime..."):
+    with st.spinner("Loading data..."):
         try:
             # Load active employees from config
             active_employees = load_active_employees()
-            st.info(f"Loaded {len(active_employees)} active employees from Voyage_Global_Config")
             
             # Get BigTime data
-            # For now, using uploaded sample file
-            # TODO: Replace with BigTime API call
-            df = pd.read_excel('/mnt/user-data/uploads/DetailedTimeReport-ACSw_paid__1_.xls')
+            st.subheader("Upload BigTime Report")
+            bigtime_file = st.file_uploader(
+                "Upload BigTime Detailed Time Report (ACS w/paid)",
+                type=['xls', 'xlsx'],
+                key='bigtime_uploader',
+                help="Export from BigTime: Reports → Detailed Time Report - ACS w/paid"
+            )
+            
+            if not bigtime_file:
+                st.info("👆 Please upload the BigTime report to continue")
+                st.stop()
+            
+            # Load the BigTime data
+            df = pd.read_excel(bigtime_file)
+            
+            # Validate required columns
+            required_cols = ['Staff Member', 'Date', 'Billable']
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns: {', '.join(missing_cols)}")
+                st.info(f"Available columns: {', '.join(df.columns.tolist())}")
+                st.stop()
             
             # Convert date column
             df['Date'] = pd.to_datetime(df['Date'])
@@ -211,7 +286,7 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Filter to billable hours only
             df = df[df['Billable'] > 0].copy()
             
-            st.success(f"Loaded {len(df):,} billable time entries")
+            st.success(f"✅ Loaded {len(df):,} billable time entries")
             
             # Get month columns
             month_cols = get_month_columns(start_date, end_date)
