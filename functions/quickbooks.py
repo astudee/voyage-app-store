@@ -1,18 +1,40 @@
 import requests
 import pandas as pd
-import streamlit as st
 import base64
 import json
 import os
+import sys
 
-# Token vault path - store in temp directory for Streamlit
-VAULT_PATH = '/tmp/qb_token_vault.json'
+# Detect environment and load credentials accordingly
+try:
+    import streamlit as st
+    IN_STREAMLIT = True
+except ImportError:
+    IN_STREAMLIT = False
+    # Only import credentials if not in Streamlit
+    sys.path.append('./functions')
+    import credentials
+
+# Token vault path - different for each environment
+if IN_STREAMLIT:
+    VAULT_PATH = '/tmp/qb_token_vault.json'
+else:
+    IN_COLAB = 'google.colab' in sys.modules
+    PROG_PATH = '/content/drive/Shareddrives/Finance and Legal/Programs/functions' if IN_COLAB else './functions'
+    VAULT_PATH = os.path.join(PROG_PATH, 'token_vault.json')
+
+def get_config(key):
+    """Get configuration value from Streamlit secrets or credentials.py"""
+    if IN_STREAMLIT:
+        return st.secrets[key].strip()
+    else:
+        return credentials.get(key).strip()
 
 def get_vault_token():
-    """Reads the current Refresh Token from the vault file or falls back to secrets."""
+    """Reads the current Refresh Token from the vault file or falls back to config."""
     if not os.path.exists(VAULT_PATH):
-        # Fallback to Streamlit secrets if vault doesn't exist yet
-        return st.secrets["QB_REFRESH_TOKEN"].strip()
+        # Fallback to config if vault doesn't exist yet
+        return get_config("QB_REFRESH_TOKEN")
     
     with open(VAULT_PATH, 'r') as f:
         vault = json.load(f)
@@ -21,6 +43,10 @@ def get_vault_token():
 def save_vault_token(new_token):
     """Saves the newly rotated Refresh Token so the chain doesn't break."""
     vault_data = {"QB_REFRESH_TOKEN": new_token}
+    
+    # Create directory if it doesn't exist (for Colab)
+    os.makedirs(os.path.dirname(VAULT_PATH), exist_ok=True)
+    
     with open(VAULT_PATH, 'w') as f:
         json.dump(vault_data, f, indent=4)
     print(f"✅ Token Vault updated with new Refresh Token.")
@@ -29,8 +55,8 @@ def get_access_token():
     """Uses the Vaulted Refresh Token to get a new temporary Access Token."""
     url = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer"
     
-    client_id = st.secrets["QB_CLIENT_ID"].strip()
-    client_secret = st.secrets["QB_CLIENT_SECRET"].strip()
+    client_id = get_config("QB_CLIENT_ID")
+    client_secret = get_config("QB_CLIENT_SECRET")
     
     # Get the latest token from the vault (computer managed)
     refresh_token = get_vault_token()
@@ -68,7 +94,7 @@ def get_access_token():
 def get_consulting_income(year):
     """Pull P&L Detail report for Consulting Income (cash basis)"""
     token = get_access_token()
-    realm_id = st.secrets["QB_REALM_ID"].strip()
+    realm_id = get_config("QB_REALM_ID")
     
     if not token: 
         return pd.DataFrame()
