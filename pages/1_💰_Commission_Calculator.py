@@ -159,11 +159,23 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         if revenue_col and date_col and staff_col:
             bt['Revenue'] = pd.to_numeric(bt[revenue_col], errors='coerce')
             bt['Date'] = pd.to_datetime(bt[date_col], errors='coerce')
+            bt['Year_Month'] = bt['Date'].dt.to_period('M')
             
+            # Get client column if it exists (for delivery commissions)
+            client_col = None
+            for col_name in ['Client', 'tmclientnm']:
+                if col_name in bt.columns:
+                    client_col = col_name
+                    break
+            
+            # Apply commission rules to each entry first
+            bt_with_rules = []
             for idx, time_entry in bt.iterrows():
                 staff = time_entry.get(staff_col, None)
                 date = time_entry.get('Date', None)
                 revenue = time_entry.get('Revenue', 0)
+                year_month = time_entry.get('Year_Month', None)
+                client = time_entry.get(client_col, '') if client_col else ''
                 
                 if not staff or pd.isna(date) or revenue == 0:
                     continue
@@ -175,21 +187,86 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                 ]
                 
                 for _, rule in applicable_rules.iterrows():
-                    resource_records.append({
+                    bt_with_rules.append({
                         'Salesperson': rule['Salesperson'],
-                        'Client': staff,
+                        'Resource': staff,
+                        'Client': client,
                         'Category': rule['Category'],
-                        'Invoice_Date': date,
-                        'Invoice_Amount': revenue,
-                        'Commission_Rate': rule['Rate'],
-                        'Commission_Amount': revenue * rule['Rate'],
-                        'Source': f'BigTime - {rule["Category"]}'
+                        'Year_Month': year_month,
+                        'Revenue': revenue,
+                        'Rate': rule['Rate'],
+                        'Commission': revenue * rule['Rate']
                     })
+            
+            if bt_with_rules:
+                bt_rules_df = pd.DataFrame(bt_with_rules)
+                
+                # Aggregate by month
+                # For Referral Commission: group by Salesperson, Resource, Category, Year_Month
+                # For Delivery Commission: group by Salesperson, Resource, Client, Category, Year_Month
+                
+                referral_df = bt_rules_df[bt_rules_df['Category'] == 'Referral Commission']
+                delivery_df = bt_rules_df[bt_rules_df['Category'] == 'Delivery Commission']
+                
+                # Aggregate Referral (by month, per resource)
+                if not referral_df.empty:
+                    referral_monthly = referral_df.groupby(
+                        ['Salesperson', 'Resource', 'Category', 'Year_Month'], 
+                        as_index=False
+                    ).agg({
+                        'Revenue': 'sum',
+                        'Commission': 'sum',
+                        'Rate': 'first'  # Rate should be same for all entries in month
+                    })
+                    
+                    # Set date to last day of month
+                    referral_monthly['Invoice_Date'] = referral_monthly['Year_Month'].dt.to_timestamp('M')
+                    
+                    for _, row in referral_monthly.iterrows():
+                        resource_records.append({
+                            'Salesperson': row['Salesperson'],
+                            'Client': row['Resource'],
+                            'Category': row['Category'],
+                            'Invoice_Date': row['Invoice_Date'],
+                            'Invoice_Amount': row['Revenue'],
+                            'Commission_Rate': row['Rate'],
+                            'Commission_Amount': row['Commission'],
+                            'Source': f'BigTime - {row["Category"]} (Monthly)'
+                        })
+                
+                # Aggregate Delivery (by month, per resource, per client)
+                if not delivery_df.empty:
+                    delivery_monthly = delivery_df.groupby(
+                        ['Salesperson', 'Resource', 'Client', 'Category', 'Year_Month'], 
+                        as_index=False
+                    ).agg({
+                        'Revenue': 'sum',
+                        'Commission': 'sum',
+                        'Rate': 'first'
+                    })
+                    
+                    # Set date to last day of month
+                    delivery_monthly['Invoice_Date'] = delivery_monthly['Year_Month'].dt.to_timestamp('M')
+                    
+                    for _, row in delivery_monthly.iterrows():
+                        # For delivery, show "Resource @ Client" in the Client field
+                        client_display = f"{row['Resource']} @ {row['Client']}" if row['Client'] else row['Resource']
+                        
+                        resource_records.append({
+                            'Salesperson': row['Salesperson'],
+                            'Client': client_display,
+                            'Category': row['Category'],
+                            'Invoice_Date': row['Invoice_Date'],
+                            'Invoice_Amount': row['Revenue'],
+                            'Commission_Rate': row['Rate'],
+                            'Commission_Amount': row['Commission'],
+                            'Source': f'BigTime - {row["Category"]} (Monthly)'
+                        })
         
         resource_commissions = pd.DataFrame(resource_records)
         
         if not resource_commissions.empty:
-            st.success(f"✅ {len(resource_commissions)} resource commission entries: ${resource_commissions['Commission_Amount'].sum():,.2f}")
+            st.success(f"✅ {len(resource_commissions)} resource commission entries (monthly aggregated): ${resource_commissions['Commission_Amount'].sum():,.2f}")
         else:
             st.warning("⚠️ No resource commissions calculated")
     
@@ -295,8 +372,10 @@ if st.button("🚀 Calculate Commissions", type="primary"):
     with tab3:
         st.subheader("Full Commission Ledger")
         ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+        ledger_display = ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
+        ledger_display = ledger_display.rename(columns={'Client': 'Client or Resource'})
         st.dataframe(
-            ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].style.format({
+            ledger_display.style.format({
                 'Invoice_Amount': '${:,.2f}',
                 'Commission_Rate': '{:.2%}',
                 'Commission_Amount': '${:,.2f}',
