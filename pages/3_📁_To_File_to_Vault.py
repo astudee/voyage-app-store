@@ -7,6 +7,11 @@ import json
 import re
 from io import BytesIO
 
+# Authentication check - shared session state from Home page
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.error("🔐 Please log in through the Home page")
+    st.stop()
+
 # Add functions to path
 sys.path.append('./functions')
 
