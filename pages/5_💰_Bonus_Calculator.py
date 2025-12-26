@@ -36,6 +36,66 @@ check_auth()
 
 st.title("💰 Bonus Calculator")
 
+# Overrides Section
+with st.expander("⚙️ Bonus Target Overrides (Optional)"):
+    st.markdown("""
+    Override bonus targets for specific employees. Useful for:
+    - Running reports for previous years with different targets
+    - Adjusting targets mid-year
+    - Special bonus arrangements
+    """)
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        override_name = st.text_input(
+            "Employee Name",
+            placeholder="e.g., John Adelphia",
+            key="override_name"
+        )
+    with col2:
+        override_util_target = st.number_input(
+            "Utilization Bonus Target ($)",
+            min_value=0,
+            value=0,
+            step=1000,
+            key="override_util"
+        )
+    with col3:
+        override_other_target = st.number_input(
+            "Other Bonus Target ($)",
+            min_value=0,
+            value=0,
+            step=1000,
+            key="override_other"
+        )
+    
+    if st.button("➕ Add Override", key="add_override"):
+        if override_name and (override_util_target > 0 or override_other_target > 0):
+            if 'bonus_overrides' not in st.session_state:
+                st.session_state.bonus_overrides = {}
+            st.session_state.bonus_overrides[override_name] = {
+                'util_target': override_util_target,
+                'other_target': override_other_target
+            }
+            st.success(f"✅ Added override for {override_name}")
+        else:
+            st.error("Enter employee name and at least one target amount")
+    
+    # Show current overrides
+    if 'bonus_overrides' not in st.session_state:
+        st.session_state.bonus_overrides = {}
+    
+    if st.session_state.bonus_overrides:
+        st.subheader("Current Overrides:")
+        for name, values in st.session_state.bonus_overrides.items():
+            col_a, col_b = st.columns([4, 1])
+            with col_a:
+                st.write(f"**{name}**: Util Target: ${values['util_target']:,} | Other Target: ${values['other_target']:,}")
+            with col_b:
+                if st.button("🗑️ Remove", key=f"remove_{name}"):
+                    del st.session_state.bonus_overrides[name]
+                    st.rerun()
+
 # Configuration
 st.sidebar.header("Report Configuration")
 
@@ -222,11 +282,20 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Build results dataframe
             results = []
             
+            # Get overrides
+            overrides = st.session_state.get('bonus_overrides', {})
+            
             for _, employee in staff_df.iterrows():
                 name = employee['Staff_Name']
                 emp_start_date = employee['Start_Date'].date() if pd.notna(employee['Start_Date']) else date(year, 1, 1)
-                util_target = employee.get('Utilization_Bonus_Target', 0)
-                other_target = employee.get('Other_Bonus_Target', 0)
+                
+                # Check for overrides first
+                if name in overrides:
+                    util_target = overrides[name]['util_target']
+                    other_target = overrides[name]['other_target']
+                else:
+                    util_target = employee.get('Utilization_Bonus_Target', 0)
+                    other_target = employee.get('Other_Bonus_Target', 0)
                 
                 # Get hours for this employee
                 ytd_billable = regular_hours.get(name, 0)
@@ -332,27 +401,39 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Display detailed table
             st.subheader("Employee Details")
             
+            # Show override notice if any are active
+            if overrides:
+                st.info(f"ℹ️ {len(overrides)} bonus target override(s) active")
+            
             # Create display dataframe with formatted values
             display_df = pd.DataFrame({
                 'Employee': results_df['Employee'],
                 'Start Date': results_df['Start_Date'].apply(lambda x: x.strftime('%Y-%m-%d')),
-                'Days': results_df['Days_in_Year'],
-                'Proration': results_df['Proration'],
+                'Days Employed': results_df['Days_in_Year'],
+                'Proration %': results_df['Proration'],
                 'Util Target': results_df['Util_Target'].apply(lambda x: f"${x:,.0f}"),
                 'Other Target': results_df['Other_Target'].apply(lambda x: f"${x:,.0f}"),
-                'YTD Bill': results_df['YTD_Billable'],
-                'YTD PB': results_df['YTD_ProBono'],
-                'YTD Elig': results_df['YTD_Eligible'],
+                # YTD columns
+                'YTD Billable Hrs': results_df['YTD_Billable'],
+                'YTD Pro Bono Hrs': results_df['YTD_ProBono'],
+                'YTD Eligible Hrs': results_df['YTD_Eligible'],
                 'YTD Tier': results_df['YTD_Tier'],
-                'YTD Bonus': results_df['YTD_Bonus'].apply(lambda x: f"${x:,.0f}"),
-                'YTD Other': results_df['YTD_Other'].apply(lambda x: f"${x:,.0f}"),
-                'YTD Total': results_df['YTD_Total_Cost'].apply(lambda x: f"${x:,.0f}"),
-                'Proj Bill': results_df['Proj_Billable'],
-                'Proj Elig': results_df['Proj_Eligible'],
+                'YTD Util Bonus': results_df['YTD_Bonus'].apply(lambda x: f"${x:,.0f}"),
+                'YTD Other Bonus': results_df['YTD_Other'].apply(lambda x: f"${x:,.0f}"),
+                'YTD Total Bonus': results_df['YTD_Total_Bonus'].apply(lambda x: f"${x:,.0f}"),
+                'YTD FICA': results_df['YTD_FICA'].apply(lambda x: f"${x:,.0f}"),
+                'YTD 401k': results_df['YTD_401k'].apply(lambda x: f"${x:,.0f}"),
+                'YTD Total Cost': results_df['YTD_Total_Cost'].apply(lambda x: f"${x:,.0f}"),
+                # Projected columns
+                'Proj Billable Hrs': results_df['Proj_Billable'],
+                'Proj Eligible Hrs': results_df['Proj_Eligible'],
                 'Proj Tier': results_df['Proj_Tier'],
-                'Proj Bonus': results_df['Proj_Bonus'].apply(lambda x: f"${x:,.0f}"),
-                'Proj Other': results_df['Proj_Other'].apply(lambda x: f"${x:,.0f}"),
-                'Proj Total': results_df['Proj_Total_Cost'].apply(lambda x: f"${x:,.0f}")
+                'Proj Util Bonus': results_df['Proj_Bonus'].apply(lambda x: f"${x:,.0f}"),
+                'Proj Other Bonus': results_df['Proj_Other'].apply(lambda x: f"${x:,.0f}"),
+                'Proj Total Bonus': results_df['Proj_Total_Bonus'].apply(lambda x: f"${x:,.0f}"),
+                'Proj FICA': results_df['Proj_FICA'].apply(lambda x: f"${x:,.0f}"),
+                'Proj 401k': results_df['Proj_401k'].apply(lambda x: f"${x:,.0f}"),
+                'Proj Total Cost': results_df['Proj_Total_Cost'].apply(lambda x: f"${x:,.0f}")
             })
             
             # Apply color coding to tier columns
