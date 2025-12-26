@@ -520,26 +520,39 @@ def load_active_employees():
         return set()
 
 
-def classify_staff(name, active_employees, has_billable_hours):
+def classify_staff(name, active_employees, staff_hours_by_month, all_month_periods):
     """
     Classify staff as Active Employee, Contractor, or Inactive
     
     Logic:
     1. If in Voyage_Global_Config Staff tab → Active Employee
-    2. If has billable hours but not in config → Contractor  
+    2. If has billable hours in last 2 months → Contractor  
     3. Otherwise → Inactive
     
     Args:
         name: Staff member name
         active_employees: Set of active employee names from config
-        has_billable_hours: Whether they have any billable hours in the period
+        staff_hours_by_month: Dict of {period: hours} for this staff member
+        all_month_periods: List of all periods in the report (sorted)
     
     Returns:
         str: 'Active Employee', 'Contractor', or 'Inactive'
     """
     if name in active_employees:
         return 'Active Employee'
-    elif has_billable_hours:
+    
+    # Check if has hours in the most recent 2 months
+    if len(all_month_periods) >= 2:
+        recent_periods = all_month_periods[-2:]
+    else:
+        recent_periods = all_month_periods
+    
+    has_recent_hours = any(
+        staff_hours_by_month.get(period, 0) > 0 
+        for period in recent_periods
+    )
+    
+    if has_recent_hours:
         return 'Contractor'
     else:
         return 'Inactive'
@@ -626,12 +639,13 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Sort by total descending
             pivot = pivot.sort_values('Total', ascending=False)
             
-            # Classify staff
+            # Classify staff based on recent activity
+            all_periods = sorted(pivot.columns[:-1])  # Exclude 'Total' column
             staff_classifications = {}
             for name in pivot.index:
                 if name != 'OVERALL TOTALS':
-                    has_billable = pivot.loc[name, 'Total'] > 0
-                    staff_classifications[name] = classify_staff(name, active_employees, has_billable)
+                    staff_hours = {period: pivot.loc[name, period] for period in all_periods}
+                    staff_classifications[name] = classify_staff(name, active_employees, staff_hours, all_periods)
             
             # Calculate capacity rows
             capacity_rows = []
@@ -647,6 +661,9 @@ if st.sidebar.button("Generate Report", type="primary"):
             
             # Row 3: Monthly Capacity * 80%
             capacity_80 = {k: v * 0.8 for k, v in monthly_capacity.items()}
+            
+            # Round all values to 1 decimal place
+            pivot = pivot.round(1)
             
             # Display results by category
             st.header("Billable Hours Report")
@@ -684,7 +701,7 @@ if st.sidebar.button("Generate Report", type="primary"):
                     styles.append('')  # Total column - no color
                     return styles
                 
-                styled = display_df.style.apply(style_category, axis=1)
+                styled = display_df.style.apply(style_category, axis=1).format("{:.1f}")
                 st.dataframe(styled, use_container_width=True)
             
             # Show capacity reference
@@ -695,13 +712,13 @@ if st.sidebar.button("Generate Report", type="primary"):
                 'Capacity @ 1840': [153.33] * len(month_cols),
                 'Capacity * 80%': [capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')] for m in month_cols]
             })
-            st.dataframe(capacity_df, use_container_width=True)
+            st.dataframe(capacity_df.style.format("{:.1f}"), use_container_width=True)
             
             # Export to Excel
             st.subheader("Export Report")
             
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 # Write each category to separate sheet
                 for category in ['Active Employee', 'Contractor', 'Inactive']:
                     staff_in_category = [k for k, v in staff_classifications.items() if v == category]
@@ -714,12 +731,75 @@ if st.sidebar.button("Generate Report", type="primary"):
             
             output.seek(0)
             
-            st.download_button(
-                label="📥 Download Excel Report",
-                data=output,
-                file_name=f"billable_hours_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.download_button(
+                    label="📥 Download Excel Report",
+                    data=output,
+                    file_name=f"billable_hours_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+            
+            with col2:
+                email_address = st.text_input(
+                    "Email report to:",
+                    placeholder="email@example.com",
+                    key="email_input"
+                )
+                
+                if st.button("📧 Send Email", disabled=not email_address):
+                    # Send email with attachment
+                    try:
+                        import smtplib
+                        from email.mime.multipart import MIMEMultipart
+                        from email.mime.base import MIMEBase
+                        from email.mime.text import MIMEText
+                        from email import encoders
+                        
+                        # Gmail SMTP settings (using your notification email)
+                        sender_email = st.secrets.get("NOTIFICATION_EMAIL", "reports@voyageadvisory.com")
+                        
+                        # Create message
+                        msg = MIMEMultipart()
+                        msg['From'] = sender_email
+                        msg['To'] = email_address
+                        msg['Subject'] = f"Billable Hours Report - {start_date.strftime('%b %Y')} to {end_date.strftime('%b %Y')}"
+                        
+                        body = f"""
+Attached is the Billable Hours Report for {start_date.strftime('%B %Y')} through {end_date.strftime('%B %Y')}.
+
+Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Summary:
+- Total entries: {len(df):,}
+- Active Employees: {len([k for k, v in staff_classifications.items() if v == 'Active Employee'])}
+- Contractors: {len([k for k, v in staff_classifications.items() if v == 'Contractor'])}
+- Inactive: {len([k for k, v in staff_classifications.items() if v == 'Inactive'])}
+
+Best regards,
+Voyage Advisory Reporting System
+"""
+                        msg.attach(MIMEText(body, 'plain'))
+                        
+                        # Attach Excel file
+                        output.seek(0)
+                        part = MIMEBase('application', 'octet-stream')
+                        part.set_payload(output.read())
+                        encoders.encode_base64(part)
+                        part.add_header(
+                            'Content-Disposition',
+                            f'attachment; filename=billable_hours_report_{start_date.strftime("%Y%m")}-{end_date.strftime("%Y%m")}.xlsx'
+                        )
+                        msg.attach(part)
+                        
+                        # Send via Gmail (this won't work without app password, but structure is here)
+                        # You'll need to configure SMTP credentials in secrets
+                        st.info("📧 Email functionality requires SMTP configuration. Please use the download button for now.")
+                        
+                    except Exception as e:
+                        st.error(f"Error sending email: {str(e)}")
+                        st.info("Please use the download button instead.")
             
         except Exception as e:
             st.error(f"Error generating report: {str(e)}")
