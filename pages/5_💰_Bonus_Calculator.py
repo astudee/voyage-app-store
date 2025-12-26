@@ -11,28 +11,10 @@ from io import BytesIO
 import os
 import requests
 
-# Authentication check
-def check_auth():
-    """Simple password authentication"""
-    if 'authenticated' not in st.session_state:
-        st.session_state.authenticated = False
-    
-    if not st.session_state.authenticated:
-        st.title("🔐 Login Required")
-        password = st.text_input("Enter password:", type="password")
-        
-        if st.button("Login"):
-            correct_password = os.environ.get("APP_PASSWORD", "voyage2024")
-            if password == correct_password:
-                st.session_state.authenticated = True
-                st.rerun()
-            else:
-                st.error("Incorrect password")
-        st.stop()
-    
-    return True
-
-check_auth()
+# Authentication check - shared session state from Home page
+if 'authenticated' not in st.session_state or not st.session_state.authenticated:
+    st.error("🔐 Please log in through the Home page")
+    st.stop()
 
 st.title("💰 Bonus Calculator")
 
