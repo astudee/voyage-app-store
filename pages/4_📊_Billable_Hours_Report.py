@@ -184,120 +184,6 @@ end_date = date(end_year, end_month, end_day)
 
 st.sidebar.write(f"Report Period: {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
 
-# Email section in sidebar (always visible if report exists)
-if 'report_data' in st.session_state:
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📧 Email Report")
-    
-    email_address = st.sidebar.text_input(
-        "Send to:",
-        placeholder="email@example.com",
-        key="email_address_input"
-    )
-    
-    if st.sidebar.button("📧 Send Email", type="secondary", use_container_width=True):
-        if not email_address:
-            st.sidebar.error("Please enter an email address")
-        else:
-            # Send email via Gmail API
-            try:
-                st.sidebar.info("🔄 Preparing email...")
-                
-                from googleapiclient.discovery import build
-                from google.oauth2 import service_account
-                import base64
-                from email.mime.multipart import MIMEMultipart
-                from email.mime.base import MIMEBase
-                from email.mime.text import MIMEText
-                from email import encoders
-                
-                report_data = st.session_state.report_data
-                
-                st.sidebar.info("🔄 Authenticating...")
-                
-                # Get service account credentials with Gmail scope
-                service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-                credentials = service_account.Credentials.from_service_account_info(
-                    service_account_info,
-                    scopes=['https://www.googleapis.com/auth/gmail.send'],
-                    subject='astudee@voyageadvisory.com'
-                )
-                
-                gmail_service = build('gmail', 'v1', credentials=credentials)
-                
-                st.sidebar.info("🔄 Building message...")
-                
-                # Create email message
-                msg = MIMEMultipart()
-                msg['From'] = 'astudee@voyageadvisory.com'
-                msg['To'] = email_address
-                msg['Subject'] = f"Billable Hours Report - {report_data['start_date'].strftime('%b %Y')} to {report_data['end_date'].strftime('%b %Y')}"
-                
-                body = f"""
-Attached is the Billable Hours Report for {report_data['start_date'].strftime('%B %Y')} through {report_data['end_date'].strftime('%B %Y')}.
-
-Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-Summary:
-- Total entries: {report_data['summary']['total_entries']:,}
-- Active Employees: {report_data['summary']['active_employees']}
-- Contractors: {report_data['summary']['contractors']}
-- Inactive: {report_data['summary']['inactive']}
-
-Best regards,
-Voyage Advisory Reporting System
-"""
-                msg.attach(MIMEText(body, 'plain'))
-                
-                st.sidebar.info("🔄 Attaching file...")
-                
-                # Attach Excel file
-                part = MIMEBase('application', 'octet-stream')
-                part.set_payload(report_data['excel_file'])
-                encoders.encode_base64(part)
-                part.add_header(
-                    'Content-Disposition',
-                    f'attachment; filename={report_data["filename"]}'
-                )
-                msg.attach(part)
-                
-                st.sidebar.info("🔄 Sending via Gmail API...")
-                
-                # Encode message
-                raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                
-                # Send via Gmail API
-                message_body = {'raw': raw_message}
-                sent_message = gmail_service.users().messages().send(
-                    userId='me',
-                    body=message_body
-                ).execute()
-                
-                st.sidebar.success(f"✅ Email sent successfully to {email_address}!")
-                st.sidebar.write(f"Message ID: {sent_message.get('id')}")
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ Error sending email")
-                st.sidebar.code(f"Error type: {type(e).__name__}")
-                st.sidebar.code(f"Error message: {str(e)}")
-                
-                # More detailed error info
-                import traceback
-                with st.sidebar.expander("📋 Full Error Details"):
-                    st.code(traceback.format_exc())
-                
-                with st.sidebar.expander("🔧 Setup Help"):
-                    st.markdown("""
-                    **Gmail API Setup Required:**
-                    
-                    1. Go to [Google Admin Console](https://admin.google.com)
-                    2. Security → API Controls → Domain-wide Delegation
-                    3. Find service account client ID  
-                    4. Add scope: `https://www.googleapis.com/auth/gmail.send`
-                    5. Save and retry
-                    
-                    **Service Account:** `voyage-app-executor@voyage-app-store.iam.gserviceaccount.com`
-                    """)
 
 
 
@@ -970,3 +856,75 @@ else:
         - Staff with 0 hours across all months are excluded
         - Totals calculated for entire period
         """)
+
+# Email functionality - placed at end so it's always evaluated
+if 'report_data' in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📧 Email Last Report")
+    
+    email_to = st.sidebar.text_input(
+        "Send to:",
+        placeholder="email@example.com", 
+        key="email_input_final"
+    )
+    
+    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_final")
+    
+    if send_clicked:
+        if not email_to:
+            st.sidebar.error("Enter an email address")
+        else:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.base import MIMEBase
+                from email.mime.text import MIMEText
+                from email import encoders
+                
+                rd = st.session_state.report_data
+                
+                creds = service_account.Credentials.from_service_account_info(
+                    st.secrets["SERVICE_ACCOUNT_KEY"],
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+                
+                gmail = build('gmail', 'v1', credentials=creds)
+                
+                msg = MIMEMultipart()
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['To'] = email_to
+                msg['Subject'] = f"Billable Hours Report - {rd['start_date'].strftime('%b %Y')} to {rd['end_date'].strftime('%b %Y')}"
+                
+                body = f"""Billable Hours Report
+
+Period: {rd['start_date'].strftime('%B %Y')} - {rd['end_date'].strftime('%B %Y')}
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+Summary:
+- Total Entries: {rd['summary']['total_entries']:,}
+- Active Employees: {rd['summary']['active_employees']}
+- Contractors: {rd['summary']['contractors']}  
+- Inactive: {rd['summary']['inactive']}
+
+Best regards,
+Voyage Advisory"""
+                
+                msg.attach(MIMEText(body, 'plain'))
+                
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(rd['excel_file'])
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename={rd["filename"]}')
+                msg.attach(part)
+                
+                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+                
+                st.sidebar.success(f"✅ Sent to {email_to}!")
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ {type(e).__name__}")
+                st.sidebar.code(str(e))
