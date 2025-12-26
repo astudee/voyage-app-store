@@ -138,6 +138,21 @@ apps = [
             'Email report with detailed breakdowns'
         ],
         'status': '✅ Available'
+    },
+    {
+        'icon': '⏰',
+        'name': 'Time Reviewer',
+        'description': 'Review timesheets for completeness and quality',
+        'features': [
+            'Checks for zero hours and unsubmitted timesheets',
+            'Identifies employees under 40 hours',
+            'Flags non-billable client work',
+            'AI-powered billing note quality review (Gemini + Claude)',
+            'Enforces Voyage professional standards',
+            'Week-ending (Friday) date selector',
+            'Excel and text export with email capability'
+        ],
+        'status': '✅ Available'
     }
 ]
 
