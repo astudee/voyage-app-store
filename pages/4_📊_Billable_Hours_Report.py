@@ -9,6 +9,7 @@ import calendar
 from datetime import date, datetime, timedelta
 from io import BytesIO
 import os
+import requests
 
 # Authentication check
 def check_auth():
@@ -34,6 +35,76 @@ def check_auth():
 
 # Check authentication
 check_auth()
+
+
+def get_bigtime_report(start_date, end_date, report_id=284796):
+    """
+    Fetch BigTime Detailed Time Report data for date range
+    Report 284796 = "Detailed Time Report - ACS w/paid"
+    
+    Returns DataFrame with columns: Staff Member, Date, Billable, etc.
+    """
+    try:
+        api_key = st.secrets["BIGTIME_API_KEY"]
+        firm_id = st.secrets["BIGTIME_FIRM_ID"]
+    except Exception as e:
+        st.error(f"Missing BigTime credentials in secrets: {str(e)}")
+        return None
+    
+    url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/{report_id}"
+    
+    headers = {
+        "X-Auth-ApiToken": api_key,
+        "X-Auth-Realm": firm_id,
+        "Accept": "application/json"
+    }
+    
+    payload = {
+        "DT_BEGIN": start_date.strftime("%Y-%m-%d"),
+        "DT_END": end_date.strftime("%Y-%m-%d")
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            report_data = response.json()
+            data_rows = report_data.get('Data', [])
+            field_list = report_data.get('FieldList', [])
+            
+            if not data_rows:
+                st.warning(f"⚠️ BigTime report returned 0 rows for {start_date} to {end_date}")
+                return pd.DataFrame()
+            
+            column_names = [field.get('FieldNm') for field in field_list]
+            df = pd.DataFrame(data_rows, columns=column_names)
+            
+            # Map BigTime column names to expected names
+            # Common mappings from BigTime API
+            mapping = {
+                'tmstaffnm': 'Staff Member',
+                'tmdt': 'Date',
+                'tmhrs': 'Billable',
+                'tmchgbillbase': 'Billable ($)',
+                'tmclientnm': 'Client',
+                'tmprojectnm': 'Project'
+            }
+            df = df.rename(columns={k: v for k, v in mapping.items() if k in df.columns})
+            
+            # Convert Date column to datetime
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'])
+            
+            # Convert Billable to numeric
+            if 'Billable' in df.columns:
+                df['Billable'] = pd.to_numeric(df['Billable'], errors='coerce')
+            
+            return df
+        else:
+            st.error(f"❌ BigTime API Error {response.status_code}: {response.text[:200]}")
+            return None
+    except Exception as e:
+        st.error(f"❌ BigTime API Exception: {str(e)}")
+        return None
 
 st.title("📊 Billable Hours Report")
 
@@ -72,6 +143,20 @@ st.sidebar.write(f"Report Period: {start_date.strftime('%Y-%m-%d')} to {end_date
 
 
 # Federal holidays for capacity calculation
+FEDERAL_HOLIDAYS_2024 = [
+    date(2024, 1, 1),   # New Year's Day
+    date(2024, 1, 15),  # MLK Day
+    date(2024, 2, 19),  # Presidents' Day
+    date(2024, 5, 27),  # Memorial Day
+    date(2024, 6, 19),  # Juneteenth
+    date(2024, 7, 4),   # Independence Day
+    date(2024, 9, 2),   # Labor Day
+    date(2024, 10, 14), # Columbus Day
+    date(2024, 11, 11), # Veterans Day
+    date(2024, 11, 28), # Thanksgiving
+    date(2024, 12, 25), # Christmas
+]
+
 FEDERAL_HOLIDAYS_2025 = [
     date(2025, 1, 1),   # New Year's Day
     date(2025, 1, 20),  # MLK Day
@@ -86,30 +171,258 @@ FEDERAL_HOLIDAYS_2025 = [
     date(2025, 12, 25), # Christmas
 ]
 
-FEDERAL_HOLIDAYS_2024 = [
-    date(2024, 1, 1),
-    date(2024, 1, 15),
-    date(2024, 2, 19),
-    date(2024, 5, 27),
-    date(2024, 6, 19),
-    date(2024, 7, 4),
-    date(2024, 9, 2),
-    date(2024, 10, 14),
-    date(2024, 11, 11),
-    date(2024, 11, 28),
-    date(2024, 12, 25),
+FEDERAL_HOLIDAYS_2026 = [
+    date(2026, 1, 1),   # New Year's Day
+    date(2026, 1, 19),  # MLK Day
+    date(2026, 2, 16),  # Presidents' Day
+    date(2026, 5, 25),  # Memorial Day
+    date(2026, 6, 19),  # Juneteenth
+    date(2026, 7, 3),   # Independence Day (observed Friday)
+    date(2026, 9, 7),   # Labor Day
+    date(2026, 10, 12), # Columbus Day
+    date(2026, 11, 11), # Veterans Day
+    date(2026, 11, 26), # Thanksgiving
+    date(2026, 12, 25), # Christmas
 ]
+
+# Cache for AI-calculated holidays
+if 'holiday_cache' not in st.session_state:
+    st.session_state.holiday_cache = {}
+
+
+def calculate_holidays_with_ai(year):
+    """
+    Use Claude API to calculate federal holidays for a given year
+    This is called for years beyond our hardcoded lists
+    """
+    cache_key = f"holidays_{year}"
+    
+    # Check cache first
+    if cache_key in st.session_state.holiday_cache:
+        return st.session_state.holiday_cache[cache_key]
+    
+    try:
+        # Try Claude API first
+        api_key = st.secrets.get("CLAUDE_API_KEY")
+        if not api_key:
+            # Fallback to Gemini
+            api_key = st.secrets.get("GEMINI_API_KEY")
+            if api_key:
+                return calculate_holidays_with_gemini(year)
+            else:
+                st.warning(f"⚠️ No AI API key found. Using estimated holidays for {year}")
+                return estimate_holidays_simple(year)
+        
+        prompt = f"""Calculate the exact dates of all 11 US federal holidays for the year {year}.
+
+Federal holidays are:
+1. New Year's Day (January 1, or observed date if weekend)
+2. Martin Luther King Jr. Day (3rd Monday in January)
+3. Presidents' Day (3rd Monday in February)
+4. Memorial Day (last Monday in May)
+5. Juneteenth (June 19, or observed date if weekend)
+6. Independence Day (July 4, or observed date if weekend)
+7. Labor Day (1st Monday in September)
+8. Columbus Day (2nd Monday in October)
+9. Veterans Day (November 11, or observed date if weekend)
+10. Thanksgiving (4th Thursday in November)
+11. Christmas (December 25, or observed date if weekend)
+
+Rules for observed dates:
+- If a holiday falls on Saturday, it's observed on Friday
+- If a holiday falls on Sunday, it's observed on Monday
+
+Return ONLY a Python list of date objects in this exact format:
+[date({year}, 1, 1), date({year}, 1, 20), ...]
+
+No explanations, just the list."""
+
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-20250514",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result['content'][0]['text']
+            
+            # Extract the list from the response
+            # Look for pattern like [date(2027, 1, 1), ...]
+            import re
+            dates_str = content.strip()
+            if dates_str.startswith('[') and dates_str.endswith(']'):
+                # Parse the dates safely
+                holidays = []
+                # Extract all date(YYYY, M, D) patterns
+                date_patterns = re.findall(r'date\((\d{4}),\s*(\d+),\s*(\d+)\)', dates_str)
+                for year_str, month_str, day_str in date_patterns:
+                    holidays.append(date(int(year_str), int(month_str), int(day_str)))
+                
+                if len(holidays) == 11:
+                    st.session_state.holiday_cache[cache_key] = holidays
+                    st.info(f"✅ Calculated {year} holidays using Claude API")
+                    return holidays
+        
+        # If AI fails, use estimation
+        st.warning(f"⚠️ AI calculation failed. Using estimated holidays for {year}")
+        return estimate_holidays_simple(year)
+        
+    except Exception as e:
+        st.warning(f"⚠️ Error calculating holidays with AI: {str(e)}. Using estimation.")
+        return estimate_holidays_simple(year)
+
+
+def calculate_holidays_with_gemini(year):
+    """Fallback to Gemini API for holiday calculation"""
+    try:
+        api_key = st.secrets.get("GEMINI_API_KEY")
+        
+        prompt = f"""Calculate the exact dates of all 11 US federal holidays for {year}.
+Return only a Python list: [date({year}, M, D), ...]
+Include: New Year's, MLK Day, Presidents Day, Memorial Day, Juneteenth, July 4th, Labor Day, Columbus Day, Veterans Day, Thanksgiving, Christmas.
+Account for observed dates when holidays fall on weekends."""
+
+        response = requests.post(
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}",
+            headers={"Content-Type": "application/json"},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            content = result['candidates'][0]['content']['parts'][0]['text']
+            
+            import re
+            holidays = []
+            date_patterns = re.findall(r'date\((\d{4}),\s*(\d+),\s*(\d+)\)', content)
+            for year_str, month_str, day_str in date_patterns:
+                holidays.append(date(int(year_str), int(month_str), int(day_str)))
+            
+            if len(holidays) == 11:
+                cache_key = f"holidays_{year}"
+                st.session_state.holiday_cache[cache_key] = holidays
+                st.info(f"✅ Calculated {year} holidays using Gemini API")
+                return holidays
+        
+        return estimate_holidays_simple(year)
+    except:
+        return estimate_holidays_simple(year)
+
+
+def estimate_holidays_simple(year):
+    """
+    Simple estimation of federal holidays based on rules
+    Used as fallback if AI calculation fails
+    """
+    from datetime import timedelta
+    
+    holidays = []
+    
+    # New Year's Day
+    ny = date(year, 1, 1)
+    if ny.weekday() == 5:  # Saturday
+        holidays.append(date(year - 1, 12, 31))
+    elif ny.weekday() == 6:  # Sunday
+        holidays.append(date(year, 1, 2))
+    else:
+        holidays.append(ny)
+    
+    # MLK Day - 3rd Monday in January
+    first_jan = date(year, 1, 1)
+    days_until_monday = (7 - first_jan.weekday()) % 7
+    first_monday = first_jan + timedelta(days=days_until_monday)
+    holidays.append(first_monday + timedelta(weeks=2))
+    
+    # Presidents Day - 3rd Monday in February
+    first_feb = date(year, 2, 1)
+    days_until_monday = (7 - first_feb.weekday()) % 7
+    first_monday = first_feb + timedelta(days=days_until_monday)
+    holidays.append(first_monday + timedelta(weeks=2))
+    
+    # Memorial Day - Last Monday in May
+    last_may = date(year, 5, 31)
+    days_since_monday = (last_may.weekday() - 0) % 7
+    holidays.append(last_may - timedelta(days=days_since_monday))
+    
+    # Juneteenth
+    june19 = date(year, 6, 19)
+    if june19.weekday() == 5:
+        holidays.append(date(year, 6, 18))
+    elif june19.weekday() == 6:
+        holidays.append(date(year, 6, 20))
+    else:
+        holidays.append(june19)
+    
+    # Independence Day
+    july4 = date(year, 7, 4)
+    if july4.weekday() == 5:
+        holidays.append(date(year, 7, 3))
+    elif july4.weekday() == 6:
+        holidays.append(date(year, 7, 5))
+    else:
+        holidays.append(july4)
+    
+    # Labor Day - 1st Monday in September
+    first_sep = date(year, 9, 1)
+    days_until_monday = (7 - first_sep.weekday()) % 7
+    holidays.append(first_sep + timedelta(days=days_until_monday))
+    
+    # Columbus Day - 2nd Monday in October
+    first_oct = date(year, 10, 1)
+    days_until_monday = (7 - first_oct.weekday()) % 7
+    first_monday = first_oct + timedelta(days=days_until_monday)
+    holidays.append(first_monday + timedelta(weeks=1))
+    
+    # Veterans Day
+    nov11 = date(year, 11, 11)
+    if nov11.weekday() == 5:
+        holidays.append(date(year, 11, 10))
+    elif nov11.weekday() == 6:
+        holidays.append(date(year, 11, 12))
+    else:
+        holidays.append(nov11)
+    
+    # Thanksgiving - 4th Thursday in November
+    first_nov = date(year, 11, 1)
+    days_until_thursday = (3 - first_nov.weekday()) % 7
+    first_thursday = first_nov + timedelta(days=days_until_thursday)
+    holidays.append(first_thursday + timedelta(weeks=3))
+    
+    # Christmas
+    dec25 = date(year, 12, 25)
+    if dec25.weekday() == 5:
+        holidays.append(date(year, 12, 24))
+    elif dec25.weekday() == 6:
+        holidays.append(date(year, 12, 26))
+    else:
+        holidays.append(dec25)
+    
+    return holidays
 
 
 def calculate_monthly_capacity(year, month):
     """Calculate billable hours capacity for a given month"""
-    # Determine which holiday list to use
-    if year == 2025:
-        federal_holidays = FEDERAL_HOLIDAYS_2025
-    elif year == 2024:
+    # Get federal holidays for the year
+    if year == 2024:
         federal_holidays = FEDERAL_HOLIDAYS_2024
+    elif year == 2025:
+        federal_holidays = FEDERAL_HOLIDAYS_2025
+    elif year == 2026:
+        federal_holidays = FEDERAL_HOLIDAYS_2026
     else:
-        federal_holidays = []
+        # Use AI to calculate holidays for years beyond 2026
+        federal_holidays = calculate_holidays_with_ai(year)
     
     # Get number of days in month
     num_days = calendar.monthrange(year, month)[1]
@@ -253,21 +566,13 @@ if st.sidebar.button("Generate Report", type="primary"):
             # Load active employees from config
             active_employees = load_active_employees()
             
-            # Get BigTime data
-            st.subheader("Upload BigTime Report")
-            bigtime_file = st.file_uploader(
-                "Upload BigTime Detailed Time Report (ACS w/paid)",
-                type=['xls', 'xlsx'],
-                key='bigtime_uploader',
-                help="Export from BigTime: Reports → Detailed Time Report - ACS w/paid"
-            )
-            
-            if not bigtime_file:
-                st.info("👆 Please upload the BigTime report to continue")
-                st.stop()
-            
-            # Load the BigTime data
-            df = pd.read_excel(bigtime_file)
+            # Get BigTime data from API
+            with st.spinner("📡 Fetching data from BigTime API..."):
+                df = get_bigtime_report(start_date, end_date)
+                
+                if df is None or df.empty:
+                    st.error("❌ Failed to fetch data from BigTime. Please check your credentials and try again.")
+                    st.stop()
             
             # Validate required columns
             required_cols = ['Staff Member', 'Date', 'Billable']
@@ -275,18 +580,27 @@ if st.sidebar.button("Generate Report", type="primary"):
             if missing_cols:
                 st.error(f"Missing required columns: {', '.join(missing_cols)}")
                 st.info(f"Available columns: {', '.join(df.columns.tolist())}")
-                st.stop()
-            
-            # Convert date column
-            df['Date'] = pd.to_datetime(df['Date'])
-            
-            # Filter to date range
-            df = df[(df['Date'] >= pd.Timestamp(start_date)) & (df['Date'] <= pd.Timestamp(end_date))]
+                
+                # Show option to upload file as backup
+                st.warning("💡 Alternatively, you can upload a BigTime export file:")
+                bigtime_file = st.file_uploader(
+                    "Upload BigTime Detailed Time Report (ACS w/paid)",
+                    type=['xls', 'xlsx'],
+                    key='bigtime_uploader',
+                )
+                
+                if bigtime_file:
+                    df = pd.read_excel(bigtime_file)
+                    df['Date'] = pd.to_datetime(df['Date'])
+                    # Filter to date range
+                    df = df[(df['Date'] >= pd.Timestamp(start_date)) & (df['Date'] <= pd.Timestamp(end_date))]
+                else:
+                    st.stop()
             
             # Filter to billable hours only
             df = df[df['Billable'] > 0].copy()
             
-            st.success(f"✅ Loaded {len(df):,} billable time entries")
+            st.success(f"✅ Loaded {len(df):,} billable time entries from BigTime")
             
             # Get month columns
             month_cols = get_month_columns(start_date, end_date)
