@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import sys
 from datetime import datetime
+import gspread
+from google.auth import default
 
 # Add functions to path
 sys.path.append('./functions')
@@ -10,24 +12,40 @@ import quickbooks
 import bigtime
 import sheets
 
-st.set_page_config(page_title="Commission Calculator", page_icon="💰")
+st.set_page_config(page_title="Commission Calculator", page_icon="💰", layout="wide")
 
 st.title("💰 Commission Calculator")
+st.markdown("Calculate sales commissions from QuickBooks and BigTime data")
 
 # Year selector
-year = st.selectbox("Select Year", [2024, 2025, 2026], index=1)
+col1, col2 = st.columns([1, 3])
+with col1:
+    year = st.selectbox("Select Year", [2023, 2024, 2025, 2026], index=2)
 
 # Config from secrets
-CONFIG_SHEET_ID = st.secrets["SHEET_CONFIG_ID"]
-REPORTS_FOLDER_ID = st.secrets["REPORTS_FOLDER_ID"]
+try:
+    CONFIG_SHEET_ID = st.secrets["SHEET_CONFIG_ID"]
+    REPORTS_FOLDER_ID = st.secrets["REPORTS_FOLDER_ID"]
+except:
+    # Fallback for Colab (shouldn't happen in Streamlit)
+    import credentials
+    CONFIG_SHEET_ID = credentials.get("SHEET_CONFIG_ID")
+    REPORTS_FOLDER_ID = credentials.get("REPORTS_FOLDER_ID")
 
 if st.button("🚀 Calculate Commissions", type="primary"):
     
-    with st.spinner("Loading configuration..."):
-        # Load config
+    # ============================================================
+    # PHASE 1: LOAD CONFIGURATION
+    # ============================================================
+    
+    with st.spinner("📋 Loading configuration from Voyage_Global_Config..."):
         rules_df = sheets.read_config(CONFIG_SHEET_ID, "Rules")
         offsets_df = sheets.read_config(CONFIG_SHEET_ID, "Offsets")
         mapping_df = sheets.read_config(CONFIG_SHEET_ID, "Mapping")
+        
+        if rules_df is None or offsets_df is None or mapping_df is None:
+            st.error("❌ Error: Could not load config sheets")
+            st.stop()
         
         rules_df = rules_df.rename(columns={'Client': 'Client_or_Resource'})
         
@@ -36,22 +54,427 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             mapping_df[mapping_df['Source_System'] == 'QuickBooks']['After_Name']
         ))
         
-        st.success(f"✅ Loaded {len(rules_df)} rules")
+        st.success(f"✅ Loaded {len(rules_df)} rules, {len(offsets_df)} offsets, {len(client_name_map)} mappings")
     
-    with st.spinner("Pulling data from QuickBooks and BigTime..."):
+    # ============================================================
+    # PHASE 2: PULL API DATA
+    # ============================================================
+    
+    with st.spinner("📡 Pulling data from QuickBooks and BigTime..."):
         df_qb_raw = quickbooks.get_consulting_income(year)
         df_bt_raw = bigtime.get_time_report(year)
         
-        st.success(f"✅ QB: {len(df_qb_raw)} transactions | BT: {len(df_bt_raw)} entries")
+        if df_qb_raw.empty or df_bt_raw.empty:
+            st.error("❌ Error: No data returned from APIs")
+            st.stop()
+        
+        st.success(f"✅ QB: {len(df_qb_raw)} transactions (${df_qb_raw['TotalAmount'].astype(float).sum():,.2f}) | BT: {len(df_bt_raw)} entries")
     
-    with st.spinner("Calculating commissions..."):
-        # Your existing calculation logic here
-        # (I'll give you the rest in the next message - this is getting long)
-        st.success("✅ Calculations complete!")
+    # ============================================================
+    # PHASE 3: PROCESS QUICKBOOKS DATA (CLIENT COMMISSIONS)
+    # ============================================================
     
-    # Show results
-    st.header("Results")
-    st.metric("Total Commission Amount", "$325,685.36")
+    with st.spinner("💰 Calculating client commissions..."):
+        qb = df_qb_raw.copy()
+        qb["TransactionDate"] = pd.to_datetime(qb["TransactionDate"])
+        qb["Amount"] = pd.to_numeric(qb["TotalAmount"])
+        qb["Year"] = qb["TransactionDate"].dt.year
+        
+        # Parse client name - split on ":" and take first part
+        qb["Client_Raw"] = qb["Customer"].astype(str).str.split(":", n=1).str[0].str.strip()
+        qb["Client_Normalized"] = qb["Client_Raw"].replace(client_name_map)
+        
+        qb_year = qb[qb["Year"] == year].copy()
+        
+        # Prepare rules
+        rules_client = rules_df[rules_df['Rule_Scope'] == 'client'].copy()
+        rules_client['Start_Date'] = pd.to_datetime(rules_client['Start_Date'])
+        rules_client['End_Date'] = pd.to_datetime(rules_client['End_Date'], errors='coerce')
+        
+        # Calculate commissions
+        commission_records = []
+        
+        for idx, invoice in qb_year.iterrows():
+            client = invoice['Client_Normalized']
+            inv_date = invoice['TransactionDate']
+            amount = invoice['Amount']
+            
+            applicable_rules = rules_client[
+                (rules_client['Client_or_Resource'] == client) &
+                (rules_client['Start_Date'] <= inv_date) &
+                ((rules_client['End_Date'].isna()) | (rules_client['End_Date'] >= inv_date))
+            ]
+            
+            for _, rule in applicable_rules.iterrows():
+                commission_records.append({
+                    'Salesperson': rule['Salesperson'],
+                    'Client': client,
+                    'Category': rule['Category'],
+                    'Invoice_Date': inv_date,
+                    'Invoice_Amount': amount,
+                    'Commission_Rate': rule['Rate'],
+                    'Commission_Amount': amount * rule['Rate'],
+                    'Source': 'QuickBooks - Client Commission'
+                })
+        
+        client_commissions = pd.DataFrame(commission_records)
+        
+        if not client_commissions.empty:
+            st.success(f"✅ {len(client_commissions)} client commission entries: ${client_commissions['Commission_Amount'].sum():,.2f}")
+        else:
+            st.warning("⚠️ No client commissions calculated")
     
+    # ============================================================
+    # PHASE 4: PROCESS BIGTIME DATA (DELIVERY & REFERRAL)
+    # ============================================================
+    
+    with st.spinner("🔨 Calculating delivery & referral commissions..."):
+        bt = df_bt_raw.copy()
+        
+        rules_resource = rules_df[rules_df['Rule_Scope'] == 'resource'].copy()
+        rules_resource['Start_Date'] = pd.to_datetime(rules_resource['Start_Date'])
+        rules_resource['End_Date'] = pd.to_datetime(rules_resource['End_Date'], errors='coerce')
+        
+        resource_records = []
+        
+        # Find columns
+        revenue_col = None
+        for col_name in ['Billable ($)', 'Revenue_Amount', 'tmchgbillbase']:
+            if col_name in bt.columns:
+                revenue_col = col_name
+                break
+        
+        date_col = None
+        for col_name in ['Date', 'tmdt']:
+            if col_name in bt.columns:
+                date_col = col_name
+                break
+        
+        staff_col = None
+        for col_name in ['Staff Member', 'Staff_Member', 'tmstaffnm']:
+            if col_name in bt.columns:
+                staff_col = col_name
+                break
+        
+        if revenue_col and date_col and staff_col:
+            bt['Revenue'] = pd.to_numeric(bt[revenue_col], errors='coerce')
+            bt['Date'] = pd.to_datetime(bt[date_col], errors='coerce')
+            
+            for idx, time_entry in bt.iterrows():
+                staff = time_entry.get(staff_col, None)
+                date = time_entry.get('Date', None)
+                revenue = time_entry.get('Revenue', 0)
+                
+                if not staff or pd.isna(date) or revenue == 0:
+                    continue
+                
+                applicable_rules = rules_resource[
+                    (rules_resource['Client_or_Resource'] == staff) &
+                    (rules_resource['Start_Date'] <= date) &
+                    ((rules_resource['End_Date'].isna()) | (rules_resource['End_Date'] >= date))
+                ]
+                
+                for _, rule in applicable_rules.iterrows():
+                    resource_records.append({
+                        'Salesperson': rule['Salesperson'],
+                        'Client': staff,
+                        'Category': rule['Category'],
+                        'Invoice_Date': date,
+                        'Invoice_Amount': revenue,
+                        'Commission_Rate': rule['Rate'],
+                        'Commission_Amount': revenue * rule['Rate'],
+                        'Source': f'BigTime - {rule["Category"]}'
+                    })
+        
+        resource_commissions = pd.DataFrame(resource_records)
+        
+        if not resource_commissions.empty:
+            st.success(f"✅ {len(resource_commissions)} resource commission entries: ${resource_commissions['Commission_Amount'].sum():,.2f}")
+        else:
+            st.warning("⚠️ No resource commissions calculated")
+    
+    # ============================================================
+    # PHASE 5: COMBINE & APPLY OFFSETS
+    # ============================================================
+    
+    with st.spinner("🔄 Applying offsets..."):
+        all_commissions = pd.concat([client_commissions, resource_commissions], ignore_index=True)
+        
+        # Process offsets
+        offsets_df['Effective_Date'] = pd.to_datetime(offsets_df['Effective_Date'], format='mixed')
+        
+        def parse_accounting_amount(val):
+            if pd.isna(val):
+                return 0
+            val_str = str(val).strip()
+            is_negative = val_str.startswith('(') and val_str.endswith(')')
+            val_clean = val_str.replace('(', '').replace(')', '').replace(',', '').strip()
+            try:
+                amount = float(val_clean)
+                return -amount if is_negative else amount
+            except:
+                return 0
+        
+        offsets_df['Amount'] = offsets_df['Amount'].apply(parse_accounting_amount)
+        offsets_year = offsets_df[offsets_df['Effective_Date'].dt.year == year]
+        
+        if not offsets_year.empty:
+            for _, offset in offsets_year.iterrows():
+                offset_record = pd.DataFrame([{
+                    'Salesperson': offset['Salesperson'],
+                    'Client': 'Offset',
+                    'Category': offset['Category'],
+                    'Invoice_Date': offset['Effective_Date'],
+                    'Invoice_Amount': 0,
+                    'Commission_Rate': 0,
+                    'Commission_Amount': offset['Amount'],
+                    'Source': f"Offset - {offset.get('Note', '')}"
+                }])
+                all_commissions = pd.concat([all_commissions, offset_record], ignore_index=True)
+            
+            st.success(f"✅ Applied {len(offsets_year)} offsets: ${offsets_year['Amount'].sum():,.2f}")
+    
+    # ============================================================
+    # PHASE 6: CALCULATE SUMMARIES
+    # ============================================================
+    
+    final_summary = all_commissions.groupby('Salesperson', as_index=False).agg({
+        'Commission_Amount': 'sum'
+    }).round(2)
+    final_summary.columns = ['Salesperson', 'Total_Commission']
+    
+    category_summary = all_commissions.groupby(['Salesperson', 'Category'], as_index=False).agg({
+        'Commission_Amount': 'sum'
+    }).round(2)
+    
+    revenue_by_client = qb_year.groupby('Client_Normalized').agg({
+        'Amount': 'sum',
+        'TransactionDate': 'count'
+    }).rename(columns={'Amount': 'Total_Revenue', 'TransactionDate': 'Transactions'})
+    revenue_by_client = revenue_by_client.sort_values('Total_Revenue', ascending=False)
+    
+    # ============================================================
+    # PHASE 7: DISPLAY RESULTS
+    # ============================================================
+    
+    st.success("✅ Calculations complete!")
+    
+    st.header("📊 Results Summary")
+    
+    # Summary metrics
+    cols = st.columns(len(final_summary))
+    for idx, (_, row) in enumerate(final_summary.iterrows()):
+        with cols[idx]:
+            st.metric(
+                row['Salesperson'],
+                f"${row['Total_Commission']:,.2f}",
+                delta=None
+            )
+    
+    # Tabs for detailed views
+    tab1, tab2, tab3 = st.tabs(["💰 By Category", "🏢 Revenue by Client", "📋 Full Ledger"])
+    
+    with tab1:
+        st.subheader("Commission Breakdown by Category")
+        for salesperson in final_summary['Salesperson'].unique():
+            sp_categories = category_summary[category_summary['Salesperson'] == salesperson]
+            with st.expander(f"**{salesperson}** - ${sp_categories['Commission_Amount'].sum():,.2f}"):
+                st.dataframe(
+                    sp_categories[['Category', 'Commission_Amount']].style.format({'Commission_Amount': '${:,.2f}'}),
+                    hide_index=True
+                )
+    
+    with tab2:
+        st.subheader(f"Revenue by Client - {year}")
+        st.write(f"**Total Clients:** {len(revenue_by_client)} | **Total Revenue:** ${revenue_by_client['Total_Revenue'].sum():,.2f}")
+        st.dataframe(
+            revenue_by_client.style.format({'Total_Revenue': '${:,.2f}', 'Transactions': '{:.0f}'}),
+            height=400
+        )
+    
+    with tab3:
+        st.subheader("Full Commission Ledger")
+        ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+        st.dataframe(
+            ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].style.format({
+                'Invoice_Amount': '${:,.2f}',
+                'Commission_Rate': '{:.2%}',
+                'Commission_Amount': '${:,.2f}',
+                'Invoice_Date': lambda x: x.strftime('%Y-%m-%d') if pd.notna(x) else ''
+            }),
+            height=400,
+            hide_index=True
+        )
+    
+    # ============================================================
+    # PHASE 8: EXPORT TO GOOGLE SHEETS
+    # ============================================================
+    
+    st.divider()
+    
+    if st.button("📤 Export to Google Sheets", type="secondary"):
+        with st.spinner("Creating Google Sheet report..."):
+            try:
+                # Get credentials
+                try:
+                    from google.oauth2.service_account import Credentials
+                    SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 
+                              'https://www.googleapis.com/auth/drive']
+                    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                    creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
+                except:
+                    # Fallback for Colab
+                    creds, _ = default(scopes=SCOPES)
+                
+                gc = gspread.authorize(creds)
+                
+                # Create sheet
+                report_timestamp = datetime.now().strftime('%Y-%m-%d_%H%M')
+                report_name = f"Commission_Report_{report_timestamp}"
+                sh = gc.create(report_name)
+                
+                # Move to reports folder (with Shared Drive support)
+                from googleapiclient.discovery import build
+                drive_service = build('drive', 'v3', credentials=creds)
+                
+                file = drive_service.files().get(
+                    fileId=sh.id, 
+                    fields='parents',
+                    supportsAllDrives=True
+                ).execute()
+                previous_parents = ",".join(file.get('parents', []))
+                
+                drive_service.files().update(
+                    fileId=sh.id,
+                    addParents=REPORTS_FOLDER_ID,
+                    removeParents=previous_parents,
+                    fields='id, parents',
+                    supportsAllDrives=True,
+                    supportsTeamDrives=True
+                ).execute()
+                
+                # Create tabs with data
+                ws_overall = sh.sheet1
+                ws_overall.update_title("Overall")
+                
+                # Overall summary data
+                overall_data = [
+                    [f"COMMISSION REPORT - {year}"],
+                    [],
+                    ["SUMMARY BY SALESPERSON"],
+                    ["Salesperson", "Total Commission"]
+                ]
+                for _, row in final_summary.iterrows():
+                    overall_data.append([row['Salesperson'], row['Total_Commission']])
+                
+                overall_data.append([])
+                overall_data.append(["BREAKDOWN BY CATEGORY"])
+                overall_data.append(["Salesperson", "Category", "Amount"])
+                for _, row in category_summary.iterrows():
+                    overall_data.append([row['Salesperson'], row['Category'], row['Commission_Amount']])
+                
+                overall_data.append([])
+                overall_data.append([])
+                
+                ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+                overall_data.append(["FULL COMMISSION LEDGER"])
+                overall_data.append(["Salesperson", "Client or Resource", "Category", "Date", "Invoice Amount", "Rate", "Commission", "Source"])
+                
+                for _, row in ledger_sorted.iterrows():
+                    overall_data.append([
+                        row['Salesperson'],
+                        row['Client'],
+                        row['Category'],
+                        row['Invoice_Date'].strftime('%Y-%m-%d') if pd.notna(row['Invoice_Date']) else '',
+                        row['Invoice_Amount'],
+                        row['Commission_Rate'],
+                        row['Commission_Amount'],
+                        row['Source']
+                    ])
+                
+                ws_overall.update(values=overall_data, range_name='A1')
+                
+                # Revenue tab
+                ws_revenue = sh.add_worksheet(title="Revenue_by_Client", rows=100, cols=10)
+                revenue_data = [
+                    [f"REVENUE BY CLIENT - {year}"],
+                    [],
+                    [f"Total Clients: {len(revenue_by_client)}"],
+                    [f"Total Revenue: ${revenue_by_client['Total_Revenue'].sum():,.2f}"],
+                    [],
+                    ["Client", "Transactions", "Total Revenue"]
+                ]
+                for client, row in revenue_by_client.iterrows():
+                    revenue_data.append([client, row['Transactions'], row['Total_Revenue']])
+                
+                ws_revenue.update(values=revenue_data, range_name='A1')
+                
+                # Individual salesperson tabs
+                for salesperson in final_summary['Salesperson'].unique():
+                    sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
+                    sp_summary = final_summary[final_summary['Salesperson'] == salesperson]
+                    sp_categories = category_summary[category_summary['Salesperson'] == salesperson]
+                    
+                    safe_name = salesperson.replace(' ', '_')[:25]
+                    ws_sp = sh.add_worksheet(title=safe_name, rows=500, cols=10)
+                    
+                    sp_data = [
+                        [f"COMMISSION REPORT: {salesperson.upper()}"],
+                        [f"Year: {year}"],
+                        [],
+                        ["SUMMARY"],
+                        ["Total Commission", sp_summary.iloc[0]['Total_Commission']],
+                        [],
+                        ["BREAKDOWN BY CATEGORY"],
+                        ["Category", "Amount"]
+                    ]
+                    for _, row in sp_categories.iterrows():
+                        sp_data.append([row['Category'], row['Commission_Amount']])
+                    
+                    sp_data.append([])
+                    sp_data.append([])
+                    
+                    sp_commissions_sorted = sp_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
+                    sp_data.append(["COMMISSION LEDGER"])
+                    sp_data.append(["Client or Resource", "Category", "Date", "Invoice Amount", "Rate", "Commission", "Source"])
+                    
+                    for _, row in sp_commissions_sorted.iterrows():
+                        sp_data.append([
+                            row['Client'],
+                            row['Category'],
+                            row['Invoice_Date'].strftime('%Y-%m-%d') if pd.notna(row['Invoice_Date']) else '',
+                            row['Invoice_Amount'],
+                            row['Commission_Rate'],
+                            row['Commission_Amount'],
+                            row['Source']
+                        ])
+                    
+                    ws_sp.update(values=sp_data, range_name='A1')
+                
+                st.success(f"✅ Report created successfully!")
+                st.markdown(f"**[Open Report in Google Sheets]({sh.url})**")
+                
+            except Exception as e:
+                st.error(f"❌ Export failed: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
 else:
-    st.info("👆 Click the button above to run the commission calculator")
+    st.info("👆 Click the button above to calculate commissions for the selected year")
+    
+    with st.expander("ℹ️ How it works"):
+        st.markdown("""
+        This calculator:
+        1. Loads commission rules from **Voyage_Global_Config** Google Sheet
+        2. Pulls **QuickBooks** consulting income (cash basis)
+        3. Pulls **BigTime** time entries for delivery and referral commissions
+        4. Calculates commissions based on date ranges and rates
+        5. Applies offsets (salaries, benefits, etc.)
+        6. Exports detailed report to Google Sheets
+        
+        **Commission Types:**
+        - **Client Commission** - % of revenue from specific clients
+        - **Delivery Commission** - % of own billable work
+        - **Referral Commission** - % of referred staff's work
+        - **Offsets** - Salaries, benefits, prior payments
+        """)
