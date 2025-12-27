@@ -296,18 +296,32 @@ with col3:
 
 st.divider()
 
-# Secondary metrics
+# Secondary metrics with different styling
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric("Base Salaries (Monthly)", f"${total_salary_monthly:,.2f}", f"${total_salary_monthly * 12:,.2f}/year")
+    st.metric(
+        "Base Salaries (Monthly)", 
+        f"${total_salary_monthly:,.2f}", 
+        f"${total_salary_monthly * 12:,.2f}/year",
+        delta_color="off"
+    )
 
 with col2:
-    st.metric("Benefits + Taxes (Monthly)", f"${total_benefits + total_401k + total_fica:,.2f}", f"${(total_benefits + total_401k + total_fica) * 12:,.2f}/year")
+    st.metric(
+        "Benefits + Taxes (Monthly)", 
+        f"${total_benefits + total_401k + total_fica:,.2f}", 
+        f"${(total_benefits + total_401k + total_fica) * 12:,.2f}/year",
+        delta_color="off"
+    )
 
 with col3:
-    burden_rate = ((total_monthly_sum - total_salary_monthly) / total_salary_monthly * 100) if total_salary_monthly > 0 else 0
-    st.metric("Burden Rate", f"{burden_rate:.1f}%", "Above base salary")
+    st.metric(
+        "Burden Rate", 
+        f"{burden_rate:.1f}%", 
+        "Above base salary",
+        delta_color="off"
+    )
 
 st.divider()
 
@@ -327,6 +341,16 @@ if include_bonuses:
             "Firm Benefits",
             "401(k) Match (4%)",
             "FICA (7.65%)",
+        ],
+        "Per Pay Period": [
+            total_salary_monthly / 2,
+            results_df["Monthly_Utilization_Bonus"].sum() / 2,
+            results_df["Monthly_Other_Bonus"].sum() / 2,
+            (total_salary_monthly + results_df["Monthly_Utilization_Bonus"].sum() + results_df["Monthly_Other_Bonus"].sum()) / 2,
+            results_df["Phone_Allowance"].sum() / 2,
+            total_benefits / 2,
+            total_401k / 2,
+            total_fica / 2,
         ],
         "Monthly": [
             total_salary_monthly,
@@ -348,6 +372,13 @@ else:
             "401(k) Match (4%)",
             "FICA (7.65%)",
         ],
+        "Per Pay Period": [
+            total_salary_monthly / 2,
+            results_df["Phone_Allowance"].sum() / 2,
+            total_benefits / 2,
+            total_401k / 2,
+            total_fica / 2,
+        ],
         "Monthly": [
             total_salary_monthly,
             results_df["Phone_Allowance"].sum(),
@@ -365,6 +396,7 @@ breakdown_df["Annual"] = breakdown_df["Monthly"] * 12
 # Add total row
 total_row = pd.DataFrame({
     "Component": ["TOTAL"],
+    "Per Pay Period": [breakdown_df["Per Pay Period"].sum()],
     "Monthly": [breakdown_df["Monthly"].sum()],
     "Annual": [breakdown_df["Annual"].sum()]
 })
@@ -380,6 +412,7 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
     column_config={
+        "Per Pay Period": st.column_config.NumberColumn(format="$%.2f"),
         "Monthly": st.column_config.NumberColumn(format="$%.2f"),
         "Annual": st.column_config.NumberColumn(format="$%.2f"),
     }
