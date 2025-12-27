@@ -579,8 +579,13 @@ with pd.ExcelWriter(output, engine="openpyxl") as writer:
     summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
     breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
     
-    # Export full details (excluding Salary column)
+    # Export full details - ABSOLUTELY ensure Salary column is removed
     export_details = results_df.drop(columns=["Salary"], errors="ignore")
+    
+    # Double-check Salary is not in columns (defensive programming)
+    if "Salary" in export_details.columns:
+        export_details = export_details.drop(columns=["Salary"])
+    
     export_details.to_excel(writer, sheet_name="Employee Details", index=False)
 
 excel_data = output.getvalue()
