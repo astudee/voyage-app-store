@@ -206,50 +206,167 @@ st.header("📊 Summary")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.metric(
-        "Total Monthly Cost",
-        f"${results_df['Total_Monthly'].sum():,.2f}",
-        f"${results_df['Total_Yearly'].sum():,.2f}/year"
-    )
+    total_monthly = results_df['Total_Monthly'].sum()
+    total_yearly = results_df['Total_Yearly'].sum()
+    st.markdown(f"""
+    <div style='padding: 1rem; background-color: #FFF4E6; border-radius: 0.5rem; border-left: 4px solid #FF9800;'>
+        <h3 style='margin: 0; color: #666;'>Total Monthly Cost</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_yearly:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col2:
-    st.metric(
-        "Employee Paid (Monthly)",
-        f"${results_df['EE_Monthly'].sum():,.2f}",
-        f"${results_df['EE_Yearly'].sum():,.2f}/year"
-    )
+    ee_monthly = results_df['EE_Monthly'].sum()
+    ee_yearly = results_df['EE_Yearly'].sum()
+    st.markdown(f"""
+    <div style='padding: 1rem; background-color: #FFF4E6; border-radius: 0.5rem; border-left: 4px solid #FF9800;'>
+        <h3 style='margin: 0; color: #666;'>Employee Paid (Monthly)</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${ee_monthly:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${ee_yearly:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col3:
-    st.metric(
-        "Firm Paid (Monthly)",
-        f"${results_df['Firm_Monthly'].sum():,.2f}",
-        f"${results_df['Firm_Yearly'].sum():,.2f}/year"
-    )
+    firm_monthly = results_df['Firm_Monthly'].sum()
+    firm_yearly = results_df['Firm_Yearly'].sum()
+    st.markdown(f"""
+    <div style='padding: 1rem; background-color: #FFF4E6; border-radius: 0.5rem; border-left: 4px solid #FF9800;'>
+        <h3 style='margin: 0; color: #666;'>Firm Paid (Monthly)</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${firm_monthly:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${firm_yearly:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
 # Breakdown by benefit type
 st.header("📈 Breakdown by Benefit Type")
 
-breakdown_data = {
-    'Medical': results_df['Medical_Cost'].sum(),
-    'Dental': results_df['Dental_Cost'].sum(),
-    'Vision': results_df['Vision_Cost'].sum(),
-    'STD': results_df['STD_Cost'].sum(),
-    'LTD': results_df['LTD_Cost'].sum(),
-    'Life/AD&D': results_df['Life_Cost'].sum()
-}
+# Calculate breakdown with employee/firm split
+breakdown_rows = []
+for benefit_name in ['Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life/AD&D']:
+    cost_col = benefit_name.replace('/AD&D', '') + '_Cost'
+    
+    # Calculate EE and Firm portions for this benefit type
+    ee_cost = 0
+    firm_cost = 0
+    total_cost = results_df[cost_col].sum()
+    
+    # Get EE/Firm split from individual employees
+    for _, emp in results_df.iterrows():
+        benefit_code = None
+        salary = emp['Salary']
+        
+        if benefit_name == 'Medical':
+            benefit_code = emp['Medical']
+        elif benefit_name == 'Dental':
+            benefit_code = emp['Dental']
+        elif benefit_name == 'Vision':
+            benefit_code = emp['Vision']
+        elif benefit_name == 'STD':
+            benefit_code = emp['STD']
+        elif benefit_name == 'LTD':
+            benefit_code = emp['LTD']
+        elif benefit_name == 'Life/AD&D':
+            benefit_code = emp['Life']
+        
+        if benefit_code and benefit_code in benefits_lookup:
+            benefit = benefits_lookup[benefit_code]
+            
+            # Calculate costs for this employee
+            if benefit['is_formula']:
+                if benefit_code.startswith('SE'):  # STD
+                    emp_cost = calculate_std_cost(salary)
+                    if benefit_code == 'SE1':
+                        firm_cost += emp_cost
+                    elif benefit_code == 'SE2':
+                        ee_cost += emp_cost
+                elif benefit_code.startswith('LE'):  # LTD
+                    emp_cost = calculate_ltd_cost(salary)
+                    if benefit_code == 'LE1':
+                        firm_cost += emp_cost
+                    elif benefit_code == 'LE2':
+                        ee_cost += emp_cost
+            else:
+                # Fixed cost
+                ee_cost += benefit['ee_cost'] if not pd.isna(benefit['ee_cost']) else 0
+                firm_cost += benefit['firm_cost'] if not pd.isna(benefit['firm_cost']) else 0
+    
+    breakdown_rows.append({
+        'Benefit Type': benefit_name,
+        'Employee Monthly Cost': ee_cost,
+        'Firm Monthly Cost': firm_cost,
+        'Total Monthly Cost': total_cost,
+        'Employee Annual Cost': ee_cost * 12,
+        'Firm Annual Cost': firm_cost * 12,
+        'Total Annual Cost': total_cost * 12
+    })
 
-breakdown_df = pd.DataFrame([
-    {
-        'Benefit Type': k,
-        'Monthly Cost': f"${v:,.2f}",
-        'Yearly Cost': f"${v * 12:,.2f}"
-    }
-    for k, v in breakdown_data.items()
-])
+# Add totals row
+breakdown_rows.append({
+    'Benefit Type': 'TOTAL',
+    'Employee Monthly Cost': sum(r['Employee Monthly Cost'] for r in breakdown_rows),
+    'Firm Monthly Cost': sum(r['Firm Monthly Cost'] for r in breakdown_rows),
+    'Total Monthly Cost': sum(r['Total Monthly Cost'] for r in breakdown_rows),
+    'Employee Annual Cost': sum(r['Employee Annual Cost'] for r in breakdown_rows),
+    'Firm Annual Cost': sum(r['Firm Annual Cost'] for r in breakdown_rows),
+    'Total Annual Cost': sum(r['Total Annual Cost'] for r in breakdown_rows)
+})
 
-st.dataframe(breakdown_df, use_container_width=True, hide_index=True)
+breakdown_df = pd.DataFrame(breakdown_rows)
+
+# Format currency columns
+for col in breakdown_df.columns:
+    if 'Cost' in col:
+        breakdown_df[col] = breakdown_df[col].apply(lambda x: f"${x:,.2f}")
+
+# Style the total row
+def highlight_total(row):
+    if row['Benefit Type'] == 'TOTAL':
+        return ['font-weight: bold; background-color: #f0f0f0'] * len(row)
+    return [''] * len(row)
+
+styled_breakdown = breakdown_df.style.apply(highlight_total, axis=1)
+st.dataframe(styled_breakdown, use_container_width=True, hide_index=True)
+
+st.divider()
+
+# Legend
+st.header("📖 Benefits Legend")
+
+with st.expander("View benefit plan codes and descriptions", expanded=False):
+    # Group benefits by type
+    legend_data = []
+    
+    for code, details in sorted(benefits_lookup.items()):
+        legend_data.append({
+            'Code': code,
+            'Description': details['description']
+        })
+    
+    legend_df = pd.DataFrame(legend_data)
+    
+    # Separate by benefit type
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Medical, Dental, Vision")
+        mdv_df = legend_df[legend_df['Code'].str.match(r'^(M|D|V)')].copy()
+        st.dataframe(mdv_df, use_container_width=True, hide_index=True)
+    
+    with col2:
+        st.subheader("STD, LTD, Life/AD&D")
+        other_df = legend_df[legend_df['Code'].str.match(r'^(SE|LE|TE)')].copy()
+        st.dataframe(other_df, use_container_width=True, hide_index=True)
+    
+    st.info("""
+    **Formula-Based Benefits:**
+    - **SE1/SE2**: STD cost calculated from salary (66.67% of weekly salary, max $2,100/week benefit)
+    - **LE1/LE2**: LTD cost calculated from salary (60% of monthly salary, max $9,000/month benefit)
+    - **SE1/LE1**: 100% Firm Paid
+    - **SE2/LE2**: 100% Employee Paid
+    """)
 
 st.divider()
 
@@ -261,7 +378,7 @@ show_yearly = st.checkbox("Show yearly costs instead of monthly", value=False)
 
 if show_yearly:
     display_df = results_df[[
-        'Staff_Name', 'Salary',
+        'Staff_Name',
         'Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life',
         'Total_Yearly', 'EE_Yearly', 'Firm_Yearly', 'Notes'
     ]].copy()
@@ -273,7 +390,7 @@ if show_yearly:
     })
 else:
     display_df = results_df[[
-        'Staff_Name', 'Salary',
+        'Staff_Name',
         'Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life',
         'Total_Monthly', 'EE_Monthly', 'Firm_Monthly', 'Notes'
     ]].copy()
@@ -285,7 +402,7 @@ else:
     })
 
 # Format currency columns
-cost_cols = [col for col in display_df.columns if 'Cost' in col or 'Paid' in col or col == 'Salary']
+cost_cols = [col for col in display_df.columns if 'Cost' in col or 'Paid' in col]
 for col in cost_cols:
     display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
 
@@ -319,16 +436,9 @@ with col1:
         ])
         summary_df.to_excel(writer, sheet_name='Summary', index=False)
         
-        # Breakdown sheet
-        breakdown_detail = pd.DataFrame([
-            {
-                'Benefit Type': k,
-                'Monthly Cost': v,
-                'Yearly Cost': v * 12
-            }
-            for k, v in breakdown_data.items()
-        ])
-        breakdown_detail.to_excel(writer, sheet_name='Breakdown', index=False)
+        # Breakdown sheet (save the unformatted data for Excel)
+        breakdown_export = pd.DataFrame(breakdown_rows)
+        breakdown_export.to_excel(writer, sheet_name='Breakdown', index=False)
         
         # Employee details
         results_df.to_excel(writer, sheet_name='Employee Details', index=False)
@@ -343,12 +453,74 @@ with col1:
     )
 
 with col2:
-    # Export to CSV
-    csv_data = results_df.to_csv(index=False)
+    # Email report
+    notification_email = st.secrets.get("NOTIFICATION_EMAIL", "astudee@voyageadvisory.com")
+    email_to = st.text_input("Email report to:", value=notification_email)
     
-    st.download_button(
-        label="📄 Download CSV",
-        data=csv_data,
-        file_name=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.csv",
-        mime="text/csv"
-    )
+    if st.button("📧 Send Email Report"):
+        if email_to:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.message import EmailMessage
+                
+                service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                credentials = service_account.Credentials.from_service_account_info(
+                    service_account_info,
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+                
+                gmail_service = build('gmail', 'v1', credentials=credentials)
+                
+                # Create email with attachment
+                msg = EmailMessage()
+                msg['To'] = email_to
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
+                
+                # Email body
+                total_monthly = results_df['Total_Monthly'].sum()
+                ee_monthly = results_df['EE_Monthly'].sum()
+                firm_monthly = results_df['Firm_Monthly'].sum()
+                
+                msg.set_content(f"""Benefits Calculator Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+Summary:
+- Total Monthly Cost: ${total_monthly:,.2f}
+- Employee Paid: ${ee_monthly:,.2f}
+- Firm Paid: ${firm_monthly:,.2f}
+
+Total Annual Cost: ${total_monthly * 12:,.2f}
+- Employee: ${ee_monthly * 12:,.2f}
+- Firm: ${firm_monthly * 12:,.2f}
+
+Detailed breakdown attached in Excel file.
+
+--
+Voyage Advisory Benefits Calculator
+""")
+                
+                # Attach Excel file
+                msg.add_attachment(
+                    excel_data,
+                    maintype='application',
+                    subtype='vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    filename=f'benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx'
+                )
+                
+                # Send email
+                encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+                gmail_service.users().messages().send(
+                    userId='me',
+                    body={'raw': encoded}
+                ).execute()
+                
+                st.success(f"✅ Email sent to {email_to}")
+                
+            except Exception as e:
+                st.error(f"❌ Failed to send email: {str(e)}")
+        else:
+            st.warning("Please enter an email address")
