@@ -385,32 +385,44 @@ for _, emp in results_df.iterrows():
     
     salary = emp['Salary']
     
-    # Calculate individual EE/Firm splits
-    def get_ee_firm_split(code, total_cost):
+    # Calculate individual EE/Firm splits by looking up from Benefits tab
+    def get_costs_from_benefits_tab(code):
+        """Look up costs directly from Benefits tab"""
         if pd.isna(code) or code == '' or code not in benefits_lookup:
-            return 0, 0
+            return 0, 0, 0  # total, ee, firm
         
         benefit = benefits_lookup[code]
         
         if benefit['is_formula']:
-            if code in ['SE1', 'LE1']:  # Firm paid
-                return 0, total_cost
-            elif code in ['SE2', 'LE2']:  # Employee paid
-                return total_cost, 0
+            # For formula-based (STD/LTD), calculate the total cost
+            if code.startswith('SE'):  # STD
+                total = calculate_std_cost(salary)
+            elif code.startswith('LE'):  # LTD
+                total = calculate_ltd_cost(salary)
+            else:
+                total = 0
+            
+            # Determine EE vs Firm split for formula-based
+            if code in ['SE1', 'LE1']:  # Firm paid 100%
+                return total, 0, total
+            elif code in ['SE2', 'LE2']:  # Employee paid 100%
+                return total, total, 0
+            else:  # Declined
+                return 0, 0, 0
         else:
+            # Fixed cost - get directly from Benefits tab columns D, E, F
+            total = benefit['total_cost'] if not pd.isna(benefit['total_cost']) else 0
             ee = benefit['ee_cost'] if not pd.isna(benefit['ee_cost']) else 0
             firm = benefit['firm_cost'] if not pd.isna(benefit['firm_cost']) else 0
-            return ee, firm
-        
-        return 0, 0
+            return total, ee, firm
     
-    # Get EE/Firm for each benefit
-    med_ee, med_firm = get_ee_firm_split(medical_code, emp['Medical_Cost'])
-    den_ee, den_firm = get_ee_firm_split(dental_code, emp['Dental_Cost'])
-    vis_ee, vis_firm = get_ee_firm_split(vision_code, emp['Vision_Cost'])
-    std_ee, std_firm = get_ee_firm_split(std_code, emp['STD_Cost'])
-    ltd_ee, ltd_firm = get_ee_firm_split(ltd_code, emp['LTD_Cost'])
-    life_ee, life_firm = get_ee_firm_split(life_code, emp['Life_Cost'])
+    # Get costs for each benefit by looking them up
+    med_total, med_ee, med_firm = get_costs_from_benefits_tab(medical_code)
+    den_total, den_ee, den_firm = get_costs_from_benefits_tab(dental_code)
+    vis_total, vis_ee, vis_firm = get_costs_from_benefits_tab(vision_code)
+    std_total, std_ee, std_firm = get_costs_from_benefits_tab(std_code)
+    ltd_total, ltd_ee, ltd_firm = get_costs_from_benefits_tab(ltd_code)
+    life_total, life_ee, life_firm = get_costs_from_benefits_tab(life_code)
     
     detail_display.append({
         'Staff Member': emp['Staff_Name'],
