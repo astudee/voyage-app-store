@@ -163,7 +163,7 @@ with col1:
         index=0
     )
 with col2:
-    start_year = st.selectbox("Start Year", options=[2024, 2025, 2026], index=1)
+    start_year = st.selectbox("Start Year", options=list(range(2024, 2036)), index=1)
 
 col3, col4 = st.sidebar.columns(2)
 with col3:
@@ -174,7 +174,7 @@ with col3:
         index=11
     )
 with col4:
-    end_year = st.selectbox("End Year", options=[2024, 2025, 2026], index=1)
+    end_year = st.selectbox("End Year", options=list(range(2024, 2036)), index=1)
 
 # Calculate date range
 start_date = date(start_year, start_month, 1)
@@ -799,24 +799,29 @@ if st.sidebar.button("Generate Report", type="primary"):
                     # Revenue: Use quartile-based coloring (new logic)
                     def style_revenue(row):
                         styles = []
-                        for col in row.index[:-1]:  # Exclude Total column
-                            val = row[col]
+                        for col_str in row.index[:-1]:  # Exclude Total column
+                            val = row[col_str]
                             if pd.isna(val) or val == 0:
                                 styles.append('')
                             else:
-                                # Get all non-zero values in this column across all staff in this category
-                                col_values = category_data[col][category_data[col] > 0]
-                                if len(col_values) > 0:
-                                    q75 = col_values.quantile(0.75)  # Top 25%
-                                    q50 = col_values.quantile(0.50)  # Top 50%
-                                    
-                                    if val >= q75:
-                                        styles.append('background-color: #D5F4E6')  # Light green - top 25%
-                                    elif val >= q50:
-                                        styles.append('background-color: #FCF3CF')  # Light yellow - 25-50%
+                                # Convert string column name back to Period to access original data
+                                try:
+                                    period = pd.Period(col_str, freq='M')
+                                    # Get all non-zero values in this column across all staff in this category
+                                    col_values = category_data[period][category_data[period] > 0]
+                                    if len(col_values) > 0:
+                                        q75 = col_values.quantile(0.75)  # Top 25%
+                                        q50 = col_values.quantile(0.50)  # Top 50%
+                                        
+                                        if val >= q75:
+                                            styles.append('background-color: #D5F4E6')  # Light green - top 25%
+                                        elif val >= q50:
+                                            styles.append('background-color: #FCF3CF')  # Light yellow - 25-50%
+                                        else:
+                                            styles.append('background-color: #D6EAF8')  # Light blue - bottom 50%
                                     else:
-                                        styles.append('background-color: #D6EAF8')  # Light blue - bottom 50%
-                                else:
+                                        styles.append('')
+                                except:
                                     styles.append('')
                         styles.append('')  # Total column - no color
                         return styles
@@ -825,14 +830,16 @@ if st.sidebar.button("Generate Report", type="primary"):
                 
                 st.dataframe(styled, use_container_width=True)
             
-            # Show capacity reference
+            # Show capacity reference (transposed for easier month-by-month comparison)
             st.subheader("Monthly Capacity Reference")
-            capacity_df = pd.DataFrame({
-                'Month': [f"{calendar.month_abbr[m['month']]}-{m['year'] % 100}" for m in month_cols],
+            capacity_data = {
                 'Monthly Capacity': [round(monthly_capacity[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols],
                 'Capacity @ 1840': [153.3] * len(month_cols),
                 'Capacity * 80%': [round(capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols]
-            })
+            }
+            capacity_df = pd.DataFrame(capacity_data, 
+                                      index=[f"{calendar.month_abbr[m['month']]}-{m['year'] % 100}" for m in month_cols])
+            capacity_df = capacity_df.T  # Transpose so months are columns
             st.dataframe(capacity_df, use_container_width=True)
             
             # Export to Excel
