@@ -128,6 +128,9 @@ def check_google_drive():
                 'details': 'Missing service account credentials'
             }
         
+        # Get service account email for debugging
+        sa_email = service_account_info.get('client_email', 'unknown')
+        
         # Get folder IDs from secrets
         folder_configs = {
             'To-File Inbox': st.secrets.get("FOLDER_TO_FILE"),
@@ -148,10 +151,12 @@ def check_google_drive():
                 'details': 'No FOLDER_* settings found in secrets'
             }
         
-        # Create credentials with Drive scope (use full drive scope to match vault apps)
+        # Create credentials with Drive scope AND domain-wide delegation
+        # CRITICAL: Use subject= to impersonate a real user (matches vault apps)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
-            scopes=['https://www.googleapis.com/auth/drive']
+            scopes=['https://www.googleapis.com/auth/drive'],
+            subject='astudee@voyageadvisory.com'  # Run as this user, not service account
         )
         
         # Build Drive service
@@ -163,21 +168,22 @@ def check_google_drive():
         
         for folder_name, folder_id in folder_configs.items():
             try:
-                # Try to get folder metadata
+                # CRITICAL: Add supportsAllDrives=True for Shared Drives
                 folder = service.files().get(
                     fileId=folder_id,
-                    fields='id,name,mimeType'
+                    fields='id,name,mimeType',
+                    supportsAllDrives=True  # Required for Google Workspace Shared Drives
                 ).execute()
                 
                 accessible.append(f"{folder_name} ({folder.get('name', 'unknown')})")
             except Exception as e:
                 error_msg = str(e)
                 if '404' in error_msg:
-                    inaccessible.append(f"{folder_name}: Not found (ID may be wrong)")
-                elif '403' in error_msg or 'permission' in error_msg.lower():
-                    inaccessible.append(f"{folder_name}: Permission denied")
+                    inaccessible.append(f"{folder_name}: Not visible to astudee@voyageadvisory.com (404)")
+                elif '403' in error_msg:
+                    inaccessible.append(f"{folder_name}: Permission denied (403)")
                 else:
-                    inaccessible.append(f"{folder_name}: {str(e)[:50]}")
+                    inaccessible.append(f"{folder_name}: {str(e)[:80]}")
         
         # Determine overall status
         if inaccessible:
@@ -185,7 +191,7 @@ def check_google_drive():
                 'status': 'error',
                 'icon': '❌',
                 'message': f'Cannot access {len(inaccessible)} folder(s)',
-                'details': f"Accessible ({len(accessible)}): {', '.join(accessible) if accessible else 'None'}\n\nInaccessible ({len(inaccessible)}): {', '.join(inaccessible)}"
+                'details': f"Running as: astudee@voyageadvisory.com (via {sa_email})\n\nAccessible ({len(accessible)}): {', '.join(accessible) if accessible else 'None'}\n\nInaccessible ({len(inaccessible)}): {', '.join(inaccessible)}"
             }
         else:
             return {
