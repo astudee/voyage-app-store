@@ -180,7 +180,22 @@ apps = [
             'Shows Total, Employee Paid, Firm Paid breakdowns',
             'Monthly and yearly cost views',
             'Breakdown by benefit type',
-            'Excel and CSV export'
+            'Excel export and email capability'
+        ],
+        'status': '✅ Available'
+    },
+    {
+        'icon': '💵',
+        'name': 'Payroll Calculator',
+        'description': 'Calculate total employer payroll costs',
+        'features': [
+            'Base salary plus bonuses (utilization + other)',
+            'Firm-paid benefits from Benefits Calculator',
+            'Phone allowances and other compensation',
+            '401(k) employer match (4% of included compensation)',
+            'FICA tax calculation (7.65% of included compensation)',
+            'Toggle to include/exclude utilization bonus',
+            'Excel export and email capability'
         ],
         'status': '✅ Available'
     },
