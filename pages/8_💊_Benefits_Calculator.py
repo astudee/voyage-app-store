@@ -29,6 +29,20 @@ if not config_sheet_id:
     st.error("❌ SHEET_CONFIG_ID not found in secrets")
     st.stop()
 
+# Helper functions
+def to_float(val):
+    """Robust float conversion for sheet values (handles $, commas, blanks, strings)"""
+    try:
+        if pd.isna(val):
+            return 0.0
+        s = str(val).strip()
+        if s == "" or s.lower() in ("none", "nan"):
+            return 0.0
+        s = s.replace("$", "").replace(",", "")
+        return float(s)
+    except Exception:
+        return 0.0
+
 # Load configuration data
 with st.spinner("📊 Loading configuration data..."):
     try:
@@ -49,6 +63,14 @@ with st.spinner("📊 Loading configuration data..."):
     except Exception as e:
         st.error(f"❌ Error loading configuration: {str(e)}")
         st.stop()
+
+# Generate Report button
+st.markdown("---")
+if not st.button("📊 Generate Benefits Report", type="primary", use_container_width=True):
+    st.info("👆 Click the button above to generate the benefits cost report")
+    st.stop()
+
+st.markdown("---")
 
 # Create lookup dictionary for benefits
 benefits_lookup = {}
