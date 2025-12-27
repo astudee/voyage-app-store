@@ -395,7 +395,7 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 'Staff': ['Staff Member', 'tmstaffnm', 'Staff'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Total_Hours': ['Hours', 'tmhrs', 'Total Hours', 'Hrs'],  # Total hours per entry
+                'Total_Hours': ['tmhrs', 'Hours', 'Total Hours', 'Hrs'],  # tmhrs is BigTime's hours column!
                 'Billable_Amount': ['Billable ($)', 'tmchgbillbase', 'Billable'],  # Dollar amount
                 'Date': ['Date', 'tmdt'],
                 'Notes': ['Notes', 'tmnotes', 'Note']
