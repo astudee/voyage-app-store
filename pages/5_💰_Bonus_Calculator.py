@@ -192,17 +192,32 @@ def get_bigtime_hours(start_date, end_date, report_id=284796):
         return None
 
 
-def calculate_proration(start_date, report_year):
-    """Calculate proration percentage for first-year employees"""
-    if start_date.year != report_year:
-        return 1.0  # 100% if they started before this year
+def calculate_proration(employee_start_date, report_start_date, report_end_date):
+    """
+    Calculate proration percentage based on how much of the report period the employee worked
     
-    # Days from start date to Dec 31 of report year
-    year_end = date(report_year, 12, 31)
-    days_employed = (year_end - start_date).days + 1  # +1 to include start date
-    days_in_year = 366 if calendar.isleap(report_year) else 365
+    Args:
+        employee_start_date: When employee started
+        report_start_date: Start of report period
+        report_end_date: End of report period
     
-    return days_employed / days_in_year
+    Returns:
+        Proration percentage (0.0 to 1.0)
+    """
+    # If employee started before the report period, they worked the full period
+    if employee_start_date <= report_start_date:
+        return 1.0
+    
+    # If employee started after report period ended, they worked 0%
+    if employee_start_date > report_end_date:
+        return 0.0
+    
+    # Employee started during the report period
+    # Calculate what % of the report period they worked
+    total_days_in_period = (report_end_date - report_start_date).days + 1
+    days_employed_in_period = (report_end_date - employee_start_date).days + 1
+    
+    return days_employed_in_period / total_days_in_period
 
 
 def calculate_tier_bonus(eligible_hours, annual_target, proration):
@@ -309,8 +324,19 @@ if st.sidebar.button("Generate Report", type="primary"):
                 ytd_probono_credit = min(ytd_probono, 40)
                 ytd_eligible = ytd_billable + ytd_probono_credit
                 
-                # Calculate proration
-                proration = calculate_proration(emp_start_date, year)
+                # Calculate proration based on report period
+                # If employee started before report period, they worked 100% of it
+                if emp_start_date <= start_date:
+                    proration = 1.0
+                    days_in_period_employed = days_elapsed
+                # If employee started during report period
+                elif emp_start_date <= as_of_date:
+                    days_in_period_employed = (as_of_date - emp_start_date).days + 1
+                    proration = days_in_period_employed / days_elapsed
+                else:
+                    # Started after report period
+                    proration = 0.0
+                    days_in_period_employed = 0
                 days_in_year_employed = int(proration * days_in_year)
                 
                 # YTD Bonus
@@ -348,7 +374,7 @@ if st.sidebar.button("Generate Report", type="primary"):
                 results.append({
                     'Employee': name,
                     'Start_Date': emp_start_date,
-                    'Days_in_Year': days_in_year_employed,
+                    'Days_in_Period': days_in_period_employed,
                     'Proration': f"{proration:.1%}",
                     'Util_Target': util_target,
                     'Other_Target': other_target,
@@ -413,7 +439,7 @@ if st.sidebar.button("Generate Report", type="primary"):
             display_df = pd.DataFrame({
                 'Employee': results_df['Employee'],
                 'Start Date': results_df['Start_Date'].apply(lambda x: x.strftime('%Y-%m-%d')),
-                'Days Employed': results_df['Days_in_Year'],
+                'Days in Period': results_df['Days_in_Period'],
                 'Proration %': results_df['Proration'].str.rstrip('%').astype(float).apply(lambda x: f"{x:.1f}%"),
                 'Util Target': results_df['Util_Target'].apply(lambda x: f"${x:,.0f}"),
                 'Other Target': results_df['Other_Target'].apply(lambda x: f"${x:,.0f}"),
