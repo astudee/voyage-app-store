@@ -563,128 +563,120 @@ st.divider()
 # -----------------------------
 # Export options
 # -----------------------------
-st.header("📥 Export")
+st.header("📥 Download Report")
 
-col1, col2 = st.columns(2)
-
-# Email report (left column - better reliability)
-with col1:
-    st.subheader("📧 Email Report")
-    notification_email = st.secrets.get("NOTIFICATION_EMAIL", "astudee@voyageadvisory.com")
-    email_to = st.text_input("Email to:", value=notification_email)
+# Build Excel file for download
+output_download = BytesIO()
+with pd.ExcelWriter(output_download, engine="openpyxl") as writer:
+    summary_export_df = pd.DataFrame([
+        {"Metric": "Total Monthly Cost", "Amount": total_monthly},
+        {"Metric": "Total Yearly Cost", "Amount": total_yearly},
+        {"Metric": "Employee Paid (Monthly)", "Amount": ee_monthly_sum},
+        {"Metric": "Employee Paid (Yearly)", "Amount": ee_yearly_sum},
+        {"Metric": "Firm Paid (Monthly)", "Amount": firm_monthly_sum},
+        {"Metric": "Firm Paid (Yearly)", "Amount": firm_yearly_sum},
+    ])
+    summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
+    breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
     
-    if st.button("Send Email Report", type="primary", use_container_width=True):
-        if email_to:
-            with st.spinner("Sending email..."):
-                try:
-                    from googleapiclient.discovery import build
-                    from google.oauth2 import service_account
-                    import base64
-                    from email.message import EmailMessage
-                    
-                    # Build Excel file fresh for email
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-                        summary_export_df = pd.DataFrame([
-                            {"Metric": "Total Monthly Cost", "Amount": total_monthly},
-                            {"Metric": "Total Yearly Cost", "Amount": total_yearly},
-                            {"Metric": "Employee Paid (Monthly)", "Amount": ee_monthly_sum},
-                            {"Metric": "Employee Paid (Yearly)", "Amount": ee_yearly_sum},
-                            {"Metric": "Firm Paid (Monthly)", "Amount": firm_monthly_sum},
-                            {"Metric": "Firm Paid (Yearly)", "Amount": firm_yearly_sum},
-                        ])
-                        summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
-                        breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
-                        
-                        # Export details WITHOUT Salary
-                        export_details = results_df.drop(columns=["Salary"], errors="ignore")
-                        export_details.to_excel(writer, sheet_name="Employee Details", index=False)
-                    
-                    excel_data = output.getvalue()
-                    
-                    # Send email
-                    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-                    credentials = service_account.Credentials.from_service_account_info(
-                        service_account_info,
-                        scopes=["https://www.googleapis.com/auth/gmail.send"],
-                        subject="astudee@voyageadvisory.com",
-                    )
-                    
-                    gmail_service = build("gmail", "v1", credentials=credentials)
-                    
-                    msg = EmailMessage()
-                    msg["To"] = email_to
-                    msg["From"] = "astudee@voyageadvisory.com"
-                    msg["Subject"] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
-                    
-                    msg.set_content(
-                        f"""Benefits Calculator Report
+    # Export details WITHOUT Salary
+    export_details = results_df.drop(columns=["Salary"], errors="ignore")
+    export_details.to_excel(writer, sheet_name="Employee Details", index=False)
+
+download_data = output_download.getvalue()
+
+st.download_button(
+    label="📊 Download Excel Report",
+    data=download_data,
+    file_name=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    use_container_width=True,
+)
+
+# Store report data for email functionality
+st.session_state.benefits_report_data = {
+    'total_monthly': total_monthly,
+    'total_yearly': total_yearly,
+    'ee_monthly': ee_monthly_sum,
+    'ee_yearly': ee_yearly_sum,
+    'firm_monthly': firm_monthly_sum,
+    'firm_yearly': firm_yearly_sum,
+    'excel_data': download_data
+}
+
+# Email functionality (after report is generated - sidebar pattern from Expense Reviewer)
+if 'benefits_report_data' in st.session_state:
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("📧 Email Report")
+    
+    email_to = st.sidebar.text_input(
+        "Send to:",
+        placeholder="email@example.com",
+        key="benefits_email"
+    )
+    
+    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_benefits")
+    
+    if send_clicked:
+        if not email_to:
+            st.sidebar.error("Enter an email address")
+        else:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.text import MIMEText
+                from email.mime.base import MIMEBase
+                from email import encoders
+                
+                rd = st.session_state.benefits_report_data
+                
+                creds = service_account.Credentials.from_service_account_info(
+                    st.secrets["SERVICE_ACCOUNT_KEY"],
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+                
+                gmail = build('gmail', 'v1', credentials=creds)
+                
+                msg = MIMEMultipart()
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['To'] = email_to
+                msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
+                
+                body = f"""Benefits Calculator Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 Summary:
-- Total Monthly Cost: ${total_monthly:,.2f}
-- Employee Paid: ${ee_monthly_sum:,.2f}
-- Firm Paid: ${firm_monthly_sum:,.2f}
+- Total Monthly Cost: ${rd['total_monthly']:,.2f}
+- Employee Paid: ${rd['ee_monthly']:,.2f}
+- Firm Paid: ${rd['firm_monthly']:,.2f}
 
-Total Annual Cost: ${total_yearly:,.2f}
-- Employee: ${ee_yearly_sum:,.2f}
-- Firm: ${firm_yearly_sum:,.2f}
+Total Annual Cost: ${rd['total_yearly']:,.2f}
+- Employee: ${rd['ee_yearly']:,.2f}
+- Firm: ${rd['firm_yearly']:,.2f}
 
 Detailed breakdown attached in Excel file.
 
---
-Voyage Advisory Benefits Calculator
+Best regards,
+Voyage Advisory
 """
-                    )
-                    
-                    msg.add_attachment(
-                        excel_data,
-                        maintype="application",
-                        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        filename=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                    )
-                    
-                    encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-                    gmail_service.users().messages().send(
-                        userId="me",
-                        body={"raw": encoded},
-                    ).execute()
-                    
-                    st.success(f"✅ Email sent successfully to {email_to}")
-                    
-                except Exception as e:
-                    st.error(f"❌ Failed to send email: {str(e)}")
-        else:
-            st.warning("⚠️ Please enter an email address")
-
-# Download Excel (right column)
-with col2:
-    st.subheader("📊 Download Excel")
-    
-    # Build Excel file for download
-    output_download = BytesIO()
-    with pd.ExcelWriter(output_download, engine="openpyxl") as writer:
-        summary_export_df = pd.DataFrame([
-            {"Metric": "Total Monthly Cost", "Amount": total_monthly},
-            {"Metric": "Total Yearly Cost", "Amount": total_yearly},
-            {"Metric": "Employee Paid (Monthly)", "Amount": ee_monthly_sum},
-            {"Metric": "Employee Paid (Yearly)", "Amount": ee_yearly_sum},
-            {"Metric": "Firm Paid (Monthly)", "Amount": firm_monthly_sum},
-            {"Metric": "Firm Paid (Yearly)", "Amount": firm_yearly_sum},
-        ])
-        summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
-        breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
-        
-        # Export details WITHOUT Salary
-        export_details = results_df.drop(columns=["Salary"], errors="ignore")
-        export_details.to_excel(writer, sheet_name="Employee Details", index=False)
-    
-    download_data = output_download.getvalue()
-    
-    st.download_button(
-        label="Download Excel Report",
-        data=download_data,
-        file_name=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
-    )
+                
+                msg.attach(MIMEText(body, 'plain'))
+                
+                # Attach Excel file
+                part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                part.set_payload(rd['excel_data'])
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename=benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx')
+                msg.attach(part)
+                
+                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+                
+                st.sidebar.success(f"✅ Sent to {email_to}!")
+                
+            except Exception as e:
+                st.sidebar.error(f"❌ {type(e).__name__}")
+                st.sidebar.code(str(e))
