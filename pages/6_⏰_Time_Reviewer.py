@@ -459,88 +459,80 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Debug: Show ALL columns
-            all_cols = detailed_df.columns.tolist()
-            st.info(f"📊 BigTime report has {len(all_cols)} total columns")
+            st.info(f"📊 BigTime report has {len(detailed_df)} rows and {len(detailed_df.columns)} columns")
             
-            # Show numeric columns (hours are always numeric)
-            numeric_cols = detailed_df.select_dtypes(include=['number', 'float64', 'int64']).columns.tolist()
-            st.info(f"🔢 Found {len(numeric_cols)} numeric columns: {', '.join(numeric_cols[:20])}")
+            # CRITICAL FIX: Rename columns FIRST before any checks
+            # The bug was checking for 'Staff' before renaming 'tmstaffnm' to 'Staff'
             
-            # CRITICAL: Use tmhrsin for total hours (input hours)
-            # This is the actual hours worked, not billable hours or IDs
-            
+            # 1. Create Total_Hours from tmhrsin
             if 'tmhrsin' not in detailed_df.columns:
-                st.error("❌ CRITICAL: 'tmhrsin' (input hours) column not found!")
-                st.error(f"📋 Available columns: {', '.join(all_cols)}")
+                st.error(f"❌ 'tmhrsin' column not found! Columns: {detailed_df.columns.tolist()}")
                 st.stop()
             
-            # Create Total_Hours from tmhrsin only
             detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['tmhrsin'], errors='coerce').fillna(0)
+            st.success(f"✓ Created Total_Hours from tmhrsin (sum={detailed_df['Total_Hours'].sum():.1f})")
             
-            st.success(f"✓ Using 'tmhrsin' for Total Hours")
-            st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min():.1f}, max={detailed_df['Total_Hours'].max():.1f}, sum={detailed_df['Total_Hours'].sum():.1f}, mean={detailed_df['Total_Hours'].mean():.1f}")
+            # 2. Rename tmstaffnm to Staff FIRST
+            if 'tmstaffnm' not in detailed_df.columns:
+                st.error(f"❌ 'tmstaffnm' column not found! Columns: {detailed_df.columns.tolist()}")
+                st.stop()
+                
+            detailed_df = detailed_df.rename(columns={'tmstaffnm': 'Staff'})
+            st.success(f"✓ Renamed tmstaffnm → Staff")
             
-            # Map other columns
-            col_mapping = {
-                'Staff': next((col for col in ['tmstaffnm', 'Staff Member', 'Staff'] if col in detailed_df.columns), None),
-                'Client': next((col for col in ['tmclientnm', 'Client'] if col in detailed_df.columns), None),
-                'Project': next((col for col in ['tmprojectnm', 'Project'] if col in detailed_df.columns), None),
-                'Billable_Amount': next((col for col in ['tmchgbillbase', 'Billable ($)', 'Billable'] if col in detailed_df.columns), None),
-                'Date': next((col for col in ['tmdt', 'Date'] if col in detailed_df.columns), None),
-                'Notes': next((col for col in ['tmnotes', 'Notes', 'Note'] if col in detailed_df.columns), None)
+            # 3. Rename other columns for later use
+            rename_map = {
+                'tmclientnm': 'Client',
+                'tmprojectnm': 'Project', 
+                'tmchgbillbase': 'Billable_Amount',
+                'tmdt': 'Date',
+                'tmnotes': 'Notes'
             }
+            detailed_df = detailed_df.rename(columns={k: v for k, v in rename_map.items() if k in detailed_df.columns})
             
-            # Remove None values
-            col_mapping = {k: v for k, v in col_mapping.items() if v is not None}
-            
-            st.success(f"✓ Mapped columns: {col_mapping}")
-            
-            # Rename columns
-            detailed_df = detailed_df.rename(columns=col_mapping)
-            
-            # Convert billable amount to numeric
+            # 4. Convert billable amount to numeric
             if 'Billable_Amount' in detailed_df.columns:
                 detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
             
-            # Check 1: Under 40 hours - SIMPLIFIED DEBUG VERSION
-            # Just sum tmhrsin by staff and display it
-            if 'Staff' in detailed_df.columns and 'Total_Hours' in detailed_df.columns:
-                # Sum hours by staff member
-                hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum().round(1).sort_values(ascending=False)
-                
-                st.subheader("📊 Raw BigTime Data - Hours by Staff Member")
-                st.info(f"Total staff with time entries: {len(hours_by_staff)}")
-                st.info(f"Total hours across all staff: {hours_by_staff.sum()}")
-                
-                # Split into 40+ and under 40
-                staff_40_plus = hours_by_staff[hours_by_staff >= 40.0]
-                staff_under_40 = hours_by_staff[hours_by_staff < 40.0]
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    st.success(f"✅ Staff with 40+ hours ({len(staff_40_plus)})")
-                    for name, hours in staff_40_plus.items():
-                        st.write(f"  • {name}: **{hours}** hours")
-                
-                with col2:
-                    st.warning(f"⚠️ Staff with under 40 hours ({len(staff_under_40)})")
-                    for name, hours in staff_under_40.items():
-                        st.write(f"  • {name}: **{hours}** hours")
-                
-                # For now, just flag everyone under 40 from BigTime data
-                # We'll worry about employee filtering later
+            # Check 1: Under 40 hours - NOW THIS WILL ACTUALLY RUN!
+            # Both 'Staff' and 'Total_Hours' are guaranteed to exist now
+            
+            st.subheader("📊 Weekly Hours by Staff Member")
+            
+            # Aggregate hours by staff
+            hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum().round(1).sort_values(ascending=False)
+            
+            st.info(f"✅ Found {len(hours_by_staff)} people with time entries")
+            st.info(f"📊 Total hours: {hours_by_staff.sum():.1f}")
+            
+            # Split into 40+ and under 40
+            staff_40_plus = hours_by_staff[hours_by_staff >= 40.0]
+            staff_under_40 = hours_by_staff[hours_by_staff < 40.0]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.success(f"✅ Staff with 40+ hours ({len(staff_40_plus)})")
+                for name, hours in staff_40_plus.items():
+                    st.write(f"  • {name}: **{hours}** hours")
+            
+            with col2:
+                st.warning(f"⚠️ Staff with under 40 hours ({len(staff_under_40)})")
                 for name, hours in staff_under_40.items():
-                    issues['under_40'].append((name, hours))
-                
-                st.divider()
-                st.write("**Full sorted list:**")
-                hours_df = pd.DataFrame({
-                    'Staff Member': hours_by_staff.index,
-                    'Total Hours': hours_by_staff.values
-                })
-                st.dataframe(hours_df, use_container_width=True)
+                    st.write(f"  • {name}: **{hours}** hours")
+                    # Check if they're an employee (for final flagging)
+                    norm_name = normalize_name(name)
+                    if norm_name in employees_norm:
+                        issues['under_40'].append((employees_norm[norm_name], hours))
+            
+            st.divider()
+            
+            # Show full table
+            hours_df = pd.DataFrame({
+                'Staff Member': hours_by_staff.index,
+                'Total Hours': hours_by_staff.values
+            })
+            st.dataframe(hours_df, use_container_width=True, hide_index=True)
             
             # Check 2: Non-billable client work - CHECK EVERYONE not just employees
             if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
