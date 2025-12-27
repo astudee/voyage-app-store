@@ -312,8 +312,27 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 st.stop()
             
             # Get list of full-time employees
-            employees = set(staff_df['Staff_Name'].tolist())
-            st.success(f"✅ Loaded {len(employees)} employees from config")
+            emp_names_raw = staff_df['Staff_Name'].dropna().astype(str).tolist()
+            
+            # Name normalization function (handles "Last, First" vs "First Last")
+            def normalize_name(name):
+                if not isinstance(name, str) or not name:
+                    return ""
+                clean = str(name).strip().lower()
+                # Handle "Last, First" format
+                if ',' in clean:
+                    parts = [p.strip() for p in clean.split(',', 1)]
+                    if len(parts) == 2 and parts[0] and parts[1]:
+                        clean = f"{parts[1]} {parts[0]}"
+                # Remove extra whitespace
+                clean = ' '.join(clean.split())
+                return clean
+            
+            # Create mapping: normalized_name -> display_name
+            employees_norm = {normalize_name(n): n for n in emp_names_raw}
+            
+            st.success(f"✅ Loaded {len(employees_norm)} employees from config")
+            st.write(f"**Employees (normalized):** {sorted(employees_norm.values())}")
             
         except Exception as e:
             st.error(f"❌ Error loading config: {str(e)}")
@@ -485,17 +504,49 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
             
             # Check 1: Under 40 hours (employees only) - USE TOTAL HOURS
-            # BUT first calculate hours for EVERYONE to show in report
+            # CRITICAL: Iterate over ALL employees (not just who appears in BigTime)
+            # This catches people with 0 hours or those missing from the report
             if 'Staff' in detailed_df.columns and 'Total_Hours' in detailed_df.columns:
-                hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum()
+                # Normalize BigTime staff names and aggregate
+                detailed_df['Staff_norm'] = detailed_df['Staff'].apply(normalize_name)
+                hours_by_staff_norm = detailed_df.groupby('Staff_norm')['Total_Hours'].sum().round(1).to_dict()
                 
-                st.info(f"📈 Total staff with hours: {len(hours_by_staff)}")
+                st.info(f"📈 Found {len(hours_by_staff_norm)} people with time entries in BigTime")
                 
-                # Flag employees with under 40 hours
-                for staff_name, total_hours in hours_by_staff.items():
-                    # Only flag if they're an employee AND under 40
-                    if staff_name in employees and total_hours < 40:
-                        issues['under_40'].append((staff_name, round(total_hours, 1)))
+                # Debug: Show BigTime names vs Config names
+                st.subheader("🕵️ Name Matching Debug")
+                bt_names_norm = sorted(set(hours_by_staff_norm.keys()))
+                config_names_norm = sorted(set(employees_norm.keys()))
+                
+                st.write(f"**BigTime staff (normalized, {len(bt_names_norm)}):** {bt_names_norm}")
+                st.write(f"**Config employees (normalized, {len(config_names_norm)}):** {config_names_norm}")
+                
+                # Show matches and mismatches
+                matches = set(bt_names_norm).intersection(set(config_names_norm))
+                only_in_bt = set(bt_names_norm) - set(config_names_norm)
+                only_in_config = set(config_names_norm) - set(bt_names_norm)
+                
+                st.success(f"✅ Name matches: {len(matches)}")
+                if only_in_bt:
+                    st.warning(f"⚠️ In BigTime but NOT in config ({len(only_in_bt)}): {sorted(only_in_bt)}")
+                if only_in_config:
+                    st.info(f"ℹ️ In config but NOT in BigTime ({len(only_in_config)}): {sorted([employees_norm[n] for n in only_in_config])}")
+                
+                # Now check ALL employees (default to 0 hours if not in BigTime)
+                st.subheader("📊 Checking All Employees for 40+ Hours")
+                
+                for emp_norm, display_name in employees_norm.items():
+                    total_hours = hours_by_staff_norm.get(emp_norm, 0.0)
+                    st.write(f"  • {display_name}: {total_hours} hours")
+                    
+                    if total_hours < 40.0:
+                        issues['under_40'].append((display_name, total_hours))
+                        st.warning(f"    ⚠️ FLAGGED: Under 40 hours")
+                
+                st.success(f"✅ Total employees flagged for under 40: {len(issues['under_40'])}")
+                
+                # Sort by hours
+                issues['under_40'].sort(key=lambda x: x[1])
             
             # Check 2: Non-billable client work - CHECK EVERYONE not just employees
             if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
