@@ -53,17 +53,22 @@ with st.spinner("📊 Loading configuration data..."):
 # Create lookup dictionary for benefits
 benefits_lookup = {}
 for _, row in benefits_df.iterrows():
-    benefits_lookup[row['Code']] = {
+    code = row['Code']
+    benefits_lookup[code] = {
         'description': row['Description'],
         'is_formula': row.get('Is_Formula_Based', False),
-        'total_cost': row.get('Total_Monthly_Cost', 0),
-        'ee_cost': row.get('EE_Monthly_Cost', 0),
-        'firm_cost': row.get('Firm_Monthly_Cost', 0),
+        'total_cost': float(row.get('Total_Monthly_Cost', 0)) if pd.notna(row.get('Total_Monthly_Cost')) else 0,
+        'ee_cost': float(row.get('EE_Monthly_Cost', 0)) if pd.notna(row.get('EE_Monthly_Cost')) else 0,
+        'firm_cost': float(row.get('Firm_Monthly_Cost', 0)) if pd.notna(row.get('Firm_Monthly_Cost')) else 0,
         'coverage_pct': row.get('Coverage_Percentage'),
         'max_weekly': row.get('Max_Weekly_Benefit'),
         'max_monthly': row.get('Max_Monthly_Benefit'),
         'rate': row.get('Rate_Per_Unit')
     }
+
+# Debug: Show a sample lookup
+if 'ME1' in benefits_lookup:
+    st.sidebar.write("DEBUG - ME1 lookup:", benefits_lookup['ME1'])
 
 def calculate_std_cost(salary):
     """Calculate STD monthly cost based on salary"""
