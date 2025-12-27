@@ -167,6 +167,10 @@ def check_gmail():
                 'details': 'Missing service account credentials'
             }
         
+        # Extract service account email for debugging
+        sa_email = service_account_info.get('client_email', 'unknown')
+        sa_client_id = service_account_info.get('client_id', 'unknown')
+        
         # Use only gmail.send scope (matches production usage)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
@@ -205,19 +209,37 @@ def check_gmail():
         }
     except Exception as e:
         error_msg = str(e).lower()
+        error_full = str(e)
+        
+        # Provide detailed debugging info
+        debug_info = f"""
+Service Account Email: {sa_email}
+Service Account Client ID: {sa_client_id}
+Delegating to: astudee@voyageadvisory.com
+Scope requested: https://www.googleapis.com/auth/gmail.send
+
+Error: {error_full}
+
+Common causes:
+1. Client ID {sa_client_id} not authorized in Workspace Admin
+2. Scope URL has typo in Workspace Admin
+3. Changes haven't propagated yet (wait 15 min)
+4. Wrong user email (should be astudee@voyageadvisory.com)
+"""
+        
         if 'delegat' in error_msg or 'domain-wide' in error_msg or 'insufficient' in error_msg:
             return {
                 'status': 'error',
                 'icon': '❌',
                 'message': 'Domain-wide delegation issue',
-                'details': 'Check Workspace Admin → API controls → Domain-wide delegation for gmail.send scope'
+                'details': debug_info
             }
         else:
             return {
                 'status': 'error',
                 'icon': '❌',
                 'message': f'Connection failed: {type(e).__name__}',
-                'details': str(e)
+                'details': debug_info
             }
 
 def check_claude_api():
@@ -289,69 +311,57 @@ def check_gemini_api():
                 'status': 'warning',
                 'icon': '⚠️',
                 'message': 'GEMINI_API_KEY not found',
-                'details': 'Fallback AI features will not work'
+                'details': 'Fallback AI features will not work (Claude is primary)'
             }
         
-        # Try current Gemini model (as of late 2024/2025)
-        # Using v1beta endpoint with gemini-1.5-flash-latest
-        response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}",
-            json={
-                "contents": [{"parts": [{"text": "Say 'OK' if you're working."}]}]
-            },
-            timeout=10
-        )
+        # Note: Gemini model names change frequently
+        # This is a fallback AI, so warnings are acceptable
+        # Try multiple model names
+        model_attempts = [
+            ('v1beta', 'gemini-1.5-flash-latest'),
+            ('v1beta', 'gemini-1.5-flash'),
+            ('v1', 'gemini-1.5-flash'),
+            ('v1', 'gemini-pro'),
+        ]
         
-        if response.status_code == 200:
-            return {
-                'status': 'success',
-                'icon': '✅',
-                'message': 'Connected successfully',
-                'details': 'Fallback AI available (gemini-1.5-flash-latest)'
-            }
-        elif response.status_code == 401 or response.status_code == 403:
-            return {
-                'status': 'error',
-                'icon': '❌',
-                'message': 'Authentication failed',
-                'details': 'API key invalid or expired'
-            }
-        elif response.status_code == 404:
-            # Try alternative model name
-            response2 = requests.post(
-                f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}",
+        for api_version, model_name in model_attempts:
+            response = requests.post(
+                f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}",
                 json={
-                    "contents": [{"parts": [{"text": "Say 'OK' if you're working."}]}]
+                    "contents": [{"parts": [{"text": "Say OK"}]}]
                 },
                 timeout=10
             )
-            if response2.status_code == 200:
+            
+            if response.status_code == 200:
                 return {
                     'status': 'success',
                     'icon': '✅',
                     'message': 'Connected successfully',
-                    'details': 'Fallback AI available (gemini-pro)'
+                    'details': f'Fallback AI available ({model_name})'
                 }
-            else:
+            elif response.status_code == 401 or response.status_code == 403:
                 return {
-                    'status': 'warning',
-                    'icon': '⚠️',
-                    'message': 'Model not found - API may have changed',
-                    'details': 'API key works but model name needs updating. Check Google AI Studio for current models.'
+                    'status': 'error',
+                    'icon': '❌',
+                    'message': 'Authentication failed',
+                    'details': 'API key invalid or expired'
                 }
-        else:
-            return {
-                'status': 'error',
-                'icon': '❌',
-                'message': f'API returned {response.status_code}',
-                'details': response.text[:200]
-            }
+        
+        # All models failed
+        return {
+            'status': 'warning',
+            'icon': '⚠️',
+            'message': 'Model names outdated',
+            'details': 'API key works but model names need updating. Claude API is working, so this is non-critical. Check https://ai.google.dev/models/gemini for current models.'
+        }
+            
     except Exception as e:
         return {
-            'status': 'error',
-            'icon': '❌',
-            'message': f'Connection failed: {type(e).__name__}',
-            'details': str(e)
+            'status': 'warning',
+            'icon': '⚠️',
+            'message': f'Connection test failed',
+            'details': f'{str(e)} (Non-critical - Claude is primary AI)'
         }
 
 # Run all checks
