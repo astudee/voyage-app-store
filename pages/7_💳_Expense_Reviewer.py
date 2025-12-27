@@ -249,22 +249,35 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     
     with st.spinner("🔍 Running compliance checks..."):
         
-        # Normalize the No_Charge and other flag fields to lowercase for comparison
+        # Debug: Show sample values of key fields
+        st.write("**Debug: Sample field values from BigTime**")
         if 'No_Charge' in df.columns:
-            df['No_Charge_lower'] = df['No_Charge'].astype(str).str.lower().str.strip()
+            st.write(f"No_Charge unique values: {df['No_Charge'].unique()}")
+        if 'Receipt_Attached' in df.columns:
+            st.write(f"Receipt_Attached unique values: {df['Receipt_Attached'].unique()}")
+        if 'Non_Reimbursable' in df.columns:
+            st.write(f"Non_Reimbursable unique values: {df['Non_Reimbursable'].unique()}")
+        
+        # CRITICAL: BigTime API returns 0/1 (numeric), not "yes"/"no" (text)
+        # Convert all flag fields to numeric for proper comparison
+        if 'No_Charge' in df.columns:
+            df['No_Charge_numeric'] = pd.to_numeric(df['No_Charge'], errors='coerce').fillna(0)
+            # 1 = yes (no charge), 0 = no (charged)
         
         if 'Non_Reimbursable' in df.columns:
-            df['Non_Reimbursable_lower'] = df['Non_Reimbursable'].astype(str).str.lower().str.strip()
+            df['Non_Reimbursable_numeric'] = pd.to_numeric(df['Non_Reimbursable'], errors='coerce').fillna(0)
+            # 1 = yes (non-reimbursable), 0 = no (reimbursable)
         
         if 'Receipt_Attached' in df.columns:
-            df['Receipt_Attached_lower'] = df['Receipt_Attached'].astype(str).str.lower().str.strip()
+            df['Receipt_Attached_numeric'] = pd.to_numeric(df['Receipt_Attached'], errors='coerce').fillna(0)
+            # 1 = yes (has receipt), 0 = no (missing receipt)
         
         # Check 1: Incorrect Contractor Fees
-        # Category contains "Contractor Fees" AND No-Charge is NOT yes
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
+        # Category contains "Contractor Fees" AND No-Charge is NOT 1 (i.e., it's being charged)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric']):
             contractor_fees = df[
                 (df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False)) &
-                (df['No_Charge_lower'] != 'yes')
+                (df['No_Charge_numeric'] != 1)  # Should be 1 (no-charge=yes)
             ]
             
             for _, row in contractor_fees.iterrows():
@@ -277,18 +290,18 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                 })
         
         # Check 2: Inconsistent Classification
-        # Non-Billable but charged (No-Charge NOT yes) OR Billable but not charged (No-Charge IS yes)
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
-            # Non-Billable but charged
+        # Non-Billable but charged (No-Charge = 0) OR Billable but not charged (No-Charge = 1)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric', 'No_Charge']):
+            # Non-Billable but charged (should be no-charge=1 but is 0)
             non_billable_charged = df[
                 (df['Category'].astype(str).str.startswith('Non-Billable', na=False)) &
-                (df['No_Charge_lower'] != 'yes')
+                (df['No_Charge_numeric'] != 1)  # Should be 1
             ]
             
-            # Billable but not charged
+            # Billable but not charged (should be no-charge=0 but is 1)
             billable_not_charged = df[
                 (df['Category'].astype(str).str.startswith('Billable', na=False)) &
-                (df['No_Charge_lower'] == 'yes')
+                (df['No_Charge_numeric'] == 1)  # Should be 0
             ]
             
             for _, row in pd.concat([non_billable_charged, billable_not_charged]).iterrows():
@@ -303,9 +316,10 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                 })
         
         # Check 3: Missing Receipts
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Receipt_Attached_lower']):
+        # Receipt_Attached should be 1, flag if 0
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Receipt_Attached_numeric']):
             missing_receipts = df[
-                (df['Receipt_Attached_lower'] != 'yes')
+                (df['Receipt_Attached_numeric'] != 1)
             ]
             
             for _, row in missing_receipts.iterrows():
@@ -318,10 +332,10 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                     'Amount': row.get('Amount', 0)
                 })
         
-        # Check 4: Company Paid Expenses (No-Charge = yes, excluding contractor fees)
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
+        # Check 4: Company Paid Expenses (No-Charge = 1, excluding contractor fees)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric']):
             company_paid = df[
-                (df['No_Charge_lower'] == 'yes') &
+                (df['No_Charge_numeric'] == 1) &  # No charge = yes
                 (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
             ]
             
@@ -336,9 +350,9 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                 })
         
         # Check 5: Non-Reimbursable Expenses (excluding contractor fees)
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Non_Reimbursable_lower']):
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Non_Reimbursable_numeric']):
             non_reimbursable = df[
-                (df['Non_Reimbursable_lower'] == 'yes') &
+                (df['Non_Reimbursable_numeric'] == 1) &  # Non-reimbursable = yes
                 (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
             ]
             
