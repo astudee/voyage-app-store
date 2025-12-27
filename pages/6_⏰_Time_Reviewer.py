@@ -386,47 +386,98 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Debug: Show ALL columns we actually have
+            # Debug: Show ALL columns
             all_cols = detailed_df.columns.tolist()
-            st.info(f"📊 BigTime report has {len(all_cols)} columns")
-            st.info(f"🔍 All columns: {', '.join(all_cols)}")
+            st.info(f"📊 BigTime report has {len(all_cols)} total columns")
             
-            # Map column names - look for TOTAL hours not just billable
-            col_mapping = {}
-            for standard_name, possible_names in {
-                'Staff': ['tmstaffnm', 'Staff Member', 'Staff'],
-                'Client': ['tmclientnm', 'Client'],
-                'Project': ['tmprojectnm', 'Project'],
-                'Total_Hours': ['tmhrs', 'Hours', 'Total Hours', 'Hrs', 'tmhrsbill'],  # Check multiple hour columns
-                'Billable_Amount': ['tmchgbillbase', 'Billable ($)', 'Billable'],
-                'Date': ['tmdt', 'Date'],
-                'Notes': ['tmnotes', 'Notes', 'Note']
-            }.items():
-                for possible in possible_names:
-                    if possible in detailed_df.columns:
-                        col_mapping[standard_name] = possible
-                        st.success(f"✓ Mapped {standard_name} → {possible}")
-                        break
-                else:
-                    st.warning(f"⚠️ Could not find column for {standard_name}")
+            # Show numeric columns (hours are always numeric)
+            numeric_cols = detailed_df.select_dtypes(include=['number', 'float64', 'int64']).columns.tolist()
+            st.info(f"🔢 Found {len(numeric_cols)} numeric columns: {', '.join(numeric_cols[:20])}")
             
-            # Debug: Show what we mapped
-            st.info(f"🔗 Final mapping: {col_mapping}")
+            # ChatGPT's comprehensive hour column detection
+            HOUR_COLUMN_CANDIDATES = [
+                # Primary (most common per ChatGPT)
+                "tmduration",
+                "tmdurationdecimal", 
+                "tmhrsworked",
+                "tmhours",
+                "tmamt",  # Gemini's most likely
+                # Billable/Non-billable split
+                "tmbillablehrs",
+                "tmnonbillablehrs",
+                "tmbillhrs",
+                "tmnonbillhrs",
+                "tmhrsbill",
+                "tmhrsnb",
+                # Legacy/report-specific
+                "tmqty",
+                "tmqtydecimal",
+                "tmactualhrs",
+                "tmworkhrs",
+                "inputhrs",
+                # If stored as minutes
+                "tmdurationminutes",
+                "tmdurationmins",
+                # Original guesses
+                "tmhrs",
+                "Hours",
+                "Hrs"
+            ]
             
-            # CRITICAL CHECK: Do we have Total_Hours?
-            if 'Total_Hours' not in col_mapping:
-                st.error("❌ CRITICAL: Could not find hours column in BigTime data!")
-                st.error(f"Looking for any of: tmhrs, Hours, Total Hours, Hrs, tmhrsbill")
-                st.error(f"Available columns: {', '.join(all_cols)}")
+            # Find ALL hour-related columns that exist
+            found_hour_cols = [col for col in HOUR_COLUMN_CANDIDATES if col in detailed_df.columns]
+            
+            st.info(f"⏰ Found these hour columns: {found_hour_cols if found_hour_cols else 'NONE FOUND'}")
+            
+            # Also search by keyword (ChatGPT's robust method)
+            HOUR_KEYWORDS = ["hour", "hrs", "duration", "qty", "work", "amt"]
+            keyword_matches = [
+                col for col in detailed_df.columns
+                if any(k in col.lower() for k in HOUR_KEYWORDS)
+                and col in numeric_cols
+            ]
+            st.info(f"🔍 Keyword search found: {keyword_matches}")
+            
+            # Combine found columns
+            all_hour_candidates = list(set(found_hour_cols + keyword_matches))
+            
+            if not all_hour_candidates:
+                st.error("❌ CRITICAL: No hour columns found!")
+                st.error(f"📋 All columns: {', '.join(all_cols)}")
+                st.error(f"🔢 Numeric columns: {', '.join(numeric_cols)}")
                 st.stop()
             
-            # Rename columns
-            detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
+            # Create Total_Hours by summing all hour-related columns
+            st.success(f"✓ Using these columns for hours: {all_hour_candidates}")
             
-            # Convert to numeric
-            if 'Total_Hours' in detailed_df.columns:
-                detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['Total_Hours'], errors='coerce').fillna(0)
-                st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min()}, max={detailed_df['Total_Hours'].max()}, sum={detailed_df['Total_Hours'].sum()}")
+            # Convert all to numeric and sum
+            for col in all_hour_candidates:
+                detailed_df[col] = pd.to_numeric(detailed_df[col], errors='coerce').fillna(0)
+            
+            detailed_df['Total_Hours'] = detailed_df[all_hour_candidates].sum(axis=1)
+            
+            # Show statistics
+            st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min():.1f}, max={detailed_df['Total_Hours'].max():.1f}, sum={detailed_df['Total_Hours'].sum():.1f}")
+            
+            # Map other columns
+            col_mapping = {
+                'Staff': next((col for col in ['tmstaffnm', 'Staff Member', 'Staff'] if col in detailed_df.columns), None),
+                'Client': next((col for col in ['tmclientnm', 'Client'] if col in detailed_df.columns), None),
+                'Project': next((col for col in ['tmprojectnm', 'Project'] if col in detailed_df.columns), None),
+                'Billable_Amount': next((col for col in ['tmchgbillbase', 'Billable ($)', 'Billable'] if col in detailed_df.columns), None),
+                'Date': next((col for col in ['tmdt', 'Date'] if col in detailed_df.columns), None),
+                'Notes': next((col for col in ['tmnotes', 'Notes', 'Note'] if col in detailed_df.columns), None)
+            }
+            
+            # Remove None values
+            col_mapping = {k: v for k, v in col_mapping.items() if v is not None}
+            
+            st.success(f"✓ Mapped columns: {col_mapping}")
+            
+            # Rename columns
+            detailed_df = detailed_df.rename(columns=col_mapping)
+            
+            # Convert billable amount to numeric
             if 'Billable_Amount' in detailed_df.columns:
                 detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
             
