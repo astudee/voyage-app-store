@@ -302,46 +302,46 @@ def check_gemini_api():
                 'details': 'Fallback AI features will not work (Claude is primary)'
             }
         
-        # Note: Gemini model names change frequently
-        # This is a fallback AI, so warnings are acceptable
-        # Try multiple model names
+        # Try current stable Gemini models (as recommended by Gemini itself)
         model_attempts = [
-            ('v1beta', 'gemini-1.5-flash-latest'),
-            ('v1beta', 'gemini-1.5-flash'),
-            ('v1', 'gemini-1.5-flash'),
-            ('v1', 'gemini-pro'),
+            ('v1beta', 'gemini-1.5-flash'),  # Current stable Flash
+            ('v1beta', 'gemini-1.5-pro'),    # Fallback to Pro
         ]
         
         for api_version, model_name in model_attempts:
-            response = requests.post(
-                f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}",
-                json={
-                    "contents": [{"parts": [{"text": "Say OK"}]}]
-                },
-                timeout=10
-            )
-            
-            if response.status_code == 200:
-                return {
-                    'status': 'success',
-                    'icon': '✅',
-                    'message': 'Connected successfully',
-                    'details': f'Fallback AI available ({model_name})'
-                }
-            elif response.status_code == 401 or response.status_code == 403:
-                return {
-                    'status': 'error',
-                    'icon': '❌',
-                    'message': 'Authentication failed',
-                    'details': 'API key invalid or expired'
-                }
+            try:
+                response = requests.post(
+                    f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}",
+                    json={
+                        "contents": [{"parts": [{"text": "Say OK"}]}]
+                    },
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    return {
+                        'status': 'success',
+                        'icon': '✅',
+                        'message': 'Connected successfully',
+                        'details': f'Fallback AI available ({model_name})'
+                    }
+                elif response.status_code == 401 or response.status_code == 403:
+                    return {
+                        'status': 'error',
+                        'icon': '❌',
+                        'message': 'Authentication failed',
+                        'details': 'API key invalid or expired'
+                    }
+            except Exception as e:
+                # Try next model
+                continue
         
         # All models failed
         return {
             'status': 'warning',
             'icon': '⚠️',
-            'message': 'Model names outdated',
-            'details': 'API key works but model names need updating. Claude API is working, so this is non-critical. Check https://ai.google.dev/models/gemini for current models.'
+            'message': 'Could not connect to Gemini models',
+            'details': 'Tried gemini-1.5-flash and gemini-1.5-pro. Claude API is working, so this is non-critical. Check https://ai.google.dev/models/gemini for current models.'
         }
             
     except Exception as e:
