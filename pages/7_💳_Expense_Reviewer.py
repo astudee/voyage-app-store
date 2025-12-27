@@ -151,9 +151,6 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
             st.stop()
         
         st.success(f"✅ Fetched {len(expenses_df)} expense entries")
-        
-        # Debug: Show column names to help map them
-        st.info(f"📋 BigTime expense columns ({len(expenses_df.columns)}): {', '.join(expenses_df.columns.tolist())}")
     
     # ============================================================
     # PHASE 2: MAP COLUMNS
@@ -382,7 +379,11 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     
     # Debug section
     with st.expander("🔧 Debug Information", expanded=False):
-        st.write("**BigTime API Field Values**")
+        st.write("**BigTime API Columns**")
+        st.write(f"• Total columns: {len(df.columns)}")
+        st.code(', '.join(expenses_df.columns.tolist()), language=None)
+        
+        st.write("\n**BigTime API Field Values**")
         if 'No_Charge' in df.columns:
             st.write(f"• No_Charge unique values: {sorted(df['No_Charge'].dropna().unique())}")
         if 'Receipt_Attached' in df.columns:
