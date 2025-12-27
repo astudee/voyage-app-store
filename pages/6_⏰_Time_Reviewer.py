@@ -459,8 +459,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            st.info(f"📊 BigTime report has {len(detailed_df)} rows and {len(detailed_df.columns)} columns")
-            
             # CRITICAL FIX: Rename columns FIRST before any checks
             # The bug was checking for 'Staff' before renaming 'tmstaffnm' to 'Staff'
             
@@ -470,7 +468,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 st.stop()
             
             detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['tmhrsin'], errors='coerce').fillna(0)
-            st.success(f"✓ Created Total_Hours from tmhrsin (sum={detailed_df['Total_Hours'].sum():.1f})")
             
             # 2. Rename tmstaffnm to Staff FIRST
             if 'tmstaffnm' not in detailed_df.columns:
@@ -478,7 +475,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 st.stop()
                 
             detailed_df = detailed_df.rename(columns={'tmstaffnm': 'Staff'})
-            st.success(f"✓ Renamed tmstaffnm → Staff")
             
             # 3. Rename other columns for later use
             rename_map = {
@@ -497,13 +493,8 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             # Check 1: Under 40 hours - NOW THIS WILL ACTUALLY RUN!
             # Both 'Staff' and 'Total_Hours' are guaranteed to exist now
             
-            st.subheader("📊 Weekly Hours by Staff Member")
-            
             # Aggregate hours by staff
             hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum().round(1).sort_values(ascending=False)
-            
-            st.info(f"✅ Found {len(hours_by_staff)} people with time entries")
-            st.info(f"📊 Total hours: {hours_by_staff.sum():.1f}")
             
             # Split into 40+ and under 40
             staff_40_plus = hours_by_staff[hours_by_staff >= 40.0]
@@ -524,15 +515,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                     norm_name = normalize_name(name)
                     if norm_name in employees_norm:
                         issues['under_40'].append((employees_norm[norm_name], hours))
-            
-            st.divider()
-            
-            # Show full table
-            hours_df = pd.DataFrame({
-                'Staff Member': hours_by_staff.index,
-                'Total Hours': hours_by_staff.values
-            })
-            st.dataframe(hours_df, use_container_width=True, hide_index=True)
             
             # Check 2: Non-billable client work - CHECK EVERYONE not just employees
             if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
@@ -611,6 +593,25 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     # Issue sections
     st.divider()
+    
+    # Debug section
+    with st.expander("🔧 Debug Information", expanded=False):
+        st.write("**BigTime API Data**")
+        st.write(f"• Total time entries: {len(detailed_df)}")
+        st.write(f"• BigTime columns: {len(detailed_df.columns)}")
+        st.code(', '.join(detailed_df.columns.tolist()), language=None)
+        
+        st.write("\n**Hours Aggregation**")
+        st.write(f"• Created Total_Hours from tmhrsin")
+        st.write(f"• Total hours sum: {hours_by_staff.sum():.1f}")
+        st.write(f"• People with time entries: {len(hours_by_staff)}")
+        st.write(f"• Renamed tmstaffnm → Staff")
+        
+        st.write("\n**Employee Matching**")
+        st.write(f"• Employees in config: {len(employees_norm)}")
+        st.write(f"• Staff with 40+ hours: {len(staff_40_plus)}")
+        st.write(f"• Staff with under 40 hours: {len(staff_under_40)}")
+        st.write(f"• Employees flagged for under 40: {len(issues['under_40'])}")
     
     # 1. Zero Hours
     with st.expander(f"❌ Zero Hours Reported ({len(issues['zero_hours'])})", expanded=len(issues['zero_hours']) > 0):
