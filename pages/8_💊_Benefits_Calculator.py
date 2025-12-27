@@ -243,75 +243,73 @@ st.divider()
 # Breakdown by benefit type
 st.header("📈 Breakdown by Benefit Type")
 
-# Calculate breakdown with employee/firm split
+# Calculate breakdown with employee/firm split from results_df
 breakdown_rows = []
-for benefit_name in ['Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life/AD&D']:
-    cost_col = benefit_name.replace('/AD&D', '') + '_Cost'
+
+# Map benefit names to their cost columns and selection columns
+benefit_mapping = {
+    'Medical': ('Medical_Cost', 'Medical'),
+    'Dental': ('Dental_Cost', 'Dental'),
+    'Vision': ('Vision_Cost', 'Vision'),
+    'STD': ('STD_Cost', 'STD'),
+    'LTD': ('LTD_Cost', 'LTD'),
+    'Life/AD&D': ('Life_Cost', 'Life')
+}
+
+for benefit_name, (cost_col, selection_col) in benefit_mapping.items():
+    ee_monthly = 0
+    firm_monthly = 0
     
-    # Calculate EE and Firm portions for this benefit type
-    ee_cost = 0
-    firm_cost = 0
-    total_cost = results_df[cost_col].sum()
-    
-    # Get EE/Firm split from individual employees
+    # Calculate EE and Firm portions by looking up each employee's selection
     for _, emp in results_df.iterrows():
-        benefit_code = None
+        benefit_code = emp[selection_col]
         salary = emp['Salary']
+        emp_cost = emp[cost_col]
         
-        if benefit_name == 'Medical':
-            benefit_code = emp['Medical']
-        elif benefit_name == 'Dental':
-            benefit_code = emp['Dental']
-        elif benefit_name == 'Vision':
-            benefit_code = emp['Vision']
-        elif benefit_name == 'STD':
-            benefit_code = emp['STD']
-        elif benefit_name == 'LTD':
-            benefit_code = emp['LTD']
-        elif benefit_name == 'Life/AD&D':
-            benefit_code = emp['Life']
+        if pd.isna(benefit_code) or benefit_code == '' or benefit_code not in benefits_lookup:
+            continue
         
-        if benefit_code and benefit_code in benefits_lookup:
-            benefit = benefits_lookup[benefit_code]
-            
-            # Calculate costs for this employee
-            if benefit['is_formula']:
-                if benefit_code.startswith('SE'):  # STD
-                    emp_cost = calculate_std_cost(salary)
-                    if benefit_code == 'SE1':
-                        firm_cost += emp_cost
-                    elif benefit_code == 'SE2':
-                        ee_cost += emp_cost
-                elif benefit_code.startswith('LE'):  # LTD
-                    emp_cost = calculate_ltd_cost(salary)
-                    if benefit_code == 'LE1':
-                        firm_cost += emp_cost
-                    elif benefit_code == 'LE2':
-                        ee_cost += emp_cost
-            else:
-                # Fixed cost
-                ee_cost += benefit['ee_cost'] if not pd.isna(benefit['ee_cost']) else 0
-                firm_cost += benefit['firm_cost'] if not pd.isna(benefit['firm_cost']) else 0
+        benefit = benefits_lookup[benefit_code]
+        
+        # Determine EE vs Firm split
+        if benefit['is_formula']:
+            # Formula-based (STD/LTD)
+            if benefit_code == 'SE1' or benefit_code == 'LE1':  # Firm paid
+                firm_monthly += emp_cost
+            elif benefit_code == 'SE2' or benefit_code == 'LE2':  # Employee paid
+                ee_monthly += emp_cost
+        else:
+            # Fixed cost - use the lookup values
+            ee_cost = benefit['ee_cost'] if not pd.isna(benefit['ee_cost']) else 0
+            firm_cost = benefit['firm_cost'] if not pd.isna(benefit['firm_cost']) else 0
+            ee_monthly += ee_cost
+            firm_monthly += firm_cost
+    
+    total_monthly = ee_monthly + firm_monthly
     
     breakdown_rows.append({
         'Benefit Type': benefit_name,
-        'Employee Monthly Cost': ee_cost,
-        'Firm Monthly Cost': firm_cost,
-        'Total Monthly Cost': total_cost,
-        'Employee Annual Cost': ee_cost * 12,
-        'Firm Annual Cost': firm_cost * 12,
-        'Total Annual Cost': total_cost * 12
+        'Employee Monthly Cost': ee_monthly,
+        'Firm Monthly Cost': firm_monthly,
+        'Total Monthly Cost': total_monthly,
+        'Employee Annual Cost': ee_monthly * 12,
+        'Firm Annual Cost': firm_monthly * 12,
+        'Total Annual Cost': total_monthly * 12
     })
 
 # Add totals row
+total_ee_monthly = sum(r['Employee Monthly Cost'] for r in breakdown_rows)
+total_firm_monthly = sum(r['Firm Monthly Cost'] for r in breakdown_rows)
+total_monthly_all = sum(r['Total Monthly Cost'] for r in breakdown_rows)
+
 breakdown_rows.append({
     'Benefit Type': 'TOTAL',
-    'Employee Monthly Cost': sum(r['Employee Monthly Cost'] for r in breakdown_rows),
-    'Firm Monthly Cost': sum(r['Firm Monthly Cost'] for r in breakdown_rows),
-    'Total Monthly Cost': sum(r['Total Monthly Cost'] for r in breakdown_rows),
-    'Employee Annual Cost': sum(r['Employee Annual Cost'] for r in breakdown_rows),
-    'Firm Annual Cost': sum(r['Firm Annual Cost'] for r in breakdown_rows),
-    'Total Annual Cost': sum(r['Total Annual Cost'] for r in breakdown_rows)
+    'Employee Monthly Cost': total_ee_monthly,
+    'Firm Monthly Cost': total_firm_monthly,
+    'Total Monthly Cost': total_monthly_all,
+    'Employee Annual Cost': total_ee_monthly * 12,
+    'Firm Annual Cost': total_firm_monthly * 12,
+    'Total Annual Cost': total_monthly_all * 12
 })
 
 breakdown_df = pd.DataFrame(breakdown_rows)
@@ -373,40 +371,94 @@ st.divider()
 # Employee detail table
 st.header("👥 Employee Details")
 
-# Display options
-show_yearly = st.checkbox("Show yearly costs instead of monthly", value=False)
+# Create expanded display with all cost breakdowns
+detail_display = []
 
-if show_yearly:
-    display_df = results_df[[
-        'Staff_Name',
-        'Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life',
-        'Total_Yearly', 'EE_Yearly', 'Firm_Yearly', 'Notes'
-    ]].copy()
+for _, emp in results_df.iterrows():
+    # Get individual benefit costs
+    medical_code = emp['Medical']
+    dental_code = emp['Dental']
+    vision_code = emp['Vision']
+    std_code = emp['STD']
+    ltd_code = emp['LTD']
+    life_code = emp['Life']
     
-    display_df = display_df.rename(columns={
-        'Total_Yearly': 'Total Cost (Yearly)',
-        'EE_Yearly': 'Employee Paid (Yearly)',
-        'Firm_Yearly': 'Firm Paid (Yearly)'
-    })
-else:
-    display_df = results_df[[
-        'Staff_Name',
-        'Medical', 'Dental', 'Vision', 'STD', 'LTD', 'Life',
-        'Total_Monthly', 'EE_Monthly', 'Firm_Monthly', 'Notes'
-    ]].copy()
+    salary = emp['Salary']
     
-    display_df = display_df.rename(columns={
-        'Total_Monthly': 'Total Cost (Monthly)',
-        'EE_Monthly': 'Employee Paid (Monthly)',
-        'Firm_Monthly': 'Firm Paid (Monthly)'
+    # Calculate individual EE/Firm splits
+    def get_ee_firm_split(code, total_cost):
+        if pd.isna(code) or code == '' or code not in benefits_lookup:
+            return 0, 0
+        
+        benefit = benefits_lookup[code]
+        
+        if benefit['is_formula']:
+            if code in ['SE1', 'LE1']:  # Firm paid
+                return 0, total_cost
+            elif code in ['SE2', 'LE2']:  # Employee paid
+                return total_cost, 0
+        else:
+            ee = benefit['ee_cost'] if not pd.isna(benefit['ee_cost']) else 0
+            firm = benefit['firm_cost'] if not pd.isna(benefit['firm_cost']) else 0
+            return ee, firm
+        
+        return 0, 0
+    
+    # Get EE/Firm for each benefit
+    med_ee, med_firm = get_ee_firm_split(medical_code, emp['Medical_Cost'])
+    den_ee, den_firm = get_ee_firm_split(dental_code, emp['Dental_Cost'])
+    vis_ee, vis_firm = get_ee_firm_split(vision_code, emp['Vision_Cost'])
+    std_ee, std_firm = get_ee_firm_split(std_code, emp['STD_Cost'])
+    ltd_ee, ltd_firm = get_ee_firm_split(ltd_code, emp['LTD_Cost'])
+    life_ee, life_firm = get_ee_firm_split(life_code, emp['Life_Cost'])
+    
+    detail_display.append({
+        'Staff Member': emp['Staff_Name'],
+        # Selections
+        'Medical': medical_code,
+        'Dental': dental_code,
+        'Vision': vision_code,
+        'STD': std_code,
+        'LTD': ltd_code,
+        'Life AD&D': life_code,
+        # Total Costs (monthly)
+        'Medical Cost': emp['Medical_Cost'],
+        'Dental Cost': emp['Dental_Cost'],
+        'Vision Cost': emp['Vision_Cost'],
+        'STD Cost': emp['STD_Cost'],
+        'LTD Cost': emp['LTD_Cost'],
+        'Life AD&D Cost': emp['Life_Cost'],
+        'Total $/mo': emp['Total_Monthly'],
+        'Total $/year': emp['Total_Yearly'],
+        # EE Portion
+        'EE Medical': med_ee,
+        'EE Dental': den_ee,
+        'EE Vision': vis_ee,
+        'EE STD': std_ee,
+        'EE LTD': ltd_ee,
+        'EE Life AD&D': life_ee,
+        'EE $/mo': emp['EE_Monthly'],
+        'EE $/year': emp['EE_Yearly'],
+        # Firm Portion  
+        'Firm Medical': med_firm,
+        'Firm Dental': den_firm,
+        'Firm Vision': vis_firm,
+        'Firm STD': std_firm,
+        'Firm LTD': ltd_firm,
+        'Firm Life AD&D': life_firm,
+        'Firm $/mo': emp['Firm_Monthly'],
+        'Firm $/year': emp['Firm_Yearly']
     })
+
+detail_df = pd.DataFrame(detail_display)
 
 # Format currency columns
-cost_cols = [col for col in display_df.columns if 'Cost' in col or 'Paid' in col]
-for col in cost_cols:
-    display_df[col] = display_df[col].apply(lambda x: f"${x:,.2f}")
+cost_columns = [col for col in detail_df.columns if 'Cost' in col or '$/mo' in col or '$/year' in col or col.startswith('EE ') or col.startswith('Firm ')]
+for col in cost_columns:
+    if col in detail_df.columns:
+        detail_df[col] = detail_df[col].apply(lambda x: f"${x:,.2f}" if pd.notna(x) else "$0.00")
 
-st.dataframe(display_df, use_container_width=True, hide_index=True)
+st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
 # Show any notes
 if results_df['Notes'].notna().any() and (results_df['Notes'] != '').any():
