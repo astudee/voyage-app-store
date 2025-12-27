@@ -441,11 +441,12 @@ st.header("📖 Benefits Legend")
 
 with st.expander("View benefit plan codes and descriptions", expanded=False):
     # Prepare legend data
-    legend_data_with_costs = []  # For Medical/Dental/Vision
-    legend_data_no_costs = []     # For STD/LTD/Life
+    legend_data_with_costs = []  # For Medical/Dental/Vision/Life (fixed costs)
+    legend_data_no_costs = []     # For STD/LTD (formula-based)
     
     for code, details in sorted(benefits_lookup.items()):
-        is_formula = details.get('is_formula', False)
+        # Detect formula-based by code prefix, not by column
+        is_formula = code.startswith('SE') or code.startswith('LE')
         
         if is_formula:
             # Formula-based: just code and description
@@ -471,13 +472,19 @@ with st.expander("View benefit plan codes and descriptions", expanded=False):
     
     with col1:
         st.subheader("Medical, Dental, Vision")
-        mdv_df = legend_with_costs_df[legend_with_costs_df['Code'].str.match(r'^(M|D|V)', na=False)].copy()
-        st.dataframe(mdv_df, use_container_width=True, hide_index=True)
+        if not legend_with_costs_df.empty:
+            mdv_df = legend_with_costs_df[legend_with_costs_df['Code'].str.match(r'^(M|D|V)', na=False)].copy()
+            st.dataframe(mdv_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No fixed-cost benefits found")
     
     with col2:
         st.subheader("STD, LTD, Life/AD&D")
-        other_df = legend_no_costs_df[legend_no_costs_df['Code'].str.match(r'^(SE|LE|TE)', na=False)].copy()
-        st.dataframe(other_df, use_container_width=True, hide_index=True)
+        if not legend_no_costs_df.empty:
+            other_df = legend_no_costs_df[legend_no_costs_df['Code'].str.match(r'^(SE|LE|TE)', na=False)].copy()
+            st.dataframe(other_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No formula-based benefits found")
     
     st.info("""
     **Formula-Based Benefits:**
