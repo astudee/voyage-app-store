@@ -302,73 +302,69 @@ def check_gemini_api():
                 'details': 'Fallback AI features will not work (Claude is primary)'
             }
         
-        # Store last error for debugging
-        last_error = None
+        # Use only the current standard model (v1beta + gemini-1.5-flash)
+        # This is the most reliable combination as of late 2024/2025
+        api_version = 'v1beta'
+        model_name = 'gemini-1.5-flash'
         
-        # Try current stable Gemini models (with updated list from ChatGPT/Gemini)
-        model_attempts = [
-            ('v1beta', 'gemini-1.5-flash'),
-            ('v1beta', 'gemini-1.5-pro-002'),  # More stable than gemini-1.5-pro
-            ('v1', 'gemini-pro'),  # Legacy stable model
-        ]
+        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}"
         
-        for api_version, model_name in model_attempts:
-            try:
-                response = requests.post(
-                    f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}",
-                    json={
-                        # CRITICAL FIX: Gemini 1.5 requires "role" field
-                        "contents": [
-                            {
-                                "role": "user",  # Required for Gemini 1.5 models
-                                "parts": [{"text": "Say OK"}]
-                            }
-                        ]
-                    },
-                    timeout=10
-                )
+        try:
+            response = requests.post(
+                url,
+                json={
+                    "contents": [
+                        {
+                            "role": "user",  # Required for Gemini 1.5
+                            "parts": [{"text": "Say OK"}]
+                        }
+                    ]
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                return {
+                    'status': 'success',
+                    'icon': '✅',
+                    'message': 'Connected successfully',
+                    'details': f'Fallback AI available ({model_name})'
+                }
+            elif response.status_code in [401, 403]:
+                return {
+                    'status': 'error',
+                    'icon': '❌',
+                    'message': 'Authentication failed',
+                    'details': 'API key invalid or expired'
+                }
+            else:
+                # Show the actual error from Gemini API
+                try:
+                    error_json = response.json()
+                    error_msg = error_json.get('error', {}).get('message', response.text[:200])
+                except:
+                    error_msg = response.text[:200]
                 
-                if response.status_code == 200:
-                    return {
-                        'status': 'success',
-                        'icon': '✅',
-                        'message': 'Connected successfully',
-                        'details': f'Fallback AI available ({model_name})'
-                    }
-                elif response.status_code == 401 or response.status_code == 403:
-                    return {
-                        'status': 'error',
-                        'icon': '❌',
-                        'message': 'Authentication failed',
-                        'details': 'API key invalid or expired'
-                    }
-                else:
-                    # Capture specific error for debugging
-                    try:
-                        error_json = response.json()
-                        error_msg = error_json.get('error', {}).get('message', response.text[:200])
-                    except:
-                        error_msg = response.text[:200]
-                    last_error = f"{model_name} returned {response.status_code}: {error_msg}"
-                    # Continue to next model
+                return {
+                    'status': 'warning',
+                    'icon': '⚠️',
+                    'message': f'Gemini API returned {response.status_code}',
+                    'details': f'{error_msg} (Non-critical - Claude is primary AI)'
+                }
                     
-            except Exception as e:
-                last_error = f"{model_name}: {str(e)}"
-                continue
-        
-        # All models failed - show last error for debugging
-        return {
-            'status': 'warning',
-            'icon': '⚠️',
-            'message': 'Could not connect to Gemini models',
-            'details': f'All model attempts failed. Last error: {last_error if last_error else "Unknown error"}. Claude API is working, so this is non-critical.'
-        }
+        except Exception as e:
+            return {
+                'status': 'warning',
+                'icon': '⚠️',
+                'message': 'Connection error',
+                'details': f'{str(e)} (Non-critical - Claude is primary AI)'
+            }
             
     except Exception as e:
         return {
             'status': 'warning',
             'icon': '⚠️',
-            'message': f'Connection test failed',
+            'message': 'Test failed',
             'details': f'{str(e)} (Non-critical - Claude is primary AI)'
         }
 
