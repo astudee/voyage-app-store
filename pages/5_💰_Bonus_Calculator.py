@@ -205,18 +205,40 @@ def calculate_proration(start_date, report_year):
     return days_employed / days_in_year
 
 
-def calculate_tier_bonus(eligible_hours, target, proration):
-    """Calculate bonus based on tier and hours"""
-    if eligible_hours >= 1840:
-        # Tier 1
+def calculate_tier_bonus(eligible_hours, annual_target, proration):
+    """
+    Calculate bonus based on tier and hours
+    
+    Args:
+        eligible_hours: Actual hours worked (billable + capped pro bono)
+        annual_target: Full-year bonus target (before proration)
+        proration: Percentage of year employed (0.0 to 1.0)
+    
+    Returns:
+        (tier, bonus)
+    """
+    # Prorate the target and thresholds based on time employed
+    prorated_target = annual_target * proration
+    tier1_threshold = 1840 * proration  # Tier 1 threshold
+    tier2_threshold = 1350 * proration  # Tier 2 threshold
+    
+    # Determine tier and calculate bonus using prorated values
+    if eligible_hours >= tier1_threshold:
+        # Tier 1: Full bonus scaled by hours
         tier = 1
-        bonus = target * (eligible_hours / 1840) * proration
-    elif eligible_hours >= 1350:
-        # Tier 2
+        if tier1_threshold > 0:
+            bonus = prorated_target * (eligible_hours / tier1_threshold)
+        else:
+            bonus = 0
+    elif eligible_hours >= tier2_threshold:
+        # Tier 2: 75% of bonus scaled by hours
         tier = 2
-        bonus = target * 0.75 * (eligible_hours / 1840) * proration
+        if tier1_threshold > 0:
+            bonus = prorated_target * 0.75 * (eligible_hours / tier1_threshold)
+        else:
+            bonus = 0
     else:
-        # Tier 3
+        # Tier 3: No bonus
         tier = 3
         bonus = 0
     
