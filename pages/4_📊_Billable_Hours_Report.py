@@ -830,17 +830,28 @@ if st.sidebar.button("Generate Report", type="primary"):
                 
                 st.dataframe(styled, use_container_width=True)
             
-            # Show capacity reference (transposed for easier month-by-month comparison)
-            st.subheader("Monthly Capacity Reference")
-            capacity_data = {
-                'Monthly Capacity': [round(monthly_capacity[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols],
-                'Capacity @ 1840': [153.3] * len(month_cols),
-                'Capacity * 80%': [round(capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols]
-            }
-            capacity_df = pd.DataFrame(capacity_data, 
-                                      index=[f"{calendar.month_abbr[m['month']]}-{m['year'] % 100}" for m in month_cols])
-            capacity_df = capacity_df.T  # Transpose so months are columns
-            st.dataframe(capacity_df, use_container_width=True)
+            # Show capacity reference only for Hours mode (not relevant for Revenue)
+            if metric_type == "Billable Hours":
+                st.subheader("Monthly Capacity Reference")
+                
+                # Create capacity data with same month format as report (2025-01, 2025-02, etc.)
+                month_labels = [str(pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')) for m in month_cols]
+                
+                capacity_values = {
+                    'Monthly Capacity': [round(monthly_capacity[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols],
+                    'Capacity @ 1840': [153.3] * len(month_cols),
+                    'Capacity * 80%': [round(capacity_80[pd.Period(f"{m['year']}-{m['month']:02d}", freq='M')], 1) for m in month_cols]
+                }
+                
+                # Add totals
+                for key in capacity_values:
+                    capacity_values[key].append(round(sum(capacity_values[key]), 1))
+                
+                month_labels.append('Total')
+                
+                capacity_df = pd.DataFrame(capacity_values, index=month_labels)
+                capacity_df = capacity_df.T  # Transpose so months are columns
+                st.dataframe(capacity_df, use_container_width=True)
             
             # Export to Excel
             st.subheader("Export Report")
