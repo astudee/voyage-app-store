@@ -355,26 +355,66 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
             st.info(f"📋 Zero hours report returned {len(zero_hours_df)} rows")
-            st.info(f"🔍 Zero hours columns: {', '.join(zero_hours_df.columns.tolist())}")
             
-            # Find staff name column - try multiple possibilities
+            # Debug: Show ALL columns
+            all_cols = zero_hours_df.columns.tolist()
+            st.info(f"🔍 Zero hours report columns ({len(all_cols)}): {', '.join(all_cols)}")
+            
+            # CRITICAL: This is a STAFF/RESOURCE report, NOT a time-entry report
+            # BigTime uses 'st*' prefix for staff reports (e.g., stname, sttitle, ststatus)
+            # Different from 'tm*' prefix for time-entry reports
+            # Per ChatGPT and Gemini + actual data
+            
+            STAFF_NAME_CANDIDATES = [
+                'stname',         # ACTUAL column name for staff reports! (st = staff)
+                'staffnm',        # Also common
+                'resourcenm',     # Resource reports
+                'nm',             # Short form
+                'displaynm',      # UI-friendly name
+                'staffname',      # Occasionally used
+                'Name',           # UI label (less likely in API)
+                'tmstaffnm',      # Only in time-entry reports (unlikely here)
+                'Staff_Name',
+                'Staff Member'
+            ]
+            
+            # Find staff column
             staff_col = None
-            for col in ['Name', 'Staff', 'Staff Member', 'tmstaffnm', 'Staff_Name']:
+            for col in STAFF_NAME_CANDIDATES:
                 if col in zero_hours_df.columns:
                     staff_col = col
-                    st.success(f"✓ Found staff column: {staff_col}")
+                    st.success(f"✓ Found staff column: '{staff_col}'")
                     break
             
+            # Fallback: search for any column with 'name' or 'staff' in it
+            if not staff_col:
+                name_like_cols = [c for c in all_cols if any(x in c.lower() for x in ['name', 'staff', 'nm'])]
+                st.info(f"🔍 Name-like columns found: {name_like_cols}")
+                if name_like_cols:
+                    staff_col = name_like_cols[0]
+                    st.warning(f"⚠️ Using fallback column: '{staff_col}'")
+            
             if staff_col:
-                # Get unique list of people with zero hours
-                zero_hour_staff = zero_hours_df[staff_col].unique().tolist()
-                issues['zero_hours'] = sorted([name for name in zero_hour_staff if name and str(name).strip()])
-                st.info(f"📊 Found {len(issues['zero_hours'])} people with zero hours: {issues['zero_hours']}")
+                # Extract and clean names
+                zero_hour_staff = (
+                    zero_hours_df[staff_col]
+                    .dropna()
+                    .astype(str)
+                    .str.strip()
+                    .unique()
+                    .tolist()
+                )
+                # Filter out empty strings
+                issues['zero_hours'] = sorted([name for name in zero_hour_staff if name])
+                
+                st.success(f"📊 Found {len(issues['zero_hours'])} people with zero hours")
+                st.write(f"Names: {', '.join(issues['zero_hours'])}")
             else:
-                st.warning(f"⚠️ Could not find staff name column in zero hours report")
-                st.write("Available columns:", zero_hours_df.columns.tolist())
+                st.error(f"❌ Could not find staff name column in zero hours report")
+                st.error(f"Available columns: {', '.join(all_cols)}")
                 # Show first few rows for debugging
-                st.dataframe(zero_hours_df.head())
+                st.write("First 3 rows of data:")
+                st.dataframe(zero_hours_df.head(3))
         else:
             st.info("✅ Zero hours report returned no data (everyone has hours)")
     
