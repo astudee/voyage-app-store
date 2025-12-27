@@ -131,12 +131,11 @@ def check_google_drive():
         # Get service account email for debugging
         sa_email = service_account_info.get('client_email', 'unknown')
         
-        # Get folder IDs from secrets
+        # Get folder IDs from secrets (only those actually used by apps)
         folder_configs = {
             'To-File Inbox': st.secrets.get("FOLDER_TO_FILE"),
             'Archive - Contracts': st.secrets.get("FOLDER_ARCHIVE_CONTRACTS"),
             'Archive - Docs': st.secrets.get("FOLDER_ARCHIVE_DOCS"),
-            'Programs Root': st.secrets.get("FOLDER_PROGRAMS_ROOT"),
             'Reports': st.secrets.get("REPORTS_FOLDER_ID"),
         }
         
