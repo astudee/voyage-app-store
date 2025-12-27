@@ -69,11 +69,27 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         df_qb_raw = quickbooks.get_consulting_income(year)
         df_bt_raw = bigtime.get_time_report(year)
         
+        # Debug: Show what we got
+        if df_qb_raw is None:
+            st.error("❌ QuickBooks API returned None")
+        elif df_qb_raw.empty:
+            st.error("❌ QuickBooks API returned empty DataFrame")
+        else:
+            st.success(f"✅ QB: {len(df_qb_raw)} transactions")
+        
+        if df_bt_raw is None:
+            st.error("❌ BigTime API returned None")
+        elif df_bt_raw.empty:
+            st.error("❌ BigTime API returned empty DataFrame")
+        else:
+            st.success(f"✅ BT: {len(df_bt_raw)} entries")
+        
         if df_qb_raw.empty or df_bt_raw.empty:
             st.error("❌ Error: No data returned from APIs")
+            st.info("💡 Check your date range and API credentials")
             st.stop()
         
-        st.success(f"✅ QB: {len(df_qb_raw)} transactions (${df_qb_raw['TotalAmount'].astype(float).sum():,.2f}) | BT: {len(df_bt_raw)} entries")
+        st.success(f"✅ Total - QB: ${df_qb_raw['TotalAmount'].astype(float).sum():,.2f} | BT: {len(df_bt_raw)} entries")
     
     # ============================================================
     # PHASE 3: PROCESS QUICKBOOKS DATA (CLIENT COMMISSIONS)
