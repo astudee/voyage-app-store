@@ -81,8 +81,47 @@ def check_note_quality_with_ai(note_text, client_name='', max_retries=2):
     if not note_text or len(note_text.strip()) < 10:
         return True, "Note too short (less than 10 characters)"
     
+    note_lower = note_text.lower().strip()
+    
+    # FIRST: Check for billable notes that should be internal/non-billable
+    # These are EGREGIOUS errors that should always be flagged
+    internal_work_patterns = [
+        ('voyage team meeting', 'Internal Voyage meetings should not be included in billing notes'),
+        ('internal meeting', 'Internal meetings should not be included in billing notes'),
+        ('voyage meeting', 'Internal Voyage meetings should not be included in billing notes'),
+        ('all-hands', 'Internal all-hands meetings should not be included in billing notes'),
+        ('all hands', 'Internal all-hands meetings should not be included in billing notes'),
+        ('interview', 'Candidate interviews should not be included in billing notes'),
+        ('interviewing', 'Candidate interviews should not be included in billing notes'),
+        ('recruiting', 'Recruiting work should not be included in billing notes'),
+        ('team outing', 'Social/team events should not be included in billing notes'),
+        ('happy hour', 'Social events should not be included in billing notes'),
+        ('social event', 'Social events should not be included in billing notes'),
+        ('1:1', 'Internal 1:1s should not be included in billing notes'),
+        ('one-on-one', 'Internal 1:1s should not be included in billing notes'),
+        ('1-on-1', 'Internal 1:1s should not be included in billing notes'),
+        ('travel time', 'Travel time should not be included in billing notes'),
+        ('traveling to', 'Travel time should not be included in billing notes'),
+        ('commute', 'Commute time should not be included in billing notes'),
+        ('timesheet', 'Timesheet admin should not be included in billing notes'),
+        ('time sheet', 'Timesheet admin should not be included in billing notes'),
+        ('admin work', 'Administrative work should not be included in billing notes'),
+        ('administrative', 'Administrative work should not be included in billing notes'),
+        ('training', 'Training should not be included in billing notes unless client-provided'),
+        ('voyage training', 'Internal training should not be included in billing notes'),
+        ('internal training', 'Internal training should not be included in billing notes'),
+        ('onboarding', 'Onboarding should not be included in billing notes'),
+    ]
+    
+    for pattern, reason in internal_work_patterns:
+        if pattern in note_lower:
+            return True, f"BILLABLE ERROR - {reason}"
+    
+    # SECOND: Use AI for general quality review (be lenient)
     # Create detailed prompt based on Voyage guidelines
     prompt = f"""You are reviewing a billing note for Voyage Advisory, a consulting firm.
+
+IMPORTANT: Only flag EGREGIOUS violations. Be lenient - most notes should pass.
 
 VOYAGE BILLING NOTE GUIDELINES:
 - Use clear, specific, and action-oriented language
@@ -91,36 +130,41 @@ VOYAGE BILLING NOTE GUIDELINES:
 - Limit to 1-2 sentences (except PayIt client)
 - Emphasize value of work, not just activity
 - Use client-friendly wording (no internal jargon or acronyms)
-- Similar to what a top-tier law firm would write
 
 BILLING NOTE TO REVIEW:
 Client: {client_name}
 Note: "{note_text}"
 
-EVALUATE: Does this note meet Voyage's professional standards?
+EVALUATE: Is this note SEVERELY deficient?
 
-Respond with ONLY one of these formats:
-- "ACCEPTABLE" (if note meets standards)
-- "POOR - [specific issue]" (if note fails)
+Respond with ONLY:
+- "ACCEPTABLE" (if note is reasonable, even if not perfect)
+- "POOR - [specific issue]" (ONLY if note is truly bad)
 
-Common issues to flag:
-- Too vague (e.g., "worked on stuff", "meeting", "research")
-- Uses discouraged words (ensure, comprehensive, align, strategy)
-- Too short/no context
-- Unprofessional tone
-- Internal jargon
-- Multiple sentences when not needed
+Only flag notes that are:
+- Extremely vague (e.g., "stuff", "things", one word like "meeting")
+- Completely unprofessional (e.g., "lol", "whatever")
+- Missing all context (e.g., "worked", "research" with no detail)
 
-Examples of POOR notes:
-- "worked on stuff" → POOR - Too vague, no context
-- "ensured alignment with key priorities" → POOR - Uses vague/discouraged words
-- "meeting" → POOR - Too short, no context
-- "research" → POOR - Too vague
+DO NOT flag notes for:
+- Minor wording preferences
+- Using "ensured" or "aligned" if note otherwise has substance
+- Being slightly informal but still clear
+- Missing a period at the end
+- Being 3 sentences instead of 2 if detailed
 
-Examples of ACCEPTABLE notes:
-- "Reviewed contract terms and drafted redline comments for client review."
-- "Analyzed requirements and prepared project plan for stakeholder meeting."
-- "Collaborated with team to verify accuracy of financial model."
+Examples of notes to ACCEPT (even if not perfect):
+- "Meeting with client to discuss project status"
+- "Reviewed and updated the requirements document"
+- "Ensured alignment with client on deliverables for next week"
+- "Research on compliance requirements for the project"
+- "Drafted email to stakeholder regarding timeline"
+
+Examples of notes to FLAG as POOR:
+- "stuff" → POOR - Extremely vague
+- "worked on things" → POOR - No context
+- "lol fixed it" → POOR - Unprofessional
+- "meeting" → POOR - Single word, no context
 
 YOUR EVALUATION:"""
     
@@ -132,7 +176,7 @@ YOUR EVALUATION:"""
             
             payload = {
                 'contents': [{'parts': [{'text': prompt}]}],
-                'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 100}
+                'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 100}
             }
             
             response = requests.post(url, json=payload, timeout=15)
@@ -184,62 +228,27 @@ YOUR EVALUATION:"""
         # Claude failed too, fall back to heuristics
         pass
     
-    # Fallback to rule-based heuristics if both AI calls fail
+    # Fallback to rule-based heuristics - BE LENIENT
     note_lower = note_text.lower().strip()
     
-    # Check for very short notes
-    if len(note_text) < 20:
-        return True, "Note too short"
+    # Only flag EXTREMELY short notes
+    if len(note_text) < 15:
+        return True, "Note extremely short"
     
-    # Check for single words or very brief
-    if len(note_text.split()) <= 3:
-        return True, "Note too brief (3 words or less)"
+    # Only flag single words
+    if len(note_text.split()) <= 1:
+        return True, "Single word note"
     
-    # Check for vague/discouraged words from guidelines
-    discouraged_words = [
-        'ensure', 'ensured', 'ensuring',
-        'comprehensive', 'comprehensively',
-        'align', 'aligned', 'alignment',
-        'strategy', 'strategic',
-        'key priorities'
-    ]
-    for word in discouraged_words:
-        if word in note_lower:
-            return True, f"Uses discouraged word: '{word}'"
+    # Only flag the most egregious vague patterns
+    egregious_patterns = ['stuff', 'things', 'lol', 'haha', 'whatever']
+    for pattern in egregious_patterns:
+        if pattern in note_lower:
+            return True, f"Extremely vague: contains '{pattern}'"
     
-    # Check for common vague patterns
-    vague_patterns = [
-        'worked on', 'stuff', 'things', 'misc', 'various',
-        'lol', 'haha', 'meeting' if len(note_text.split()) <= 5 else '',
-        'research' if len(note_text.split()) <= 5 else ''
-    ]
-    for pattern in vague_patterns:
-        if pattern and pattern in note_lower:
-            return True, f"Too vague: contains '{pattern}'"
-    
-    # Check for missing periods (professional notes should end with period)
-    if not note_text.strip().endswith('.'):
-        return True, "Missing period at end"
-    
+    # If note is at least 2 words and 15+ chars, accept it
     return False, ""
 
 
-def get_fridays_only():
-    """Generate list of Fridays for date picker"""
-    today = datetime.now().date()
-    fridays = []
-    
-    # Go back 90 days and forward 30 days
-    start = today - timedelta(days=90)
-    end = today + timedelta(days=30)
-    
-    current = start
-    while current <= end:
-        if current.weekday() == 4:  # Friday is 4
-            fridays.append(current)
-        current += timedelta(days=1)
-    
-    return sorted(fridays, reverse=True)
 
 
 # ============================================
@@ -249,27 +258,43 @@ def get_fridays_only():
 # Date selector - Fridays only
 st.sidebar.header("Report Configuration")
 
-# Get list of Fridays
-fridays = get_fridays_only()
-friday_options = {f.strftime('%Y-%m-%d (Week Ending)'): f for f in fridays}
-
-# Find most recent Friday
-most_recent_friday = max(f for f in fridays if f <= datetime.now().date())
-default_index = fridays.index(most_recent_friday)
-
-selected_friday_str = st.sidebar.selectbox(
-    "Week Ending (Friday)",
-    options=list(friday_options.keys()),
-    index=default_index
+# Use date_input with validation instead of hardcoded list
+selected_date = st.sidebar.date_input(
+    "Week Ending Date",
+    value=datetime.now().date(),
+    help="Select a Friday (week ending date)"
 )
 
-week_ending = friday_options[selected_friday_str]
+# Validate it's a Friday
+if selected_date.weekday() != 4:  # Friday is 4
+    st.sidebar.error("⚠️ Please select a Friday")
+    st.sidebar.info(f"You selected {selected_date.strftime('%A, %B %d, %Y')}")
+    
+    # Find nearest Friday
+    days_until_friday = (4 - selected_date.weekday()) % 7
+    if days_until_friday == 0:
+        days_until_friday = 7
+    nearest_friday = selected_date + timedelta(days=days_until_friday)
+    
+    st.sidebar.info(f"💡 Next Friday: {nearest_friday.strftime('%B %d, %Y')}")
+    st.stop()
+
+week_ending = selected_date
 week_starting = week_ending - timedelta(days=6)
 
 st.sidebar.write(f"**Report Period:**")
 st.sidebar.write(f"{week_starting.strftime('%A, %B %d, %Y')}")
 st.sidebar.write(f"through")
 st.sidebar.write(f"{week_ending.strftime('%A, %B %d, %Y')}")
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("Review Options")
+
+review_notes = st.sidebar.checkbox(
+    "Review Billing Notes with AI",
+    value=False,
+    help="Uses Gemini/Claude to check note quality. Can be slow for large datasets."
+)
 
 if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
@@ -361,14 +386,14 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Map column names
+            # Map column names - look for TOTAL hours not just billable
             col_mapping = {}
             for standard_name, possible_names in {
                 'Staff': ['Staff Member', 'tmstaffnm'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Hours': ['Billable', 'tmhrsbill', 'Hours'],
-                'Billable': ['Billable ($)', 'tmchgbillbase'],
+                'Total_Hours': ['Hours', 'tmhrs', 'Total Hours'],  # Total hours (billable + non-billable)
+                'Billable_Amount': ['Billable ($)', 'tmchgbillbase'],  # Dollar amount
                 'Date': ['Date', 'tmdt'],
                 'Notes': ['Notes', 'tmnotes']
             }.items():
@@ -381,26 +406,26 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
             
             # Convert to numeric
-            if 'Hours' in detailed_df.columns:
-                detailed_df['Hours'] = pd.to_numeric(detailed_df['Hours'], errors='coerce')
-            if 'Billable' in detailed_df.columns:
-                detailed_df['Billable'] = pd.to_numeric(detailed_df['Billable'], errors='coerce')
+            if 'Total_Hours' in detailed_df.columns:
+                detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['Total_Hours'], errors='coerce')
+            if 'Billable_Amount' in detailed_df.columns:
+                detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce')
             
-            # Check 1: Under 40 hours (employees only)
-            if 'Staff' in detailed_df.columns and 'Hours' in detailed_df.columns:
-                hours_by_staff = detailed_df.groupby('Staff')['Hours'].sum()
+            # Check 1: Under 40 hours (employees only) - USE TOTAL HOURS
+            if 'Staff' in detailed_df.columns and 'Total_Hours' in detailed_df.columns:
+                hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum()
                 
                 for staff_name, total_hours in hours_by_staff.items():
                     if staff_name in employees and total_hours < 40:
                         issues['under_40'].append((staff_name, round(total_hours, 1)))
             
             # Check 2: Non-billable client work
-            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Hours', 'Billable', 'Date']):
-                # Filter for non-Internal clients
+            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
+                # Filter for non-Internal clients with $0 billable
                 non_internal = detailed_df[
                     (~detailed_df['Client'].str.contains('Internal', case=False, na=False)) &
-                    (detailed_df['Billable'].fillna(0) == 0) &
-                    (detailed_df['Hours'] > 0)
+                    (detailed_df['Billable_Amount'].fillna(0) == 0) &
+                    (detailed_df['Total_Hours'] > 0)
                 ]
                 
                 for _, row in non_internal.iterrows():
@@ -409,14 +434,15 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                         'Client': row.get('Client', ''),
                         'Project': row.get('Project', ''),
                         'Date': row.get('Date', ''),
-                        'Hours': round(row.get('Hours', 0), 1)
+                        'Hours': round(row.get('Total_Hours', 0), 1)
                     })
             
-            # Check 3: Poor quality notes (billable work only)
-            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Hours', 'Billable', 'Date']):
+            # Check 3: Poor quality notes (billable work only) - OPTIONAL
+            if review_notes and all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Total_Hours', 'Billable_Amount', 'Date']):
+                st.info("🤖 AI note review enabled - this may take a few minutes...")
                 billable_entries = detailed_df[
-                    (detailed_df['Billable'].fillna(0) > 0) &
-                    (detailed_df['Hours'] > 0)
+                    (detailed_df['Billable_Amount'].fillna(0) > 0) &
+                    (detailed_df['Total_Hours'] > 0)
                 ]
                 
                 # Check all billable entries (AI calls are rate-limited internally)
@@ -435,12 +461,14 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                             'Client': client,
                             'Project': row.get('Project', ''),
                             'Date': row.get('Date', ''),
-                            'Hours': round(row.get('Hours', 0), 1),
+                            'Hours': round(row.get('Total_Hours', 0), 1),
                             'Note': note,
                             'Reason': reason
                         })
                 
                 progress_text.empty()
+            elif not review_notes:
+                st.info("ℹ️ AI note review skipped (not enabled)")
     
     # ============================================================
     # PHASE 6: GENERATE REPORT
@@ -507,7 +535,9 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     # 5. Poor Quality Notes
     with st.expander(f"📝 Poor Quality Notes ({len(issues['poor_notes'])})", expanded=len(issues['poor_notes']) > 0):
-        if issues['poor_notes']:
+        if not review_notes:
+            st.info("ℹ️ AI note review was not enabled for this report. Enable it in the sidebar to check billing notes.")
+        elif issues['poor_notes']:
             st.write("The following billable notes do not appear to meet Voyage guidelines:")
             for issue in issues['poor_notes']:
                 st.write(f"**{issue['Staff']}** - {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Hours']} hours")
