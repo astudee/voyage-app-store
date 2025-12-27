@@ -249,15 +249,6 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     
     with st.spinner("🔍 Running compliance checks..."):
         
-        # Debug: Show sample values of key fields
-        st.write("**Debug: Sample field values from BigTime**")
-        if 'No_Charge' in df.columns:
-            st.write(f"No_Charge unique values: {df['No_Charge'].unique()}")
-        if 'Receipt_Attached' in df.columns:
-            st.write(f"Receipt_Attached unique values: {df['Receipt_Attached'].unique()}")
-        if 'Non_Reimbursable' in df.columns:
-            st.write(f"Non_Reimbursable unique values: {df['Non_Reimbursable'].unique()}")
-        
         # CRITICAL: BigTime API returns 0/1 (numeric), not "yes"/"no" (text)
         # Convert all flag fields to numeric for proper comparison
         if 'No_Charge' in df.columns:
@@ -388,6 +379,24 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
         st.warning(f"⚠️ Found {total_issues} total compliance issues")
     
     st.divider()
+    
+    # Debug section
+    with st.expander("🔧 Debug Information", expanded=False):
+        st.write("**BigTime API Field Values**")
+        if 'No_Charge' in df.columns:
+            st.write(f"• No_Charge unique values: {sorted(df['No_Charge'].dropna().unique())}")
+        if 'Receipt_Attached' in df.columns:
+            st.write(f"• Receipt_Attached unique values: {sorted(df['Receipt_Attached'].dropna().unique())}")
+        if 'Non_Reimbursable' in df.columns:
+            st.write(f"• Non_Reimbursable unique values: {sorted(df['Non_Reimbursable'].dropna().unique())}")
+        
+        st.write("\n**Data Summary**")
+        st.write(f"• Total expenses analyzed: {len(df)}")
+        st.write(f"• Date range: {df['Date'].min()} to {df['Date'].max()}")
+        if 'Category' in df.columns:
+            st.write(f"• Unique categories: {df['Category'].nunique()}")
+        if 'Staff' in df.columns:
+            st.write(f"• Unique staff members: {df['Staff'].nunique()}")
     
     # Issue sections
     # 1. Incorrect Contractor Fees
