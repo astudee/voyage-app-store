@@ -168,6 +168,9 @@ def check_gmail():
                 'details': 'Missing service account credentials'
             }
         
+        # Get notification email from secrets (defaults to astudee if not set)
+        notification_email = st.secrets.get("NOTIFICATION_EMAIL", "astudee@voyageadvisory.com")
+        
         # Extract service account info for reference
         sa_email = service_account_info.get('client_email', 'unknown')
         
@@ -182,9 +185,9 @@ def check_gmail():
         # Build Gmail service
         service = build('gmail', 'v1', credentials=credentials)
         
-        # Create and send a real test email (to self)
+        # Create and send a real test email (to notification address)
         msg = EmailMessage()
-        msg['To'] = 'astudee@voyageadvisory.com'
+        msg['To'] = notification_email
         msg['From'] = 'astudee@voyageadvisory.com'
         msg['Subject'] = '✅ Voyage App Store - Gmail Health Check'
         msg.set_content(f"""This is an automated health check test.
@@ -209,7 +212,7 @@ You can safely delete this email.
             'status': 'success',
             'icon': '✅',
             'message': 'Connected successfully',
-            'details': 'Test email sent to astudee@voyageadvisory.com. Check inbox to confirm delivery.'
+            'details': f'Test email sent to {notification_email}. Check inbox to confirm delivery.'
         }
     except Exception as e:
         error_msg = str(e).lower()
@@ -497,7 +500,8 @@ if st.session_state.health_results:
     if error_count == 0 and warning_count == 0:
         st.success("🎉 All systems operational! All apps should work correctly.")
         if 'Gmail' in st.session_state.health_results and st.session_state.health_results['Gmail']['status'] == 'success':
-            st.info("📬 Check astudee@voyageadvisory.com inbox for Gmail health check test email.")
+            notification_email = st.secrets.get("NOTIFICATION_EMAIL", "astudee@voyageadvisory.com")
+            st.info(f"📬 Check {notification_email} inbox for Gmail health check test email.")
     elif error_count == 0:
         st.warning(f"⚠️ {warning_count} warning(s). Core functionality works but some features may be limited.")
     else:
