@@ -160,92 +160,62 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     # ============================================================
     
     with st.spinner("🔧 Mapping expense columns..."):
-        # Map BigTime column names to our standard names
-        # Based on the sample file, we expect these columns:
-        # Project, Client, Source, Date, Week End, Category, Note, Input, Billable,
-        # No Charge, No-Charge, Non-Reimbursable, Receipt Attached, Submitted, Status, Invoiced
+        # Map BigTime column names based on actual API response
+        # Actual columns: fromcurrencysid, currencysid, sid, issubmitted, exprojectnm, exprojectnm_id,
+        # exclientnm, exclientnm_id, exsourcenm, exsourcenm_id, exdt, exdt_id, exweekenddt,
+        # excatnm, excatnm_id, excatnm_sort, exnt, excostin, excostin_id, excostbill, excostbill_id,
+        # excostnc, excostnc_id, exnc, exnc_id, expaidbyco, exhasreceipt, exissubmitted, exissubmitted_id,
+        # exapprstatus, exapprstatus_id, exisinvoiced, exisinvoiced_id
         
-        # Try to find column mappings
-        col_map = {}
-        
-        # Staff/Source column
-        for col in ['Source', 'exstaffnm', 'Staff', 'Staff Member']:
-            if col in expenses_df.columns:
-                col_map['Staff'] = col
-                break
-        
-        # Client
-        for col in ['Client', 'exclientnm']:
-            if col in expenses_df.columns:
-                col_map['Client'] = col
-                break
-        
-        # Project
-        for col in ['Project', 'exprojectnm']:
-            if col in expenses_df.columns:
-                col_map['Project'] = col
-                break
-        
-        # Date
-        for col in ['Date', 'exdt']:
-            if col in expenses_df.columns:
-                col_map['Date'] = col
-                break
-        
-        # Week End
-        for col in ['Week End', 'exwkend']:
-            if col in expenses_df.columns:
-                col_map['Week_End'] = col
-                break
-        
-        # Category
-        for col in ['Category', 'excat']:
-            if col in expenses_df.columns:
-                col_map['Category'] = col
-                break
-        
-        # Amount (Input/Billable)
-        for col in ['Input', 'Billable', 'examt', 'exbillable']:
-            if col in expenses_df.columns:
-                col_map['Amount'] = col
-                break
-        
-        # No Charge flag
-        for col in ['No Charge', 'No-Charge', 'exnocharge']:
-            if col in expenses_df.columns:
-                col_map['No_Charge'] = col
-                break
-        
-        # Non-Reimbursable flag
-        for col in ['Non-Reimbursable', 'exnonreimb']:
-            if col in expenses_df.columns:
-                col_map['Non_Reimbursable'] = col
-                break
-        
-        # Receipt Attached
-        for col in ['Receipt Attached', 'exreceipt']:
-            if col in expenses_df.columns:
-                col_map['Receipt_Attached'] = col
-                break
-        
-        st.success(f"✓ Mapped columns: {col_map}")
+        rename_map = {
+            'exsourcenm': 'Staff',           # Staff/Source name
+            'exclientnm': 'Client',          # Client name
+            'exprojectnm': 'Project',        # Project name
+            'exdt': 'Date',                   # Expense date
+            'exweekenddt': 'Week_End',       # Week ending date
+            'excatnm': 'Category',           # Category (Billable:Meals, etc.)
+            'exnt': 'Note',                   # Note/description
+            'excostin': 'Amount_Input',      # Input amount
+            'excostbill': 'Amount_Billable', # Billable amount
+            'excostnc': 'Amount_NoCharge',   # No-charge amount
+            'exnc': 'No_Charge',             # No-charge flag (yes/no)
+            'expaidbyco': 'Non_Reimbursable', # Non-reimbursable/paid by company
+            'exhasreceipt': 'Receipt_Attached' # Receipt attached (yes/no)
+        }
         
         # Rename columns
-        expenses_df = expenses_df.rename(columns={v: k for k, v in col_map.items()})
+        expenses_df = expenses_df.rename(columns=rename_map)
         
-        # Convert Amount to numeric
-        if 'Amount' in expenses_df.columns:
-            expenses_df['Amount'] = pd.to_numeric(expenses_df['Amount'], errors='coerce').fillna(0)
+        st.success(f"✓ Mapped BigTime columns to standard names")
+        
+        # Convert amounts to numeric
+        for col in ['Amount_Input', 'Amount_Billable', 'Amount_NoCharge']:
+            if col in expenses_df.columns:
+                expenses_df[col] = pd.to_numeric(expenses_df[col], errors='coerce').fillna(0)
+        
+        # Use Amount_Input as the primary amount
+        expenses_df['Amount'] = expenses_df.get('Amount_Input', 0)
     
     # ============================================================
     # PHASE 3: FILTER BY DATE
     # ============================================================
     
     if use_week_end_field and 'Week_End' in expenses_df.columns:
-        # Filter by Week End field
+        # Filter by Week End field - convert to datetime for comparison
         expenses_df['Week_End_dt'] = pd.to_datetime(expenses_df['Week_End'], errors='coerce')
-        filtered_df = expenses_df[expenses_df['Week_End_dt'] == pd.Timestamp(week_ending)]
-        st.info(f"📅 Filtered to week ending {week_ending}: {len(filtered_df)} expenses")
+        week_end_target = pd.Timestamp(week_ending)
+        
+        # Filter to exact week ending date
+        filtered_df = expenses_df[expenses_df['Week_End_dt'] == week_end_target]
+        
+        st.info(f"📅 Filtered to week ending {week_ending.strftime('%m/%d/%y')}: {len(filtered_df)} expenses (from {len(expenses_df)} total)")
+        
+        # Debug: Show what week end dates we found
+        if len(filtered_df) == 0:
+            unique_weeks = expenses_df['Week_End_dt'].dropna().unique()
+            st.warning(f"⚠️ No expenses found for week ending {week_ending.strftime('%m/%d/%y')}")
+            st.write(f"Available week ending dates in data: {sorted([pd.Timestamp(d).strftime('%m/%d/%y') for d in unique_weeks])}")
+            
     elif 'Date' in expenses_df.columns:
         # Filter by Date field
         expenses_df['Date_dt'] = pd.to_datetime(expenses_df['Date'], errors='coerce')
@@ -257,6 +227,10 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     else:
         st.warning("⚠️ Could not filter by date - using all expenses")
         filtered_df = expenses_df
+    
+    if len(filtered_df) == 0:
+        st.error("❌ No expenses found for the selected period")
+        st.stop()
     
     # Use filtered data for analysis
     df = filtered_df.copy()
@@ -275,11 +249,22 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
     
     with st.spinner("🔍 Running compliance checks..."):
         
+        # Normalize the No_Charge and other flag fields to lowercase for comparison
+        if 'No_Charge' in df.columns:
+            df['No_Charge_lower'] = df['No_Charge'].astype(str).str.lower().str.strip()
+        
+        if 'Non_Reimbursable' in df.columns:
+            df['Non_Reimbursable_lower'] = df['Non_Reimbursable'].astype(str).str.lower().str.strip()
+        
+        if 'Receipt_Attached' in df.columns:
+            df['Receipt_Attached_lower'] = df['Receipt_Attached'].astype(str).str.lower().str.strip()
+        
         # Check 1: Incorrect Contractor Fees
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge']):
+        # Category contains "Contractor Fees" AND No-Charge is NOT yes
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
             contractor_fees = df[
-                (df['Category'].str.contains('Non-Billable:Contractor Fees', case=False, na=False)) &
-                (df['No_Charge'].str.lower() != 'yes')
+                (df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False)) &
+                (df['No_Charge_lower'] != 'yes')
             ]
             
             for _, row in contractor_fees.iterrows():
@@ -292,17 +277,18 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                 })
         
         # Check 2: Inconsistent Classification
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge']):
+        # Non-Billable but charged (No-Charge NOT yes) OR Billable but not charged (No-Charge IS yes)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
             # Non-Billable but charged
             non_billable_charged = df[
-                (df['Category'].str.startswith('Non-Billable', na=False)) &
-                (df['No_Charge'].str.lower() != 'yes')
+                (df['Category'].astype(str).str.startswith('Non-Billable', na=False)) &
+                (df['No_Charge_lower'] != 'yes')
             ]
             
             # Billable but not charged
             billable_not_charged = df[
-                (df['Category'].str.startswith('Billable', na=False)) &
-                (df['No_Charge'].str.lower() == 'yes')
+                (df['Category'].astype(str).str.startswith('Billable', na=False)) &
+                (df['No_Charge_lower'] == 'yes')
             ]
             
             for _, row in pd.concat([non_billable_charged, billable_not_charged]).iterrows():
@@ -312,13 +298,14 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                     'Project': row.get('Project', ''),
                     'Date': row.get('Date', ''),
                     'Category': row.get('Category', ''),
-                    'Amount': row.get('Amount', 0)
+                    'Amount': row.get('Amount', 0),
+                    'No_Charge': row.get('No_Charge', '')
                 })
         
         # Check 3: Missing Receipts
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Receipt_Attached']):
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Receipt_Attached_lower']):
             missing_receipts = df[
-                (df['Receipt_Attached'].str.lower() != 'yes')
+                (df['Receipt_Attached_lower'] != 'yes')
             ]
             
             for _, row in missing_receipts.iterrows():
@@ -331,11 +318,11 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                     'Amount': row.get('Amount', 0)
                 })
         
-        # Check 4: Company Paid Expenses (exclude contractor fees)
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge']):
+        # Check 4: Company Paid Expenses (No-Charge = yes, excluding contractor fees)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_lower']):
             company_paid = df[
-                (df['No_Charge'].str.lower() == 'yes') &
-                (~df['Category'].str.contains('Non-Billable:Contractor Fees', case=False, na=False))
+                (df['No_Charge_lower'] == 'yes') &
+                (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
             ]
             
             for _, row in company_paid.iterrows():
@@ -348,11 +335,11 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
                     'Amount': row.get('Amount', 0)
                 })
         
-        # Check 5: Non-Reimbursable Expenses (exclude contractor fees)
-        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Non_Reimbursable']):
+        # Check 5: Non-Reimbursable Expenses (excluding contractor fees)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Non_Reimbursable_lower']):
             non_reimbursable = df[
-                (df['Non_Reimbursable'].str.lower() == 'yes') &
-                (~df['Category'].str.contains('Non-Billable:Contractor Fees', case=False, na=False))
+                (df['Non_Reimbursable_lower'] == 'yes') &
+                (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
             ]
             
             for _, row in non_reimbursable.iterrows():
@@ -403,7 +390,8 @@ if st.sidebar.button("🔍 Review Expenses", type="primary"):
         if issues['inconsistent_classification']:
             st.write("Non-Billable expenses should be No-Charge=Yes. Billable expenses should be No-Charge=No:")
             for issue in issues['inconsistent_classification']:
-                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f}")
+                nc_flag = issue.get('No_Charge', '')
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f} (No-Charge: {nc_flag})")
         else:
             st.success("✅ All expenses properly classified")
     
