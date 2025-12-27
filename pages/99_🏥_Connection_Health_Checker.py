@@ -302,10 +302,14 @@ def check_gemini_api():
                 'details': 'Fallback AI features will not work (Claude is primary)'
             }
         
-        # Try current stable Gemini models (as recommended by Gemini itself)
+        # Store last error for debugging
+        last_error = None
+        
+        # Try current stable Gemini models (with updated list from ChatGPT/Gemini)
         model_attempts = [
-            ('v1beta', 'gemini-1.5-flash'),  # Current stable Flash
-            ('v1beta', 'gemini-1.5-pro'),    # Fallback to Pro
+            ('v1beta', 'gemini-1.5-flash'),
+            ('v1beta', 'gemini-1.5-pro-002'),  # More stable than gemini-1.5-pro
+            ('v1', 'gemini-pro'),  # Legacy stable model
         ]
         
         for api_version, model_name in model_attempts:
@@ -313,7 +317,13 @@ def check_gemini_api():
                 response = requests.post(
                     f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}",
                     json={
-                        "contents": [{"parts": [{"text": "Say OK"}]}]
+                        # CRITICAL FIX: Gemini 1.5 requires "role" field
+                        "contents": [
+                            {
+                                "role": "user",  # Required for Gemini 1.5 models
+                                "parts": [{"text": "Say OK"}]
+                            }
+                        ]
                     },
                     timeout=10
                 )
@@ -332,16 +342,26 @@ def check_gemini_api():
                         'message': 'Authentication failed',
                         'details': 'API key invalid or expired'
                     }
+                else:
+                    # Capture specific error for debugging
+                    try:
+                        error_json = response.json()
+                        error_msg = error_json.get('error', {}).get('message', response.text[:200])
+                    except:
+                        error_msg = response.text[:200]
+                    last_error = f"{model_name} returned {response.status_code}: {error_msg}"
+                    # Continue to next model
+                    
             except Exception as e:
-                # Try next model
+                last_error = f"{model_name}: {str(e)}"
                 continue
         
-        # All models failed
+        # All models failed - show last error for debugging
         return {
             'status': 'warning',
             'icon': '⚠️',
             'message': 'Could not connect to Gemini models',
-            'details': 'Tried gemini-1.5-flash and gemini-1.5-pro. Claude API is working, so this is non-critical. Check https://ai.google.dev/models/gemini for current models.'
+            'details': f'All model attempts failed. Last error: {last_error if last_error else "Unknown error"}. Claude API is working, so this is non-critical.'
         }
             
     except Exception as e:
