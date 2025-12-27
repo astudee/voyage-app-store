@@ -153,6 +153,21 @@ apps = [
             'Excel and text export with email capability'
         ],
         'status': '✅ Available'
+    },
+    {
+        'icon': '💳',
+        'name': 'Expense Reviewer',
+        'description': 'Review expenses for compliance and quality',
+        'features': [
+            'Validates contractor fee classification',
+            'Checks billable vs non-billable consistency',
+            'Identifies missing receipt attachments',
+            'Tracks company-paid expenses',
+            'Monitors non-reimbursable expenses',
+            'Weekly or custom date range filtering',
+            'Email report capability'
+        ],
+        'status': '✅ Available'
     }
 ]
 
