@@ -150,10 +150,12 @@ def check_google_sheets():
         }
 
 def check_gmail():
-    """Test Gmail API connection"""
+    """Test Gmail API connection using draft creation (safe, no email sent)"""
     try:
         from googleapiclient.discovery import build
         from google.oauth2 import service_account
+        import base64
+        from email.message import EmailMessage
         
         # Get credentials from secrets
         service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
@@ -165,34 +167,50 @@ def check_gmail():
                 'details': 'Missing service account credentials'
             }
         
-        # Create credentials with Gmail scope (same as actual email sending)
+        # Use only gmail.send scope (matches production usage)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=['https://www.googleapis.com/auth/gmail.send'],
-            subject='astudee@voyageadvisory.com'  # Match actual usage
+            subject='astudee@voyageadvisory.com'
         )
         
         # Build Gmail service
         service = build('gmail', 'v1', credentials=credentials)
         
-        # Try to get profile (lightweight test)
-        profile = service.users().getProfile(userId='me').execute()
-        email = profile.get('emailAddress')
+        # Create a test draft (does NOT send email)
+        msg = EmailMessage()
+        msg['To'] = 'astudee@voyageadvisory.com'
+        msg['From'] = 'astudee@voyageadvisory.com'
+        msg['Subject'] = 'Voyage App Store - Permission Test'
+        msg.set_content('This is a permission test draft. It will not be sent.')
+        
+        encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+        
+        # Create draft
+        draft = service.users().drafts().create(
+            userId='me',
+            body={'message': {'raw': encoded}}
+        ).execute()
+        
+        draft_id = draft['id']
+        
+        # Delete the draft immediately (cleanup)
+        service.users().drafts().delete(userId='me', id=draft_id).execute()
         
         return {
             'status': 'success',
             'icon': '✅',
             'message': 'Connected successfully',
-            'details': f'Can send emails as {email}'
+            'details': 'Draft created and deleted successfully. Email sending works.'
         }
     except Exception as e:
         error_msg = str(e).lower()
-        if 'delegat' in error_msg or 'domain-wide' in error_msg:
+        if 'delegat' in error_msg or 'domain-wide' in error_msg or 'insufficient' in error_msg:
             return {
                 'status': 'error',
                 'icon': '❌',
-                'message': 'Domain-wide delegation not configured',
-                'details': 'Service account needs domain-wide delegation in Google Workspace'
+                'message': 'Domain-wide delegation issue',
+                'details': 'Check Workspace Admin → API controls → Domain-wide delegation for gmail.send scope'
             }
         else:
             return {
@@ -274,11 +292,12 @@ def check_gemini_api():
                 'details': 'Fallback AI features will not work'
             }
         
-        # Simple API test with correct model name
+        # Try current Gemini model (as of late 2024/2025)
+        # Using v1beta endpoint with gemini-1.5-flash-latest
         response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}",
             json={
-                "contents": [{"parts": [{"text": "Hi"}]}]
+                "contents": [{"parts": [{"text": "Say 'OK' if you're working."}]}]
             },
             timeout=10
         )
@@ -288,7 +307,7 @@ def check_gemini_api():
                 'status': 'success',
                 'icon': '✅',
                 'message': 'Connected successfully',
-                'details': 'Fallback AI available'
+                'details': 'Fallback AI available (gemini-1.5-flash-latest)'
             }
         elif response.status_code == 401 or response.status_code == 403:
             return {
@@ -297,6 +316,29 @@ def check_gemini_api():
                 'message': 'Authentication failed',
                 'details': 'API key invalid or expired'
             }
+        elif response.status_code == 404:
+            # Try alternative model name
+            response2 = requests.post(
+                f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}",
+                json={
+                    "contents": [{"parts": [{"text": "Say 'OK' if you're working."}]}]
+                },
+                timeout=10
+            )
+            if response2.status_code == 200:
+                return {
+                    'status': 'success',
+                    'icon': '✅',
+                    'message': 'Connected successfully',
+                    'details': 'Fallback AI available (gemini-pro)'
+                }
+            else:
+                return {
+                    'status': 'warning',
+                    'icon': '⚠️',
+                    'message': 'Model not found - API may have changed',
+                    'details': 'API key works but model name needs updating. Check Google AI Studio for current models.'
+                }
         else:
             return {
                 'status': 'error',
@@ -416,6 +458,79 @@ if st.session_state.health_results:
         st.warning(f"⚠️ {warning_count} warning(s). Core functionality works but some features may be limited.")
     else:
         st.error(f"❌ {error_count} error(s) detected. Some apps may not work. Please fix the issues above.")
+    
+    # Optional: Send test email
+    if 'Gmail' in st.session_state.health_results:
+        gmail_result = st.session_state.health_results['Gmail']
+        
+        if gmail_result['status'] == 'success':
+            st.divider()
+            st.subheader("📧 Optional: Send Test Email")
+            st.info("The draft test confirms Gmail works, but you can send a real test email to verify end-to-end.")
+            
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                test_email = st.text_input(
+                    "Send test email to:",
+                    value="astudee@voyageadvisory.com",
+                    placeholder="email@example.com"
+                )
+            with col2:
+                st.write("")  # Spacing
+                st.write("")  # Spacing
+                send_test = st.button("📨 Send Test Email")
+            
+            if send_test and test_email:
+                try:
+                    from googleapiclient.discovery import build
+                    from google.oauth2 import service_account
+                    import base64
+                    from email.message import EmailMessage
+                    from datetime import datetime
+                    
+                    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
+                    credentials = service_account.Credentials.from_service_account_info(
+                        service_account_info,
+                        scopes=['https://www.googleapis.com/auth/gmail.send'],
+                        subject='astudee@voyageadvisory.com'
+                    )
+                    
+                    service = build('gmail', 'v1', credentials=credentials)
+                    
+                    # Create test message
+                    msg = EmailMessage()
+                    msg['To'] = test_email
+                    msg['From'] = 'astudee@voyageadvisory.com'
+                    msg['Subject'] = 'Voyage App Store - Connection Test ✅'
+                    msg.set_content(f"""This is a test email from Voyage App Store Connection Health Checker.
+
+If you received this, Gmail API is working correctly!
+
+Test Details:
+- Sent: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+- From: astudee@voyageadvisory.com
+- Service: Gmail API via service account
+
+You can safely delete this email.
+
+--
+Voyage Advisory App Store
+Automated Connection Test
+""")
+                    
+                    encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+                    
+                    # Send message
+                    service.users().messages().send(
+                        userId='me',
+                        body={'raw': encoded}
+                    ).execute()
+                    
+                    st.success(f"✅ Test email sent to {test_email}!")
+                    st.info("📬 Check your inbox to confirm delivery.")
+                    
+                except Exception as e:
+                    st.error(f"❌ Failed to send test email: {str(e)}")
 
 else:
     st.info("👆 Click the button above to check all API connections")
