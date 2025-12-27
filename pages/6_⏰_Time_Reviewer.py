@@ -354,15 +354,29 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
-            # Find staff name column
+            st.info(f"📋 Zero hours report returned {len(zero_hours_df)} rows")
+            st.info(f"🔍 Zero hours columns: {', '.join(zero_hours_df.columns.tolist())}")
+            
+            # Find staff name column - try multiple possibilities
             staff_col = None
-            for col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name']:
+            for col in ['Name', 'Staff', 'Staff Member', 'tmstaffnm', 'Staff_Name']:
                 if col in zero_hours_df.columns:
                     staff_col = col
+                    st.success(f"✓ Found staff column: {staff_col}")
                     break
             
             if staff_col:
-                issues['zero_hours'] = sorted(zero_hours_df[staff_col].unique().tolist())
+                # Get unique list of people with zero hours
+                zero_hour_staff = zero_hours_df[staff_col].unique().tolist()
+                issues['zero_hours'] = sorted([name for name in zero_hour_staff if name and str(name).strip()])
+                st.info(f"📊 Found {len(issues['zero_hours'])} people with zero hours: {issues['zero_hours']}")
+            else:
+                st.warning(f"⚠️ Could not find staff name column in zero hours report")
+                st.write("Available columns:", zero_hours_df.columns.tolist())
+                # Show first few rows for debugging
+                st.dataframe(zero_hours_df.head())
+        else:
+            st.info("✅ Zero hours report returned no data (everyone has hours)")
     
     # ============================================================
     # PHASE 4: ANALYZE UNSUBMITTED TIMESHEETS
