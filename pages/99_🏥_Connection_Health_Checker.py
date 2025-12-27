@@ -112,6 +112,97 @@ def check_quickbooks():
                 'details': str(e)
             }
 
+def check_google_drive():
+    """Test Google Drive access to configured folders"""
+    try:
+        from googleapiclient.discovery import build
+        from google.oauth2 import service_account
+        
+        # Get credentials from secrets
+        service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
+        if not service_account_info:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'SERVICE_ACCOUNT_KEY not found in secrets',
+                'details': 'Missing service account credentials'
+            }
+        
+        # Get folder IDs from secrets
+        folder_configs = {
+            'To-File Inbox': st.secrets.get("FOLDER_TO_FILE"),
+            'Archive - Contracts': st.secrets.get("FOLDER_ARCHIVE_CONTRACTS"),
+            'Archive - Docs': st.secrets.get("FOLDER_ARCHIVE_DOCS"),
+            'Programs Root': st.secrets.get("FOLDER_PROGRAMS_ROOT"),
+            'Reports': st.secrets.get("REPORTS_FOLDER_ID"),
+        }
+        
+        # Filter out None values
+        folder_configs = {k: v for k, v in folder_configs.items() if v}
+        
+        if not folder_configs:
+            return {
+                'status': 'warning',
+                'icon': '⚠️',
+                'message': 'No folder IDs configured',
+                'details': 'No FOLDER_* settings found in secrets'
+            }
+        
+        # Create credentials with Drive scope
+        credentials = service_account.Credentials.from_service_account_info(
+            service_account_info,
+            scopes=['https://www.googleapis.com/auth/drive.readonly']
+        )
+        
+        # Build Drive service
+        service = build('drive', 'v3', credentials=credentials)
+        
+        # Test access to each folder
+        accessible = []
+        inaccessible = []
+        
+        for folder_name, folder_id in folder_configs.items():
+            try:
+                # Try to get folder metadata
+                folder = service.files().get(
+                    fileId=folder_id,
+                    fields='id,name,mimeType'
+                ).execute()
+                
+                accessible.append(f"{folder_name} ({folder.get('name', 'unknown')})")
+            except Exception as e:
+                error_msg = str(e)
+                if '404' in error_msg:
+                    inaccessible.append(f"{folder_name}: Not found (ID may be wrong)")
+                elif '403' in error_msg or 'permission' in error_msg.lower():
+                    inaccessible.append(f"{folder_name}: Permission denied")
+                else:
+                    inaccessible.append(f"{folder_name}: {str(e)[:50]}")
+        
+        # Determine overall status
+        if inaccessible:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': f'Cannot access {len(inaccessible)} folder(s)',
+                'details': f"Accessible ({len(accessible)}): {', '.join(accessible) if accessible else 'None'}\n\nInaccessible ({len(inaccessible)}): {', '.join(inaccessible)}"
+            }
+        else:
+            return {
+                'status': 'success',
+                'icon': '✅',
+                'message': 'Connected successfully',
+                'details': f'Can access all {len(accessible)} configured folders: {", ".join(accessible)}'
+            }
+    
+    except Exception as e:
+        return {
+            'status': 'error',
+            'icon': '❌',
+            'message': f'Connection failed: {type(e).__name__}',
+            'details': str(e)
+        }
+
 def check_google_sheets():
     """Test Google Sheets access (Voyage_Global_Config)"""
     try:
@@ -413,10 +504,13 @@ if st.button("🔍 Run Health Check", type="primary"):
     with st.spinner("Checking Google Sheets (Config)..."):
         st.session_state.health_results['Google Sheets'] = check_google_sheets()
     
+    with st.spinner("Checking Google Drive (Folders)..."):
+        st.session_state.health_results['Google Drive'] = check_google_drive()
+    
     with st.spinner("Checking Gmail API..."):
         st.session_state.health_results['Gmail'] = check_gmail()
     
-    # Optional AI services
+    # AI services
     with st.spinner("Checking Claude API..."):
         st.session_state.health_results['Claude API'] = check_claude_api()
     
@@ -517,6 +611,7 @@ else:
     - ✅ BigTime API - Time tracking data
     - ✅ QuickBooks API - Financial data
     - ✅ Google Sheets - Employee configuration
+    - ✅ Google Drive - Vault folder access
     - ✅ Gmail API - Email reports
     
     **AI Services:**
