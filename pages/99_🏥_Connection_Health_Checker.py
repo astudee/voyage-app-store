@@ -165,11 +165,11 @@ def check_gmail():
                 'details': 'Missing service account credentials'
             }
         
-        # Create credentials with Gmail scope
+        # Create credentials with Gmail scope (same as actual email sending)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=['https://www.googleapis.com/auth/gmail.send'],
-            subject='andrew@voyageadvisory.com'
+            subject='astudee@voyageadvisory.com'  # Match actual usage
         )
         
         # Build Gmail service
@@ -274,9 +274,9 @@ def check_gemini_api():
                 'details': 'Fallback AI features will not work'
             }
         
-        # Simple API test
+        # Simple API test with correct model name
         response = requests.post(
-            f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={api_key}",
+            f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}",
             json={
                 "contents": [{"parts": [{"text": "Hi"}]}]
             },
