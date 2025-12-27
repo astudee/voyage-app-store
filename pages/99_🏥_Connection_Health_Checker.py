@@ -291,81 +291,109 @@ def check_claude_api():
         }
 
 def check_gemini_api():
-    """Test Gemini API (for AI note review fallback)"""
+    """Test Gemini API by auto-discovering available models"""
     try:
         api_key = st.secrets.get("GEMINI_API_KEY")
         if not api_key:
             return {
-                'status': 'warning',
-                'icon': '⚠️',
+                'status': 'error',
+                'icon': '❌',
                 'message': 'GEMINI_API_KEY not found',
-                'details': 'Fallback AI features will not work (Claude is primary)'
+                'details': 'Gemini is used for vault processing (cheaper than Claude)'
             }
         
-        # Use only the current standard model (v1beta + gemini-1.5-flash)
-        # This is the most reliable combination as of late 2024/2025
-        api_version = 'v1beta'
-        model_name = 'gemini-1.5-flash'
-        
-        url = f"https://generativelanguage.googleapis.com/{api_version}/models/{model_name}:generateContent?key={api_key}"
+        # STEP 1: Auto-discover which models are available for this API key
+        # This avoids hardcoding model names that may not exist
+        list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
         
         try:
-            response = requests.post(
-                url,
-                json={
-                    "contents": [
-                        {
-                            "role": "user",  # Required for Gemini 1.5
-                            "parts": [{"text": "Say OK"}]
-                        }
-                    ]
-                },
-                timeout=10
-            )
+            list_response = requests.get(list_url, timeout=10)
             
-            if response.status_code == 200:
-                return {
-                    'status': 'success',
-                    'icon': '✅',
-                    'message': 'Connected successfully',
-                    'details': f'Fallback AI available ({model_name})'
-                }
-            elif response.status_code in [401, 403]:
+            if list_response.status_code != 200:
                 return {
                     'status': 'error',
                     'icon': '❌',
-                    'message': 'Authentication failed',
-                    'details': 'API key invalid or expired'
+                    'message': f'Could not list models ({list_response.status_code})',
+                    'details': f'Error: {list_response.text[:200]}'
                 }
-            else:
-                # Show the actual error from Gemini API
-                try:
-                    error_json = response.json()
-                    error_msg = error_json.get('error', {}).get('message', response.text[:200])
-                except:
-                    error_msg = response.text[:200]
                 
+            data = list_response.json()
+            models = data.get('models', [])
+            
+            # Find a model that supports 'generateContent'
+            # Prefer flash or pro models for text generation
+            target_model = None
+            for m in models:
+                if 'generateContent' in m.get('supportedGenerationMethods', []):
+                    # API returns "models/gemini-pro", we need just "gemini-pro"
+                    model_name = m['name'].replace('models/', '')
+                    # Prefer flash or pro models
+                    if 'flash' in model_name or 'pro' in model_name:
+                        target_model = model_name
+                        break
+                    # Fallback to first available model
+                    if not target_model:
+                        target_model = model_name
+            
+            if not target_model:
                 return {
-                    'status': 'warning',
-                    'icon': '⚠️',
-                    'message': f'Gemini API returned {response.status_code}',
-                    'details': f'{error_msg} (Non-critical - Claude is primary AI)'
+                    'status': 'error',
+                    'icon': '❌',
+                    'message': 'No text generation models found',
+                    'details': 'API key works but no models support generateContent'
                 }
-                    
+
         except Exception as e:
             return {
-                'status': 'warning',
-                'icon': '⚠️',
-                'message': 'Connection error',
-                'details': f'{str(e)} (Non-critical - Claude is primary AI)'
+                'status': 'error',
+                'icon': '❌',
+                'message': 'Model discovery failed',
+                'details': str(e)
+            }
+
+        # STEP 2: Test the discovered model
+        test_url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={api_key}"
+        
+        response = requests.post(
+            test_url,
+            json={
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [{"text": "Say OK"}]
+                    }
+                ]
+            },
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            return {
+                'status': 'success',
+                'icon': '✅',
+                'message': 'Connected successfully',
+                'details': f'Using model: {target_model}'
+            }
+        else:
+            try:
+                error_json = response.json()
+                error_msg = error_json.get('error', {}).get('message', response.text[:200])
+            except:
+                error_msg = response.text[:200]
+            
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': f'Model test failed ({response.status_code})',
+                'details': f'{target_model}: {error_msg}'
             }
             
     except Exception as e:
         return {
-            'status': 'warning',
-            'icon': '⚠️',
-            'message': 'Test failed',
-            'details': f'{str(e)} (Non-critical - Claude is primary AI)'
+            'status': 'error',
+            'icon': '❌',
+            'message': 'Connection test failed',
+            'details': str(e)
         }
 
 # Run all checks
@@ -487,9 +515,9 @@ else:
     - ✅ Google Sheets - Employee configuration
     - ✅ Gmail API - Email reports
     
-    **Optional Services (AI Features):**
-    - ⚠️ Claude API - AI note review
-    - ⚠️ Gemini API - AI fallback
+    **AI Services:**
+    - ✅ Claude API - Primary AI for analysis
+    - ✅ Gemini API - Primary AI for vault processing (cheaper)
     
     **Coming Soon:**
     - 🔜 Pipedrive - CRM integration
