@@ -536,7 +536,6 @@ st.session_state.payroll_report_data = {
     "total_monthly": total_monthly_sum,
     "total_annual": total_annual_sum,
     "include_bonuses": include_bonuses,
-    "include_401k": include_401k,
     "excel_bytes": excel_bytes,
 }
 
@@ -592,13 +591,12 @@ if "payroll_report_data" in st.session_state:
                     msg["From"] = "astudee@voyageadvisory.com"
                     msg["Subject"] = f"Payroll Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
 
-                    bonus_note = "with Utilization Bonus" if data['include_bonuses'] else "without Utilization Bonus"
-                    k401_note = "with 401(k) Match" if data['include_401k'] else "without 401(k) Match"
+                    bonus_note = "with Bonuses" if data['include_bonuses'] else "without Bonuses"
 
                     msg.set_content(
                         f"""Payroll Calculator Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Configuration: {bonus_note}, {k401_note}
+Configuration: {bonus_note}
 
 Summary:
 - Total Monthly Cost: ${data['total_monthly']:,.2f}
