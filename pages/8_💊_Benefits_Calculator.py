@@ -621,31 +621,32 @@ if 'benefits_report_data' in st.session_state:
         if not email_to:
             st.sidebar.error("Enter an email address")
         else:
-            try:
-                from googleapiclient.discovery import build
-                from google.oauth2 import service_account
-                import base64
-                from email.mime.multipart import MIMEMultipart
-                from email.mime.text import MIMEText
-                from email.mime.base import MIMEBase
-                from email import encoders
-                
-                rd = st.session_state.benefits_report_data
-                
-                creds = service_account.Credentials.from_service_account_info(
-                    st.secrets["SERVICE_ACCOUNT_KEY"],
-                    scopes=['https://www.googleapis.com/auth/gmail.send'],
-                    subject='astudee@voyageadvisory.com'
-                )
-                
-                gmail = build('gmail', 'v1', credentials=creds)
-                
-                msg = MIMEMultipart()
-                msg['From'] = 'astudee@voyageadvisory.com'
-                msg['To'] = email_to
-                msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
-                
-                body = f"""Benefits Calculator Report
+            with st.sidebar.spinner("Sending email..."):
+                try:
+                    from googleapiclient.discovery import build
+                    from google.oauth2 import service_account
+                    import base64
+                    from email.mime.multipart import MIMEMultipart
+                    from email.mime.text import MIMEText
+                    from email.mime.base import MIMEBase
+                    from email import encoders
+                    
+                    rd = st.session_state.benefits_report_data
+                    
+                    creds = service_account.Credentials.from_service_account_info(
+                        st.secrets["SERVICE_ACCOUNT_KEY"],
+                        scopes=['https://www.googleapis.com/auth/gmail.send'],
+                        subject='astudee@voyageadvisory.com'
+                    )
+                    
+                    gmail = build('gmail', 'v1', credentials=creds)
+                    
+                    msg = MIMEMultipart()
+                    msg['From'] = 'astudee@voyageadvisory.com'
+                    msg['To'] = email_to
+                    msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
+                    
+                    body = f"""Benefits Calculator Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 Summary:
@@ -662,21 +663,21 @@ Detailed breakdown attached in Excel file.
 Best regards,
 Voyage Advisory
 """
-                
-                msg.attach(MIMEText(body, 'plain'))
-                
-                # Attach Excel file
-                part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                part.set_payload(rd['excel_data'])
-                encoders.encode_base64(part)
-                part.add_header('Content-Disposition', f'attachment; filename=benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx')
-                msg.attach(part)
-                
-                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
-                
-                st.sidebar.success(f"✅ Sent to {email_to}!")
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ {type(e).__name__}")
-                st.sidebar.code(str(e))
+                    
+                    msg.attach(MIMEText(body, 'plain'))
+                    
+                    # Attach Excel file
+                    part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                    part.set_payload(rd['excel_data'])
+                    encoders.encode_base64(part)
+                    part.add_header('Content-Disposition', f'attachment; filename=benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx')
+                    msg.attach(part)
+                    
+                    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                    result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+                    
+                    st.sidebar.success(f"✅ Sent to {email_to}!")
+                    
+                except Exception as e:
+                    st.sidebar.error(f"❌ {type(e).__name__}")
+                    st.sidebar.code(str(e))
