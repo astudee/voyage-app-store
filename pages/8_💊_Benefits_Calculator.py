@@ -300,7 +300,13 @@ for _, employee in staff_df.iterrows():
 results_df = pd.DataFrame(results)
 
 # -----------------------------
-# Summary metrics (RESTORED)
+# SORT LOGIC (FIX FOR ISSUE #3)
+# -----------------------------
+if not results_df.empty:
+    results_df = results_df.sort_values(by="Staff_Name", ignore_index=True)
+
+# -----------------------------
+# Summary metrics
 # -----------------------------
 st.header("📊 Summary")
 
@@ -354,7 +360,7 @@ with col3:
 st.divider()
 
 # -----------------------------
-# Breakdown by benefit type (RESTORED, now uses per-employee splits)
+# Breakdown by benefit type
 # -----------------------------
 st.header("📈 Breakdown by Benefit Type")
 
@@ -434,24 +440,50 @@ st.dataframe(
 st.divider()
 
 # -----------------------------
-# Benefits Legend (RESTORED)
+# Benefits Legend
 # -----------------------------
 st.header("📖 Benefits Legend")
 
 with st.expander("View benefit plan codes and descriptions", expanded=False):
-    legend_data = [{"Code": code, "Description": details.get("description", "")} for code, details in sorted(benefits_lookup.items())]
+    # Prepare legend data with costs (FIX FOR ISSUE #1)
+    legend_data = []
+    for code, details in sorted(benefits_lookup.items()):
+        is_formula = details.get("is_formula", False)
+        
+        # Format costs for display
+        if is_formula:
+            # For formula benefits, we don't have a single fixed cost to display in the legend
+            t_cost = "Formula"
+            e_cost = "Formula"
+            f_cost = "Formula"
+        else:
+            t_cost = f"${details.get('total_cost', 0):,.2f}"
+            e_cost = f"${details.get('ee_cost', 0):,.2f}"
+            f_cost = f"${details.get('firm_cost', 0):,.2f}"
+
+        legend_data.append({
+            "Code": code, 
+            "Description": details.get("description", ""),
+            "Total Cost": t_cost,
+            "EE Cost": e_cost,
+            "Firm Cost": f_cost
+        })
+        
     legend_df = pd.DataFrame(legend_data)
 
     col1, col2 = st.columns(2)
 
     with col1:
         st.subheader("Medical, Dental, Vision")
+        # Filter for M, D, V codes
         mdv_df = legend_df[legend_df["Code"].str.match(r"^(M|D|V)", na=False)].copy()
         st.dataframe(mdv_df, use_container_width=True, hide_index=True)
 
     with col2:
         st.subheader("STD, LTD, Life/AD&D")
+        # Filter for SE, LE, TE codes
         other_df = legend_df[legend_df["Code"].str.match(r"^(SE|LE|TE)", na=False)].copy()
+        # For these, the cost columns might say "Formula", which is fine
         st.dataframe(other_df, use_container_width=True, hide_index=True)
 
     st.info(
@@ -467,14 +499,15 @@ with st.expander("View benefit plan codes and descriptions", expanded=False):
 st.divider()
 
 # -----------------------------
-# Employee detail table (RESTORED)
+# Employee Details (Sorted)
 # -----------------------------
 st.header("👥 Employee Details")
 
 # Create display table similar to your prior version
+# FIX FOR ISSUE #2: Removed Salary column from UI
 detail_df = pd.DataFrame({
     "Staff Member": results_df["Staff_Name"],
-    "Salary": results_df["Salary"],
+    # "Salary": results_df["Salary"], # Removed for privacy/UI cleanup
 
     "Medical": results_df["Medical"],
     "Dental": results_df["Dental"],
@@ -528,7 +561,7 @@ if (results_df["Notes"].fillna("") != "").any():
 st.divider()
 
 # -----------------------------
-# Export options (RESTORED)
+# Export options
 # -----------------------------
 st.header("📥 Export")
 
@@ -545,7 +578,10 @@ with pd.ExcelWriter(output, engine="openpyxl") as writer:
     ])
     summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
     breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
-    results_df.to_excel(writer, sheet_name="Employee Details", index=False)
+    
+    # Export full details (excluding Salary column from Excel as well to match UI request)
+    export_details = results_df.drop(columns=["Salary"], errors="ignore")
+    export_details.to_excel(writer, sheet_name="Employee Details", index=False)
 
 excel_data = output.getvalue()
 
