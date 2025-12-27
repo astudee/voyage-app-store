@@ -386,45 +386,56 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
+            # Debug: Show what columns we actually have
+            st.info(f"📊 BigTime columns found: {', '.join(detailed_df.columns.tolist()[:10])}...")
+            
             # Map column names - look for TOTAL hours not just billable
             col_mapping = {}
             for standard_name, possible_names in {
-                'Staff': ['Staff Member', 'tmstaffnm'],
+                'Staff': ['Staff Member', 'tmstaffnm', 'Staff'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Total_Hours': ['Hours', 'tmhrs', 'Total Hours'],  # Total hours (billable + non-billable)
-                'Billable_Amount': ['Billable ($)', 'tmchgbillbase'],  # Dollar amount
+                'Total_Hours': ['Hours', 'tmhrs', 'Total Hours', 'Hrs'],  # Total hours per entry
+                'Billable_Amount': ['Billable ($)', 'tmchgbillbase', 'Billable'],  # Dollar amount
                 'Date': ['Date', 'tmdt'],
-                'Notes': ['Notes', 'tmnotes']
+                'Notes': ['Notes', 'tmnotes', 'Note']
             }.items():
                 for possible in possible_names:
                     if possible in detailed_df.columns:
                         col_mapping[standard_name] = possible
                         break
             
+            # Debug: Show what we mapped
+            st.info(f"🔗 Column mapping: {col_mapping}")
+            
             # Rename columns
             detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
             
             # Convert to numeric
             if 'Total_Hours' in detailed_df.columns:
-                detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['Total_Hours'], errors='coerce')
+                detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['Total_Hours'], errors='coerce').fillna(0)
             if 'Billable_Amount' in detailed_df.columns:
-                detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce')
+                detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
             
             # Check 1: Under 40 hours (employees only) - USE TOTAL HOURS
+            # BUT first calculate hours for EVERYONE to show in report
             if 'Staff' in detailed_df.columns and 'Total_Hours' in detailed_df.columns:
                 hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum()
                 
+                st.info(f"📈 Total staff with hours: {len(hours_by_staff)}")
+                
+                # Flag employees with under 40 hours
                 for staff_name, total_hours in hours_by_staff.items():
+                    # Only flag if they're an employee AND under 40
                     if staff_name in employees and total_hours < 40:
                         issues['under_40'].append((staff_name, round(total_hours, 1)))
             
-            # Check 2: Non-billable client work
+            # Check 2: Non-billable client work - CHECK EVERYONE not just employees
             if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
                 # Filter for non-Internal clients with $0 billable
                 non_internal = detailed_df[
                     (~detailed_df['Client'].str.contains('Internal', case=False, na=False)) &
-                    (detailed_df['Billable_Amount'].fillna(0) == 0) &
+                    (detailed_df['Billable_Amount'] == 0) &
                     (detailed_df['Total_Hours'] > 0)
                 ]
                 
@@ -437,11 +448,11 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                         'Hours': round(row.get('Total_Hours', 0), 1)
                     })
             
-            # Check 3: Poor quality notes (billable work only) - OPTIONAL
+            # Check 3: Poor quality notes - CHECK EVERYONE not just employees
             if review_notes and all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Total_Hours', 'Billable_Amount', 'Date']):
                 st.info("🤖 AI note review enabled - this may take a few minutes...")
                 billable_entries = detailed_df[
-                    (detailed_df['Billable_Amount'].fillna(0) > 0) &
+                    (detailed_df['Billable_Amount'] > 0) &
                     (detailed_df['Total_Hours'] > 0)
                 ]
                 
