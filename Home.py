@@ -170,6 +170,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '💊',
+        'name': 'Benefits Calculator',
+        'description': 'Calculate employee benefits costs',
+        'features': [
+            'Reads current benefit selections from Staff tab',
+            'Formula-based STD/LTD calculations using salary',
+            'Fixed-cost Medical/Dental/Vision/Life calculations',
+            'Shows Total, Employee Paid, Firm Paid breakdowns',
+            'Monthly and yearly cost views',
+            'Breakdown by benefit type',
+            'Excel and CSV export'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'description': 'Re-authorize QuickBooks API access',
