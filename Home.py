@@ -182,6 +182,21 @@ apps = [
             'Token expires every ~100 days'
         ],
         'status': '🔧 Utility'
+    },
+    {
+        'icon': '🏥',
+        'name': 'Connection Health Checker',
+        'description': 'Test all API connections and services',
+        'features': [
+            'Check BigTime API connection',
+            'Check QuickBooks API connection',
+            'Verify Google Sheets access',
+            'Test Gmail sending capability',
+            'Test Claude & Gemini AI APIs',
+            'Color-coded status indicators',
+            'Troubleshooting recommendations'
+        ],
+        'status': '🔧 Utility'
     }
 ]
 
