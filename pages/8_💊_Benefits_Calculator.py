@@ -53,17 +53,20 @@ with st.spinner("📊 Loading configuration data..."):
 # Create lookup dictionary for benefits
 benefits_lookup = {}
 for _, row in benefits_df.iterrows():
-    code = row['Code']
+    code = str(row['Code']).strip() if not pd.isna(row['Code']) else ""
+    if code == "":
+        continue
+    
     benefits_lookup[code] = {
-        'description': row['Description'],
-        'is_formula': row['Is_Formula_Based'] if 'Is_Formula_Based' in row else False,
-        'total_cost': float(row['Total_Monthly_Cost']) if pd.notna(row['Total_Monthly_Cost']) else 0,
-        'ee_cost': float(row['EE_Monthly_Cost']) if pd.notna(row['EE_Monthly_Cost']) else 0,
-        'firm_cost': float(row['Firm_Monthly_Cost']) if pd.notna(row['Firm_Monthly_Cost']) else 0,
-        'coverage_pct': row['Coverage_Percentage'] if 'Coverage_Percentage' in row else None,
-        'max_weekly': row['Max_Weekly_Benefit'] if 'Max_Weekly_Benefit' in row else None,
-        'max_monthly': row['Max_Monthly_Benefit'] if 'Max_Monthly_Benefit' in row else None,
-        'rate': row['Rate_Per_Unit'] if 'Rate_Per_Unit' in row else None
+        'description': row.get('Description', ''),
+        'is_formula': bool(row.get('Is_Formula_Based', False)),
+        'total_cost': to_float(row.get('Total_Monthly_Cost', 0)),
+        'ee_cost': to_float(row.get('EE_Monthly_Cost', 0)),
+        'firm_cost': to_float(row.get('Firm_Monthly_Cost', 0)),
+        'coverage_pct': row.get('Coverage_Percentage', None),
+        'max_weekly': row.get('Max_Weekly_Benefit', None),
+        'max_monthly': row.get('Max_Monthly_Benefit', None),
+        'rate': row.get('Rate_Per_Unit', None)
     }
 
 # Debug: Show a sample lookup
