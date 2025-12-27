@@ -9,12 +9,16 @@ import sys
 from datetime import datetime
 from io import BytesIO
 
-# Authentication check - shared session state from Home page
+# -------------------------
+# Authentication check
+# -------------------------
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.error("🔐 Please log in through the Home page")
     st.stop()
 
-# Add functions to path
+# -------------------------
+# Imports
+# -------------------------
 sys.path.append('./functions')
 import sheets
 
@@ -23,220 +27,179 @@ st.set_page_config(page_title="Benefits Calculator", page_icon="💊", layout="w
 st.title("💊 Benefits Calculator")
 st.markdown("Calculate total benefits costs based on current employee selections")
 
+# -------------------------
 # Config from secrets
+# -------------------------
 config_sheet_id = st.secrets.get("SHEET_CONFIG_ID")
 if not config_sheet_id:
     st.error("❌ SHEET_CONFIG_ID not found in secrets")
     st.stop()
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def to_float(val) -> float:
-    """Robust float conversion for sheet values (handles $, commas, blanks, strings)."""
-    try:
-        if pd.isna(val):
-            return 0.0
-        s = str(val).strip()
-        if s == "" or s.lower() in ("none", "nan"):
-            return 0.0
-        s = s.replace("$", "").replace(",", "")
-        return float(s)
-    except Exception:
-        return 0.0
-
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize column names to consistent snake-ish format."""
-    df = df.copy()
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.replace("\n", " ")
-        .str.replace("\t", " ")
-        .str.replace("  ", " ")
-        .str.replace(" ", "_")
-    )
-    return df
-
-# -----------------------------
+# -------------------------
 # Load configuration data
-# -----------------------------
+# -------------------------
 with st.spinner("📊 Loading configuration data..."):
     try:
         staff_df = sheets.read_config(config_sheet_id, "Staff")
         benefits_df = sheets.read_config(config_sheet_id, "Benefits")
-
-        if staff_df is None or staff_df.empty:
-            st.error("❌ Could not load Staff configuration")
-            st.stop()
-
-        if benefits_df is None or benefits_df.empty:
-            st.error("❌ Could not load Benefits configuration")
-            st.stop()
-
     except Exception as e:
         st.error(f"❌ Error loading configuration: {str(e)}")
         st.stop()
 
-# Normalize columns (this prevents subtle header mismatch issues)
-staff_df = normalize_columns(staff_df)
-benefits_df = normalize_columns(benefits_df)
+if staff_df is None or staff_df.empty:
+    st.error("❌ Could not load Staff configuration")
+    st.stop()
 
-# Defensive rename in case sheet uses slightly different labels
-benefits_df = benefits_df.rename(columns={
-    "EE_Monthly": "EE_Monthly_Cost",
-    "Firm_Monthly": "Firm_Monthly_Cost",
-    "Employee_Monthly_Cost": "EE_Monthly_Cost",
-    "Company_Monthly_Cost": "Firm_Monthly_Cost",
-    "Employer_Monthly_Cost": "Firm_Monthly_Cost",
-})
+if benefits_df is None or benefits_df.empty:
+    st.error("❌ Could not load Benefits configuration")
+    st.stop()
 
 st.success(f"✅ Loaded {len(staff_df)} staff members and {len(benefits_df)} benefit options")
 
-# Generate Report button
-st.markdown("---")
-if not st.button("📊 Generate Benefits Report", type="primary", use_container_width=True):
-    st.info("👆 Click the button above to generate the benefits cost report")
-    st.stop()
+# -------------------------
+# Helpers
+# -------------------------
+def safe_str(x):
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return ""
+    return str(x).strip()
 
-st.markdown("---")
+def safe_float(x):
+    if x is None or (isinstance(x, float) and pd.isna(x)):
+        return 0.0
+    if isinstance(x, (int, float)):
+        return float(x)
+    s = str(x).strip().replace("$", "").replace(",", "")
+    if s == "":
+        return 0.0
+    try:
+        return float(s)
+    except Exception:
+        return 0.0
 
-# -----------------------------
-# Create lookup dictionary for benefits
-# -----------------------------
-required_cols = ["Code", "Description", "Total_Monthly_Cost", "EE_Monthly_Cost", "Firm_Monthly_Cost"]
-missing = [c for c in required_cols if c not in benefits_df.columns]
-if missing:
-    st.error(f"❌ Benefits tab is missing required columns: {', '.join(missing)}")
-    st.stop()
-
-benefits_lookup = {}
-for _, row in benefits_df.iterrows():
-    code = str(row["Code"]).strip() if not pd.isna(row["Code"]) else ""
-    if code == "":
-        continue
-
-    benefits_lookup[code] = {
-        "description": row.get("Description", ""),
-        "is_formula": bool(row.get("Is_Formula_Based", False)),
-        "total_cost": to_float(row.get("Total_Monthly_Cost")),
-        "ee_cost": to_float(row.get("EE_Monthly_Cost")),
-        "firm_cost": to_float(row.get("Firm_Monthly_Cost")),
-        "coverage_pct": row.get("Coverage_Percentage", None),
-        "max_weekly": row.get("Max_Weekly_Benefit", None),
-        "max_monthly": row.get("Max_Monthly_Benefit", None),
-        "rate": row.get("Rate_Per_Unit", None),
-    }
-
-# -----------------------------
-# Formula calculations
-# -----------------------------
-def calculate_std_cost(salary: float) -> float:
-    """Calculate STD monthly cost based on salary."""
+def calculate_std_cost(salary):
+    """Calculate STD monthly cost based on salary"""
     weekly_salary = salary / 52
     weekly_benefit = min(weekly_salary * 0.6667, 2100)
     monthly_cost = (weekly_benefit / 10) * 0.18
     return round(monthly_cost, 2)
 
-def calculate_ltd_cost(salary: float) -> float:
-    """Calculate LTD monthly cost based on salary."""
+def calculate_ltd_cost(salary):
+    """Calculate LTD monthly cost based on salary"""
     monthly_salary = salary / 12
-    # Benefit cap exists but cost formula is based on salary per your spec
     monthly_cost = (monthly_salary / 100) * 0.21
     return round(monthly_cost, 2)
 
-# -----------------------------
-# Benefit cost resolver
-# -----------------------------
-DECLINED_CODES = {
-    "Medical_Plan": "MX",
-    "Dental_Plan": "DX",
-    "Vision_Plan": "VX",
-    "STD": "SEX",
-    "LTD": "LEX",
-    "Life": "TEX",
-}
+# -------------------------
+# Create lookup dictionary for benefits
+# -------------------------
+benefits_lookup = {}
+for _, row in benefits_df.iterrows():
+    code = safe_str(row.get("Code", ""))
+    if not code:
+        continue
 
-def get_benefit_cost(code, salary: float, benefit_type: str):
-    """Return (total, ee, firm, note)."""
-    # Handle blanks / missing as declined
-    if pd.isna(code) or code is None or str(code).strip() == "":
+    # Detect formula-based by code prefix (SE* or LE*) since Is_Formula_Based column may not exist
+    is_formula = code.startswith('SE') or code.startswith('LE')
+    
+    benefits_lookup[code] = {
+        "description": safe_str(row.get("Description", "")),
+        "is_formula": is_formula,
+        "total_cost": safe_float(row.get("Total_Monthly_Cost", 0)),
+        "ee_cost": safe_float(row.get("EE_Monthly_Cost", 0)),
+        "firm_cost": safe_float(row.get("Firm_Monthly_Cost", 0)),
+    }
+
+# -------------------------
+# Resolve benefit cost (total/ee/firm)
+# -------------------------
+def resolve_benefit_cost(code, salary, benefit_type):
+    """
+    Returns: (total, ee, firm, note)
+    """
+    code = safe_str(code)
+
+    # Treat blank as declined
+    if code == "":
         return 0.0, 0.0, 0.0, None
 
-    code = str(code).strip()
-
     if code not in benefits_lookup:
+        # Unknown code → assume declined
         note = f"Unknown {benefit_type} code: {code} - assumed declined"
         return 0.0, 0.0, 0.0, note
 
     benefit = benefits_lookup[code]
 
-    # Formula-based benefits (STD/LTD)
+    # Formula-based (STD/LTD)
     if benefit["is_formula"]:
         if code.startswith("SE"):  # STD
-            total_cost = calculate_std_cost(salary)
-            if code == "SE1":  # Firm paid
-                return total_cost, 0.0, total_cost, None
-            if code == "SE2":  # Employee paid
-                return total_cost, total_cost, 0.0, None
-            # SEX or other declined-like
+            total = calculate_std_cost(salary)
+            if code == "SE1":  # firm paid
+                return total, 0.0, total, None
+            if code == "SE2":  # employee paid
+                return total, total, 0.0, None
             return 0.0, 0.0, 0.0, None
 
         if code.startswith("LE"):  # LTD
-            total_cost = calculate_ltd_cost(salary)
-            if code == "LE1":  # Firm paid
-                return total_cost, 0.0, total_cost, None
-            if code == "LE2":  # Employee paid
-                return total_cost, total_cost, 0.0, None
-            # LEX or other declined-like
+            total = calculate_ltd_cost(salary)
+            if code == "LE1":  # firm paid
+                return total, 0.0, total, None
+            if code == "LE2":  # employee paid
+                return total, total, 0.0, None
             return 0.0, 0.0, 0.0, None
 
+        return 0.0, 0.0, 0.0, None
+
     # Fixed cost from lookup
-    total_cost = float(benefit["total_cost"]) if not pd.isna(benefit["total_cost"]) else 0.0
-    ee_cost = float(benefit["ee_cost"]) if not pd.isna(benefit["ee_cost"]) else 0.0
-    firm_cost = float(benefit["firm_cost"]) if not pd.isna(benefit["firm_cost"]) else 0.0
+    total = benefit["total_cost"]
+    ee = benefit["ee_cost"]
+    firm = benefit["firm_cost"]
+    return total, ee, firm, None
 
-    return total_cost, ee_cost, firm_cost, None
+# =========================================================
+# Generate Report Button (with persistent state flag)
+# =========================================================
+st.divider()
 
-# -----------------------------
-# Calculate costs for each employee
-# -----------------------------
-results = []
+if "benefits_report_ready" not in st.session_state:
+    st.session_state.benefits_report_ready = False
 
-# Normalize expected staff column names (in case sheet headers differ slightly)
-staff_df = staff_df.rename(columns={
-    "Staff_Name": "Staff_Name",
-    "Medical_Plan": "Medical_Plan",
-    "Dental_Plan": "Dental_Plan",
-    "Vision_Plan": "Vision_Plan",
-})
+generate_clicked = st.button("📊 Generate Benefits Report", type="primary", use_container_width=True)
 
-# Validate required staff cols
-staff_required = ["Staff_Name", "Salary", "Medical_Plan", "Dental_Plan", "Vision_Plan", "STD", "LTD", "Life"]
-missing_staff = [c for c in staff_required if c not in staff_df.columns]
-if missing_staff:
-    st.error(f"❌ Staff tab is missing required columns: {', '.join(missing_staff)}")
+if generate_clicked:
+    st.session_state.benefits_report_ready = True
+
+# If report not ready, stop (but email logic below still runs if data exists)
+if not st.session_state.benefits_report_ready:
+    st.info("👆 Click the button above to generate the benefits cost report")
     st.stop()
 
-for _, employee in staff_df.iterrows():
-    name = employee.get("Staff_Name", "")
-    salary = to_float(employee.get("Salary", 0))
+st.divider()
 
-    medical_code = employee.get("Medical_Plan")
-    dental_code = employee.get("Dental_Plan")
-    vision_code = employee.get("Vision_Plan")
-    std_code = employee.get("STD")
-    ltd_code = employee.get("LTD")
-    life_code = employee.get("Life")
+# =========================================================
+# Calculate costs for each employee
+# =========================================================
+results = []
+
+for _, employee in staff_df.iterrows():
+    name = safe_str(employee.get("Staff_Name", ""))
+    salary = safe_float(employee.get("Salary", 0))
+
+    medical_code = safe_str(employee.get("Medical_Plan", "")) or "MX"
+    dental_code = safe_str(employee.get("Dental_Plan", "")) or "DX"
+    vision_code = safe_str(employee.get("Vision_Plan", "")) or "VX"
+    std_code = safe_str(employee.get("STD", "")) or "SEX"
+    ltd_code = safe_str(employee.get("LTD", "")) or "LEX"
+    life_code = safe_str(employee.get("Life", "")) or "TEX"
 
     notes = []
 
-    med_total, med_ee, med_firm, med_note = get_benefit_cost(medical_code, salary, "Medical_Plan")
-    den_total, den_ee, den_firm, den_note = get_benefit_cost(dental_code, salary, "Dental_Plan")
-    vis_total, vis_ee, vis_firm, vis_note = get_benefit_cost(vision_code, salary, "Vision_Plan")
-    std_total, std_ee, std_firm, std_note = get_benefit_cost(std_code, salary, "STD")
-    ltd_total, ltd_ee, ltd_firm, ltd_note = get_benefit_cost(ltd_code, salary, "LTD")
-    life_total, life_ee, life_firm, life_note = get_benefit_cost(life_code, salary, "Life")
+    med_total, med_ee, med_firm, med_note = resolve_benefit_cost(medical_code, salary, "Medical_Plan")
+    den_total, den_ee, den_firm, den_note = resolve_benefit_cost(dental_code, salary, "Dental_Plan")
+    vis_total, vis_ee, vis_firm, vis_note = resolve_benefit_cost(vision_code, salary, "Vision_Plan")
+    std_total, std_ee, std_firm, std_note = resolve_benefit_cost(std_code, salary, "STD")
+    ltd_total, ltd_ee, ltd_firm, ltd_note = resolve_benefit_cost(ltd_code, salary, "LTD")
+    life_total, life_ee, life_firm, life_note = resolve_benefit_cost(life_code, salary, "Life")
 
     for n in [med_note, den_note, vis_note, std_note, ltd_note, life_note]:
         if n:
@@ -249,177 +212,136 @@ for _, employee in staff_df.iterrows():
     results.append({
         "Staff_Name": name,
         "Salary": salary,
-
         # Selections
-        "Medical": str(medical_code).strip() if not pd.isna(medical_code) and str(medical_code).strip() else "MX",
-        "Dental": str(dental_code).strip() if not pd.isna(dental_code) and str(dental_code).strip() else "DX",
-        "Vision": str(vision_code).strip() if not pd.isna(vision_code) and str(vision_code).strip() else "VX",
-        "STD": str(std_code).strip() if not pd.isna(std_code) and str(std_code).strip() else "SEX",
-        "LTD": str(ltd_code).strip() if not pd.isna(ltd_code) and str(ltd_code).strip() else "LEX",
-        "Life": str(life_code).strip() if not pd.isna(life_code) and str(life_code).strip() else "TEX",
-
-        # Totals (monthly)
+        "Medical": medical_code,
+        "Dental": dental_code,
+        "Vision": vision_code,
+        "STD": std_code,
+        "LTD": ltd_code,
+        "Life": life_code,
+        # Totals per benefit (monthly)
         "Medical_Cost": med_total,
         "Dental_Cost": den_total,
         "Vision_Cost": vis_total,
         "STD_Cost": std_total,
         "LTD_Cost": ltd_total,
         "Life_Cost": life_total,
-
+        # Totals
         "Total_Monthly": total_monthly,
         "EE_Monthly": ee_monthly,
         "Firm_Monthly": firm_monthly,
-
-        # Annual
         "Total_Yearly": total_monthly * 12,
         "EE_Yearly": ee_monthly * 12,
         "Firm_Yearly": firm_monthly * 12,
-
-        # EE Split (monthly)
-        "EE_Medical": med_ee,
-        "EE_Dental": den_ee,
-        "EE_Vision": vis_ee,
-        "EE_STD": std_ee,
-        "EE_LTD": ltd_ee,
-        "EE_Life": life_ee,
-
-        # Firm Split (monthly)
-        "Firm_Medical": med_firm,
-        "Firm_Dental": den_firm,
-        "Firm_Vision": vis_firm,
-        "Firm_STD": std_firm,
-        "Firm_LTD": ltd_firm,
-        "Firm_Life": life_firm,
-
         "Notes": "; ".join(notes) if notes else "",
     })
 
 results_df = pd.DataFrame(results)
 
-# Sort by staff name
-if not results_df.empty:
-    results_df = results_df.sort_values(by="Staff_Name", ignore_index=True)
-
-# -----------------------------
+# =========================================================
 # Summary metrics
-# -----------------------------
+# =========================================================
 st.header("📊 Summary")
 
-col1, col2, col3 = st.columns(3)
+total_monthly_sum = float(results_df["Total_Monthly"].sum())
+total_yearly_sum = float(results_df["Total_Yearly"].sum())
+ee_monthly_sum = float(results_df["EE_Monthly"].sum())
+ee_yearly_sum = float(results_df["EE_Yearly"].sum())
+firm_monthly_sum = float(results_df["Firm_Monthly"].sum())
+firm_yearly_sum = float(results_df["Firm_Yearly"].sum())
 
-total_monthly = results_df["Total_Monthly"].sum()
-total_yearly = results_df["Total_Yearly"].sum()
-ee_monthly_sum = results_df["EE_Monthly"].sum()
-ee_yearly_sum = results_df["EE_Yearly"].sum()
-firm_monthly_sum = results_df["Firm_Monthly"].sum()
-firm_yearly_sum = results_df["Firm_Yearly"].sum()
+col1, col2, col3 = st.columns(3)
 
 card_style = "padding: 1rem; background-color: #FFF4E6; border-radius: 0.5rem; border-left: 4px solid #FF9800;"
 
 with col1:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Total Monthly Cost</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_yearly:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"""
+    <div style='{card_style}'>
+        <h3 style='margin: 0; color: #666;'>Total Monthly Cost</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_yearly_sum:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col2:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Employee Paid (Monthly)</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${ee_monthly_sum:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${ee_yearly_sum:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"""
+    <div style='{card_style}'>
+        <h3 style='margin: 0; color: #666;'>Employee Paid (Monthly)</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${ee_monthly_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${ee_yearly_sum:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 with col3:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Firm Paid (Monthly)</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${firm_monthly_sum:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${firm_yearly_sum:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.markdown(f"""
+    <div style='{card_style}'>
+        <h3 style='margin: 0; color: #666;'>Firm Paid (Monthly)</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${firm_monthly_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${firm_yearly_sum:,.2f}/year</p>
+    </div>
+    """, unsafe_allow_html=True)
 
 st.divider()
 
-# -----------------------------
+# =========================================================
 # Breakdown by benefit type
-# -----------------------------
+# =========================================================
 st.header("📈 Breakdown by Benefit Type")
 
-breakdown_rows = [
-    {
-        "Benefit Type": "Medical",
-        "Employee Monthly Cost": results_df["EE_Medical"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Medical"].sum(),
-    },
-    {
-        "Benefit Type": "Dental",
-        "Employee Monthly Cost": results_df["EE_Dental"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Dental"].sum(),
-    },
-    {
-        "Benefit Type": "Vision",
-        "Employee Monthly Cost": results_df["EE_Vision"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Vision"].sum(),
-    },
-    {
-        "Benefit Type": "STD",
-        "Employee Monthly Cost": results_df["EE_STD"].sum(),
-        "Firm Monthly Cost": results_df["Firm_STD"].sum(),
-    },
-    {
-        "Benefit Type": "LTD",
-        "Employee Monthly Cost": results_df["EE_LTD"].sum(),
-        "Firm Monthly Cost": results_df["Firm_LTD"].sum(),
-    },
-    {
-        "Benefit Type": "Life/AD&D",
-        "Employee Monthly Cost": results_df["EE_Life"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Life"].sum(),
-    },
-]
+benefit_mapping = {
+    "Medical": ("Medical_Cost", "Medical"),
+    "Dental": ("Dental_Cost", "Dental"),
+    "Vision": ("Vision_Cost", "Vision"),
+    "STD": ("STD_Cost", "STD"),
+    "LTD": ("LTD_Cost", "LTD"),
+    "Life/AD&D": ("Life_Cost", "Life"),
+}
 
-for r in breakdown_rows:
-    r["Total Monthly Cost"] = r["Employee Monthly Cost"] + r["Firm Monthly Cost"]
-    r["Employee Annual Cost"] = r["Employee Monthly Cost"] * 12
-    r["Firm Annual Cost"] = r["Firm Monthly Cost"] * 12
-    r["Total Annual Cost"] = r["Total Monthly Cost"] * 12
+breakdown_rows = []
+for benefit_name, (cost_col, selection_col) in benefit_mapping.items():
+    ee_m = 0.0
+    firm_m = 0.0
 
-# Totals row
-total_ee = sum(r["Employee Monthly Cost"] for r in breakdown_rows)
-total_firm = sum(r["Firm Monthly Cost"] for r in breakdown_rows)
-total_all = sum(r["Total Monthly Cost"] for r in breakdown_rows)
+    for _, emp in results_df.iterrows():
+        code = safe_str(emp.get(selection_col, ""))
+        if not code or code not in benefits_lookup:
+            continue
 
+        b = benefits_lookup[code]
+        emp_cost = float(emp.get(cost_col, 0.0))
+
+        if b["is_formula"]:
+            if code in ["SE1", "LE1"]:
+                firm_m += emp_cost
+            elif code in ["SE2", "LE2"]:
+                ee_m += emp_cost
+        else:
+            ee_m += b["ee_cost"]
+            firm_m += b["firm_cost"]
+
+    total_m = ee_m + firm_m
+    breakdown_rows.append({
+        "Benefit Type": benefit_name,
+        "Employee Monthly Cost": ee_m,
+        "Firm Monthly Cost": firm_m,
+        "Total Monthly Cost": total_m,
+        "Employee Annual Cost": ee_m * 12,
+        "Firm Annual Cost": firm_m * 12,
+        "Total Annual Cost": total_m * 12,
+    })
+
+# totals row
 breakdown_rows.append({
     "Benefit Type": "TOTAL",
-    "Employee Monthly Cost": total_ee,
-    "Firm Monthly Cost": total_firm,
-    "Total Monthly Cost": total_all,
-    "Employee Annual Cost": total_ee * 12,
-    "Firm Annual Cost": total_firm * 12,
-    "Total Annual Cost": total_all * 12,
+    "Employee Monthly Cost": sum(r["Employee Monthly Cost"] for r in breakdown_rows),
+    "Firm Monthly Cost": sum(r["Firm Monthly Cost"] for r in breakdown_rows),
+    "Total Monthly Cost": sum(r["Total Monthly Cost"] for r in breakdown_rows),
+    "Employee Annual Cost": sum(r["Employee Annual Cost"] for r in breakdown_rows),
+    "Firm Annual Cost": sum(r["Firm Annual Cost"] for r in breakdown_rows),
+    "Total Annual Cost": sum(r["Total Annual Cost"] for r in breakdown_rows),
 })
 
-breakdown_export_df = pd.DataFrame(breakdown_rows)
-
-# Display formatted
-breakdown_display_df = breakdown_export_df.copy()
-for col in breakdown_display_df.columns:
-    if "Cost" in col:
-        breakdown_display_df[col] = breakdown_display_df[col].apply(lambda x: f"${x:,.2f}")
+breakdown_df = pd.DataFrame(breakdown_rows)
 
 def highlight_total(row):
     if row["Benefit Type"] == "TOTAL":
@@ -427,47 +349,48 @@ def highlight_total(row):
     return [""] * len(row)
 
 st.dataframe(
-    breakdown_display_df.style.apply(highlight_total, axis=1),
+    breakdown_df.style.apply(highlight_total, axis=1),
     use_container_width=True,
-    hide_index=True
+    hide_index=True,
+    column_config={
+        "Employee Monthly Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Monthly Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Total Monthly Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Employee Annual Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Annual Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Total Annual Cost": st.column_config.NumberColumn(format="$%.2f"),
+    }
 )
 
 st.divider()
 
-# -----------------------------
+# =========================================================
 # Benefits Legend
-# -----------------------------
+# =========================================================
 st.header("📖 Benefits Legend")
 
 with st.expander("View benefit plan codes and descriptions", expanded=False):
-    # Prepare legend data
-    legend_data_with_costs = []  # For Medical/Dental/Vision/Life (fixed costs)
-    legend_data_no_costs = []     # For STD/LTD (formula-based)
+    legend_data_with_costs = []
+    legend_data_no_costs = []
     
     for code, details in sorted(benefits_lookup.items()):
-        # Detect formula-based by code prefix, not by column
-        is_formula = code.startswith('SE') or code.startswith('LE')
-        
-        if is_formula:
-            # Formula-based: just code and description
+        if details["is_formula"]:
             legend_data_no_costs.append({
                 'Code': code,
-                'Description': details.get('description', '')
+                'Description': details["description"]
             })
         else:
-            # Fixed-cost: show all costs
             legend_data_with_costs.append({
                 'Code': code,
-                'Description': details.get('description', ''),
-                'Total Cost': f"${details.get('total_cost', 0):,.2f}",
-                'Employee Cost': f"${details.get('ee_cost', 0):,.2f}",
-                'Firm Cost': f"${details.get('firm_cost', 0):,.2f}"
+                'Description': details["description"],
+                'Total Cost': f"${details['total_cost']:,.2f}",
+                'Employee Cost': f"${details['ee_cost']:,.2f}",
+                'Firm Cost': f"${details['firm_cost']:,.2f}"
             })
     
     legend_with_costs_df = pd.DataFrame(legend_data_with_costs)
     legend_no_costs_df = pd.DataFrame(legend_data_no_costs)
     
-    # Separate by benefit type
     col1, col2 = st.columns(2)
     
     with col1:
@@ -487,197 +410,279 @@ with st.expander("View benefit plan codes and descriptions", expanded=False):
             st.info("No formula-based benefits found")
     
     st.info("""
-    **Formula-Based Benefits:**
-    - **SE1/SE2**: STD cost calculated from salary (66.67% of weekly salary, max $2,100/week benefit)
-    - **LE1/LE2**: LTD cost calculated from salary (60% benefit cap; premium based on salary formula)
-    - **SE1/LE1**: 100% Firm Paid
-    - **SE2/LE2**: 100% Employee Paid
-    """)
+**Formula-Based Benefits:**
+- **SE1/SE2**: STD cost calculated from salary (66.67% of weekly salary, max $2,100/week benefit)
+- **LE1/LE2**: LTD cost calculated from salary (60% benefit cap; premium based on salary formula)
+- **SE1/LE1**: 100% Firm Paid
+- **SE2/LE2**: 100% Employee Paid
+""")
 
 st.divider()
 
-# -----------------------------
-# Employee Details (Sorted)
-# -----------------------------
+# =========================================================
+# Employee Details (with full EE/Firm breakdown)
+# =========================================================
 st.header("👥 Employee Details")
 
-# Create display table - keep numeric values for sorting
-detail_df = pd.DataFrame({
-    "Staff Member": results_df["Staff_Name"],
+# Build detailed display with all EE/Firm split columns
+detail_rows = []
 
-    "Medical": results_df["Medical"],
-    "Dental": results_df["Dental"],
-    "Vision": results_df["Vision"],
-    "STD": results_df["STD"],
-    "LTD": results_df["LTD"],
-    "Life AD&D": results_df["Life"],
+for _, emp in results_df.iterrows():
+    # Get individual benefit codes and costs
+    medical_code = emp['Medical']
+    dental_code = emp['Dental']
+    vision_code = emp['Vision']
+    std_code = emp['STD']
+    ltd_code = emp['LTD']
+    life_code = emp['Life']
+    
+    salary = emp['Salary']
+    
+    # Calculate individual EE/Firm splits for each benefit
+    def get_ee_firm_for_benefit(code):
+        """Returns (total, ee, firm) for a benefit code"""
+        if pd.isna(code) or code == '' or code not in benefits_lookup:
+            return 0.0, 0.0, 0.0
+        
+        benefit = benefits_lookup[code]
+        
+        if benefit['is_formula']:
+            # Calculate cost
+            if code.startswith('SE'):
+                total = calculate_std_cost(salary)
+            elif code.startswith('LE'):
+                total = calculate_ltd_cost(salary)
+            else:
+                total = 0.0
+            
+            # Determine split
+            if code in ['SE1', 'LE1']:  # Firm paid
+                return total, 0.0, total
+            elif code in ['SE2', 'LE2']:  # Employee paid
+                return total, total, 0.0
+            else:
+                return 0.0, 0.0, 0.0
+        else:
+            # Fixed cost from lookup
+            return benefit['total_cost'], benefit['ee_cost'], benefit['firm_cost']
+    
+    med_total, med_ee, med_firm = get_ee_firm_for_benefit(medical_code)
+    den_total, den_ee, den_firm = get_ee_firm_for_benefit(dental_code)
+    vis_total, vis_ee, vis_firm = get_ee_firm_for_benefit(vision_code)
+    std_total, std_ee, std_firm = get_ee_firm_for_benefit(std_code)
+    ltd_total, ltd_ee, ltd_firm = get_ee_firm_for_benefit(ltd_code)
+    life_total, life_ee, life_firm = get_ee_firm_for_benefit(life_code)
+    
+    detail_rows.append({
+        'Staff Member': emp['Staff_Name'],
+        # Selections
+        'Medical': medical_code,
+        'Dental': dental_code,
+        'Vision': vision_code,
+        'STD': std_code,
+        'LTD': ltd_code,
+        'Life AD&D': life_code,
+        # Total Costs (monthly)
+        'Medical Cost': med_total,
+        'Dental Cost': den_total,
+        'Vision Cost': vis_total,
+        'STD Cost': std_total,
+        'LTD Cost': ltd_total,
+        'Life AD&D Cost': life_total,
+        'Total $/mo': emp['Total_Monthly'],
+        'Total $/year': emp['Total_Yearly'],
+        # EE Portion
+        'EE Medical': med_ee,
+        'EE Dental': den_ee,
+        'EE Vision': vis_ee,
+        'EE STD': std_ee,
+        'EE LTD': ltd_ee,
+        'EE Life AD&D': life_ee,
+        'EE $/mo': emp['EE_Monthly'],
+        'EE $/year': emp['EE_Yearly'],
+        # Firm Portion
+        'Firm Medical': med_firm,
+        'Firm Dental': den_firm,
+        'Firm Vision': vis_firm,
+        'Firm STD': std_firm,
+        'Firm LTD': ltd_firm,
+        'Firm Life AD&D': life_firm,
+        'Firm $/mo': emp['Firm_Monthly'],
+        'Firm $/year': emp['Firm_Yearly'],
+        'Notes': emp['Notes']
+    })
 
-    "Medical Cost": results_df["Medical_Cost"],
-    "Dental Cost": results_df["Dental_Cost"],
-    "Vision Cost": results_df["Vision_Cost"],
-    "STD Cost": results_df["STD_Cost"],
-    "LTD Cost": results_df["LTD_Cost"],
-    "Life AD&D Cost": results_df["Life_Cost"],
+detail_df = pd.DataFrame(detail_rows)
 
-    "Total $/mo": results_df["Total_Monthly"],
-    "Total $/year": results_df["Total_Yearly"],
-
-    "EE Medical": results_df["EE_Medical"],
-    "EE Dental": results_df["EE_Dental"],
-    "EE Vision": results_df["EE_Vision"],
-    "EE STD": results_df["EE_STD"],
-    "EE LTD": results_df["EE_LTD"],
-    "EE Life AD&D": results_df["EE_Life"],
-    "EE $/mo": results_df["EE_Monthly"],
-    "EE $/year": results_df["EE_Yearly"],
-
-    "Firm Medical": results_df["Firm_Medical"],
-    "Firm Dental": results_df["Firm_Dental"],
-    "Firm Vision": results_df["Firm_Vision"],
-    "Firm STD": results_df["Firm_STD"],
-    "Firm LTD": results_df["Firm_LTD"],
-    "Firm Life AD&D": results_df["Firm_Life"],
-    "Firm $/mo": results_df["Firm_Monthly"],
-    "Firm $/year": results_df["Firm_Yearly"],
-
-    "Notes": results_df["Notes"],
-})
-
-# Use column_config to format as currency while keeping numeric for sorting
+# Display with currency formatting for all cost columns
 st.dataframe(
     detail_df,
     use_container_width=True,
     hide_index=True,
     column_config={
-        **{col: st.column_config.NumberColumn(col, format="$%.2f")
-           for col in detail_df.columns
-           if 'Cost' in col or '$/mo' in col or '$/year' in col or col.startswith('EE ') or col.startswith('Firm ')}
+        "Medical Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Dental Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Vision Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "STD Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "LTD Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Life AD&D Cost": st.column_config.NumberColumn(format="$%.2f"),
+        "Total $/mo": st.column_config.NumberColumn(format="$%.2f"),
+        "Total $/year": st.column_config.NumberColumn(format="$%.2f"),
+        "EE Medical": st.column_config.NumberColumn(format="$%.2f"),
+        "EE Dental": st.column_config.NumberColumn(format="$%.2f"),
+        "EE Vision": st.column_config.NumberColumn(format="$%.2f"),
+        "EE STD": st.column_config.NumberColumn(format="$%.2f"),
+        "EE LTD": st.column_config.NumberColumn(format="$%.2f"),
+        "EE Life AD&D": st.column_config.NumberColumn(format="$%.2f"),
+        "EE $/mo": st.column_config.NumberColumn(format="$%.2f"),
+        "EE $/year": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Medical": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Dental": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Vision": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm STD": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm LTD": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm Life AD&D": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm $/mo": st.column_config.NumberColumn(format="$%.2f"),
+        "Firm $/year": st.column_config.NumberColumn(format="$%.2f"),
     }
 )
 
-if (results_df["Notes"].fillna("") != "").any():
-    st.warning("⚠️ Some employees have notes about benefit selections — see Notes column above")
+if "Notes" in results_df.columns and results_df["Notes"].notna().any() and (results_df["Notes"] != "").any():
+    st.warning("⚠️ Some employees have notes about benefit selections — see Notes column above.")
 
 st.divider()
 
-# -----------------------------
-# Export options
-# -----------------------------
+# =========================================================
+# Export
+# =========================================================
 st.header("📥 Download Report")
 
-# Build Excel file for download
-output_download = BytesIO()
-with pd.ExcelWriter(output_download, engine="openpyxl") as writer:
-    summary_export_df = pd.DataFrame([
-        {"Metric": "Total Monthly Cost", "Amount": total_monthly},
-        {"Metric": "Total Yearly Cost", "Amount": total_yearly},
+# Build Excel (keep as bytes for stability)
+output = BytesIO()
+with pd.ExcelWriter(output, engine="openpyxl") as writer:
+    summary_df = pd.DataFrame([
+        {"Metric": "Total Monthly Cost", "Amount": total_monthly_sum},
+        {"Metric": "Total Yearly Cost", "Amount": total_yearly_sum},
         {"Metric": "Employee Paid (Monthly)", "Amount": ee_monthly_sum},
         {"Metric": "Employee Paid (Yearly)", "Amount": ee_yearly_sum},
         {"Metric": "Firm Paid (Monthly)", "Amount": firm_monthly_sum},
         {"Metric": "Firm Paid (Yearly)", "Amount": firm_yearly_sum},
     ])
-    summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
-    breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
+    summary_df.to_excel(writer, sheet_name="Summary", index=False)
+    breakdown_df.to_excel(writer, sheet_name="Breakdown", index=False)
     
-    # Export details WITHOUT Salary
-    export_details = results_df.drop(columns=["Salary"], errors="ignore")
-    export_details.to_excel(writer, sheet_name="Employee Details", index=False)
+    # Export WITHOUT Salary column
+    export_df = results_df.drop(columns=["Salary"], errors="ignore")
+    export_df.to_excel(writer, sheet_name="Employee Details", index=False)
 
-download_data = output_download.getvalue()
+excel_bytes = output.getvalue()
 
 st.download_button(
     label="📊 Download Excel Report",
-    data=download_data,
+    data=excel_bytes,
     file_name=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     use_container_width=True,
 )
 
-# Store report data for email functionality
+# Store report data for email (bytes, not BytesIO)
 st.session_state.benefits_report_data = {
-    'total_monthly': total_monthly,
-    'total_yearly': total_yearly,
-    'ee_monthly': ee_monthly_sum,
-    'ee_yearly': ee_yearly_sum,
-    'firm_monthly': firm_monthly_sum,
-    'firm_yearly': firm_yearly_sum,
-    'excel_data': download_data
+    "total_monthly": total_monthly_sum,
+    "total_yearly": total_yearly_sum,
+    "ee_monthly": ee_monthly_sum,
+    "ee_yearly": ee_yearly_sum,
+    "firm_monthly": firm_monthly_sum,
+    "firm_yearly": firm_yearly_sum,
+    "excel_bytes": excel_bytes,
 }
 
-# Email functionality (after report is generated - sidebar pattern from Expense Reviewer)
-if 'benefits_report_data' in st.session_state:
+# =========================================================
+# ⚠️ CRITICAL: Email block is UN-NESTED (runs on every rerun)
+# =========================================================
+if "benefits_report_data" in st.session_state:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📧 Email Report")
-    
+
+    notification_email = st.secrets.get("NOTIFICATION_EMAIL", "astudee@voyageadvisory.com")
+
     email_to = st.sidebar.text_input(
         "Send to:",
+        value=notification_email,
         placeholder="email@example.com",
-        key="benefits_email"
+        key="benefits_email_input",
     )
-    
-    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_benefits")
-    
+
+    send_clicked = st.sidebar.button(
+        "Send Email",
+        type="primary",
+        use_container_width=True,
+        key="send_benefits_button",
+    )
+
     if send_clicked:
-        if not email_to:
+        if not safe_str(email_to):
             st.sidebar.error("Enter an email address")
         else:
-            with st.sidebar.spinner("Sending email..."):
-                try:
-                    from googleapiclient.discovery import build
-                    from google.oauth2 import service_account
-                    import base64
-                    from email.mime.multipart import MIMEMultipart
-                    from email.mime.text import MIMEText
-                    from email.mime.base import MIMEBase
-                    from email import encoders
-                    
-                    rd = st.session_state.benefits_report_data
-                    
-                    creds = service_account.Credentials.from_service_account_info(
-                        st.secrets["SERVICE_ACCOUNT_KEY"],
-                        scopes=['https://www.googleapis.com/auth/gmail.send'],
-                        subject='astudee@voyageadvisory.com'
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.message import EmailMessage
+
+                service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
+                if not service_account_info:
+                    st.sidebar.error("❌ SERVICE_ACCOUNT_KEY missing in secrets")
+                else:
+                    credentials = service_account.Credentials.from_service_account_info(
+                        service_account_info,
+                        scopes=["https://www.googleapis.com/auth/gmail.send"],
+                        subject="astudee@voyageadvisory.com",
                     )
-                    
-                    gmail = build('gmail', 'v1', credentials=creds)
-                    
-                    msg = MIMEMultipart()
-                    msg['From'] = 'astudee@voyageadvisory.com'
-                    msg['To'] = email_to
-                    msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
-                    
-                    body = f"""Benefits Calculator Report
+
+                    gmail_service = build("gmail", "v1", credentials=credentials)
+
+                    data = st.session_state.benefits_report_data
+
+                    msg = EmailMessage()
+                    msg["To"] = email_to
+                    msg["From"] = "astudee@voyageadvisory.com"
+                    msg["Subject"] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
+
+                    msg.set_content(
+                        f"""Benefits Calculator Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 Summary:
-- Total Monthly Cost: ${rd['total_monthly']:,.2f}
-- Employee Paid: ${rd['ee_monthly']:,.2f}
-- Firm Paid: ${rd['firm_monthly']:,.2f}
+- Total Monthly Cost: ${data['total_monthly']:,.2f}
+- Employee Paid: ${data['ee_monthly']:,.2f}
+- Firm Paid: ${data['firm_monthly']:,.2f}
 
-Total Annual Cost: ${rd['total_yearly']:,.2f}
-- Employee: ${rd['ee_yearly']:,.2f}
-- Firm: ${rd['firm_yearly']:,.2f}
+Total Annual Cost: ${data['total_yearly']:,.2f}
+- Employee: ${data['ee_yearly']:,.2f}
+- Firm: ${data['firm_yearly']:,.2f}
 
 Detailed breakdown attached in Excel file.
 
-Best regards,
-Voyage Advisory
+--
+Voyage Advisory Benefits Calculator
 """
-                    
-                    msg.attach(MIMEText(body, 'plain'))
-                    
-                    # Attach Excel file
-                    part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                    part.set_payload(rd['excel_data'])
-                    encoders.encode_base64(part)
-                    part.add_header('Content-Disposition', f'attachment; filename=benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx')
-                    msg.attach(part)
-                    
-                    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                    result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
-                    
+                    )
+
+                    msg.add_attachment(
+                        data["excel_bytes"],
+                        maintype="application",
+                        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        filename=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    )
+
+                    encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+                    gmail_service.users().messages().send(
+                        userId="me",
+                        body={"raw": encoded},
+                    ).execute()
+
                     st.sidebar.success(f"✅ Sent to {email_to}!")
-                    
-                except Exception as e:
-                    st.sidebar.error(f"❌ {type(e).__name__}")
-                    st.sidebar.code(str(e))
+
+            except Exception as e:
+                st.sidebar.error(f"❌ {type(e).__name__}")
+                st.sidebar.code(str(e))
