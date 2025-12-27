@@ -151,12 +151,12 @@ def check_google_drive():
                 'details': 'No FOLDER_* settings found in secrets'
             }
         
-        # Create credentials with Drive scope AND domain-wide delegation
-        # CRITICAL: Use subject= to impersonate a real user (matches vault apps)
+        # Create credentials with Drive scope
+        # NOTE: Use service account directly (no subject= impersonation)
+        # The service account is already a member of the Shared Drives
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
-            scopes=['https://www.googleapis.com/auth/drive'],
-            subject='astudee@voyageadvisory.com'  # Run as this user, not service account
+            scopes=['https://www.googleapis.com/auth/drive']
         )
         
         # Build Drive service
@@ -179,9 +179,9 @@ def check_google_drive():
             except Exception as e:
                 error_msg = str(e)
                 if '404' in error_msg:
-                    inaccessible.append(f"{folder_name}: Not visible to astudee@voyageadvisory.com (404)")
+                    inaccessible.append(f"{folder_name}: Not found (Is {sa_email} added to this Shared Drive?)")
                 elif '403' in error_msg:
-                    inaccessible.append(f"{folder_name}: Permission denied (403)")
+                    inaccessible.append(f"{folder_name}: Permission denied for {sa_email}")
                 else:
                     inaccessible.append(f"{folder_name}: {str(e)[:80]}")
         
@@ -191,14 +191,14 @@ def check_google_drive():
                 'status': 'error',
                 'icon': '❌',
                 'message': f'Cannot access {len(inaccessible)} folder(s)',
-                'details': f"Running as: astudee@voyageadvisory.com (via {sa_email})\n\nAccessible ({len(accessible)}): {', '.join(accessible) if accessible else 'None'}\n\nInaccessible ({len(inaccessible)}): {', '.join(inaccessible)}"
+                'details': f"Service Account: {sa_email}\n\nAccessible ({len(accessible)}): {', '.join(accessible) if accessible else 'None'}\n\nInaccessible ({len(inaccessible)}): {', '.join(inaccessible)}"
             }
         else:
             return {
                 'status': 'success',
                 'icon': '✅',
                 'message': 'Connected successfully',
-                'details': f'Can access all {len(accessible)} configured folders: {", ".join(accessible)}'
+                'details': f'Service account {sa_email} can access all {len(accessible)} configured folders'
             }
     
     except Exception as e:
