@@ -386,27 +386,39 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Debug: Show what columns we actually have
-            st.info(f"📊 BigTime columns found: {', '.join(detailed_df.columns.tolist()[:10])}...")
+            # Debug: Show ALL columns we actually have
+            all_cols = detailed_df.columns.tolist()
+            st.info(f"📊 BigTime report has {len(all_cols)} columns")
+            st.info(f"🔍 All columns: {', '.join(all_cols)}")
             
             # Map column names - look for TOTAL hours not just billable
             col_mapping = {}
             for standard_name, possible_names in {
-                'Staff': ['Staff Member', 'tmstaffnm', 'Staff'],
-                'Client': ['Client', 'tmclientnm'],
-                'Project': ['Project', 'tmprojectnm'],
-                'Total_Hours': ['tmhrs', 'Hours', 'Total Hours', 'Hrs'],  # tmhrs is BigTime's hours column!
-                'Billable_Amount': ['Billable ($)', 'tmchgbillbase', 'Billable'],  # Dollar amount
-                'Date': ['Date', 'tmdt'],
-                'Notes': ['Notes', 'tmnotes', 'Note']
+                'Staff': ['tmstaffnm', 'Staff Member', 'Staff'],
+                'Client': ['tmclientnm', 'Client'],
+                'Project': ['tmprojectnm', 'Project'],
+                'Total_Hours': ['tmhrs', 'Hours', 'Total Hours', 'Hrs', 'tmhrsbill'],  # Check multiple hour columns
+                'Billable_Amount': ['tmchgbillbase', 'Billable ($)', 'Billable'],
+                'Date': ['tmdt', 'Date'],
+                'Notes': ['tmnotes', 'Notes', 'Note']
             }.items():
                 for possible in possible_names:
                     if possible in detailed_df.columns:
                         col_mapping[standard_name] = possible
+                        st.success(f"✓ Mapped {standard_name} → {possible}")
                         break
+                else:
+                    st.warning(f"⚠️ Could not find column for {standard_name}")
             
             # Debug: Show what we mapped
-            st.info(f"🔗 Column mapping: {col_mapping}")
+            st.info(f"🔗 Final mapping: {col_mapping}")
+            
+            # CRITICAL CHECK: Do we have Total_Hours?
+            if 'Total_Hours' not in col_mapping:
+                st.error("❌ CRITICAL: Could not find hours column in BigTime data!")
+                st.error(f"Looking for any of: tmhrs, Hours, Total Hours, Hrs, tmhrsbill")
+                st.error(f"Available columns: {', '.join(all_cols)}")
+                st.stop()
             
             # Rename columns
             detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
@@ -414,6 +426,7 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             # Convert to numeric
             if 'Total_Hours' in detailed_df.columns:
                 detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['Total_Hours'], errors='coerce').fillna(0)
+                st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min()}, max={detailed_df['Total_Hours'].max()}, sum={detailed_df['Total_Hours'].sum()}")
             if 'Billable_Amount' in detailed_df.columns:
                 detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
             
