@@ -331,9 +331,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             # Create mapping: normalized_name -> display_name
             employees_norm = {normalize_name(n): n for n in emp_names_raw}
             
-            st.success(f"✅ Loaded {len(employees_norm)} employees from config")
-            st.write(f"**Employees (normalized):** {sorted(employees_norm.values())}")
-            
         except Exception as e:
             st.error(f"❌ Error loading config: {str(e)}")
             st.stop()
@@ -364,8 +361,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
         if zero_hours_df is None or unsubmitted_df is None or detailed_df is None:
             st.error("❌ Failed to fetch BigTime reports")
             st.stop()
-        
-        st.success(f"✅ Fetched reports: {len(zero_hours_df)} zero-hour entries, {len(unsubmitted_df)} unsubmitted, {len(detailed_df)} time entries")
     
     # ============================================================
     # PHASE 3: ANALYZE ZERO HOURS
@@ -373,16 +368,9 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
-            st.info(f"📋 Zero hours report returned {len(zero_hours_df)} rows")
-            
-            # Debug: Show ALL columns
-            all_cols = zero_hours_df.columns.tolist()
-            st.info(f"🔍 Zero hours report columns ({len(all_cols)}): {', '.join(all_cols)}")
-            
             # CRITICAL: This is a STAFF/RESOURCE report, NOT a time-entry report
             # BigTime uses 'st*' prefix for staff reports (e.g., stname, sttitle, ststatus)
             # Different from 'tm*' prefix for time-entry reports
-            # Per ChatGPT and Gemini + actual data
             
             STAFF_NAME_CANDIDATES = [
                 'stname',         # ACTUAL column name for staff reports! (st = staff)
@@ -402,16 +390,14 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             for col in STAFF_NAME_CANDIDATES:
                 if col in zero_hours_df.columns:
                     staff_col = col
-                    st.success(f"✓ Found staff column: '{staff_col}'")
                     break
             
             # Fallback: search for any column with 'name' or 'staff' in it
             if not staff_col:
+                all_cols = zero_hours_df.columns.tolist()
                 name_like_cols = [c for c in all_cols if any(x in c.lower() for x in ['name', 'staff', 'nm'])]
-                st.info(f"🔍 Name-like columns found: {name_like_cols}")
                 if name_like_cols:
                     staff_col = name_like_cols[0]
-                    st.warning(f"⚠️ Using fallback column: '{staff_col}'")
             
             if staff_col:
                 # Extract and clean names
@@ -425,9 +411,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 )
                 # Filter out empty strings
                 issues['zero_hours'] = sorted([name for name in zero_hour_staff if name])
-                
-                st.success(f"📊 Found {len(issues['zero_hours'])} people with zero hours")
-                st.write(f"Names: {', '.join(issues['zero_hours'])}")
             else:
                 st.error(f"❌ Could not find staff name column in zero hours report")
                 st.error(f"Available columns: {', '.join(all_cols)}")
@@ -500,21 +483,11 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             staff_40_plus = hours_by_staff[hours_by_staff >= 40.0]
             staff_under_40 = hours_by_staff[hours_by_staff < 40.0]
             
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.success(f"✅ Staff with 40+ hours ({len(staff_40_plus)})")
-                for name, hours in staff_40_plus.items():
-                    st.write(f"  • {name}: **{hours}** hours")
-            
-            with col2:
-                st.warning(f"⚠️ Staff with under 40 hours ({len(staff_under_40)})")
-                for name, hours in staff_under_40.items():
-                    st.write(f"  • {name}: **{hours}** hours")
-                    # Check if they're an employee (for final flagging)
-                    norm_name = normalize_name(name)
-                    if norm_name in employees_norm:
-                        issues['under_40'].append((employees_norm[norm_name], hours))
+            # Flag employees under 40 hours
+            for name, hours in staff_under_40.items():
+                norm_name = normalize_name(name)
+                if norm_name in employees_norm:
+                    issues['under_40'].append((employees_norm[norm_name], hours))
             
             # Check 2: Non-billable client work - CHECK EVERYONE not just employees
             if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
@@ -571,8 +544,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     # PHASE 6: GENERATE REPORT
     # ============================================================
     
-    st.success("✅ Analysis complete!")
-    
     st.header(f"📊 Hours Reviewer Report")
     st.subheader(f"Week Ending {week_ending.strftime('%A, %B %d, %Y')}")
     st.caption(f"Period: {week_starting.strftime('%b %d')} - {week_ending.strftime('%b %d, %Y')}")
@@ -596,10 +567,30 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     # Debug section
     with st.expander("🔧 Debug Information", expanded=False):
-        st.write("**BigTime API Data**")
+        st.write("**Employee Configuration**")
+        st.write(f"• Loaded {len(employees_norm)} employees from config")
+        with st.expander("View employee list", expanded=False):
+            st.write(sorted(employees_norm.values()))
+        
+        st.write("\n**BigTime Reports Fetched**")
+        st.write(f"• Zero hours report: {len(zero_hours_df)} entries")
+        st.write(f"• Unsubmitted report: {len(unsubmitted_df)} entries")
+        st.write(f"• Detailed time report: {len(detailed_df)} entries")
+        
+        st.write("\n**Zero Hours Report**")
+        if not zero_hours_df.empty:
+            all_cols = zero_hours_df.columns.tolist()
+            st.write(f"• Columns ({len(all_cols)}): {', '.join(all_cols)}")
+            st.write(f"• Staff column used: 'stname'")
+            st.write(f"• People with zero hours: {len(issues['zero_hours'])}")
+            if issues['zero_hours']:
+                st.write(f"• Names: {', '.join(issues['zero_hours'])}")
+        
+        st.write("\n**Detailed Time Report**")
         st.write(f"• Total time entries: {len(detailed_df)}")
         st.write(f"• BigTime columns: {len(detailed_df.columns)}")
-        st.code(', '.join(detailed_df.columns.tolist()), language=None)
+        with st.expander("View column list", expanded=False):
+            st.code(', '.join(detailed_df.columns.tolist()), language=None)
         
         st.write("\n**Hours Aggregation**")
         st.write(f"• Created Total_Hours from tmhrsin")
@@ -607,11 +598,31 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
         st.write(f"• People with time entries: {len(hours_by_staff)}")
         st.write(f"• Renamed tmstaffnm → Staff")
         
+        st.write("\n**Hours Breakdown (All Staff)**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.success(f"✅ Staff with 40+ hours ({len(staff_40_plus)})")
+            for name, hours in staff_40_plus.items():
+                st.write(f"  • {name}: {hours} hours")
+        
+        with col2:
+            st.warning(f"⚠️ Staff with under 40 hours ({len(staff_under_40)})")
+            for name, hours in staff_under_40.items():
+                st.write(f"  • {name}: {hours} hours")
+        
         st.write("\n**Employee Matching**")
         st.write(f"• Employees in config: {len(employees_norm)}")
         st.write(f"• Staff with 40+ hours: {len(staff_40_plus)}")
         st.write(f"• Staff with under 40 hours: {len(staff_under_40)}")
         st.write(f"• Employees flagged for under 40: {len(issues['under_40'])}")
+        
+        st.write("\n**AI Note Review**")
+        if review_notes:
+            st.write(f"• AI note review: Enabled")
+            st.write(f"• Poor notes found: {len(issues['poor_notes'])}")
+        else:
+            st.write(f"• AI note review: Not enabled (skipped)")
     
     # 1. Zero Hours
     with st.expander(f"❌ Zero Hours Reported ({len(issues['zero_hours'])})", expanded=len(issues['zero_hours']) > 0):
