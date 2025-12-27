@@ -168,6 +168,20 @@ apps = [
             'Email report capability'
         ],
         'status': '✅ Available'
+    },
+    {
+        'icon': '🔑',
+        'name': 'QuickBooks Token Refresh',
+        'description': 'Re-authorize QuickBooks API access',
+        'features': [
+            'Generate QuickBooks authorization URL',
+            'Exchange authorization code for refresh token',
+            'Display new token for manual secrets update',
+            'Step-by-step instructions',
+            'Troubleshooting guide',
+            'Token expires every ~100 days'
+        ],
+        'status': '🔧 Utility'
     }
 ]
 
