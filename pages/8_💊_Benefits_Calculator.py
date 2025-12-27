@@ -128,13 +128,6 @@ for _, row in benefits_df.iterrows():
         "rate": row.get("Rate_Per_Unit", None),
     }
 
-# Optional debug
-with st.sidebar:
-    st.subheader("Debug")
-    show_debug = st.checkbox("Show ME1 lookup", value=False)
-    if show_debug:
-        st.write("ME1:", benefits_lookup.get("ME1", "ME1 not found"))
-
 # -----------------------------
 # Formula calculations
 # -----------------------------
@@ -447,28 +440,43 @@ st.divider()
 st.header("📖 Benefits Legend")
 
 with st.expander("View benefit plan codes and descriptions", expanded=False):
-    # Prepare legend data - ONLY show Code and Description
-    legend_data = []
+    # Prepare legend data
+    legend_data_with_costs = []  # For Medical/Dental/Vision
+    legend_data_no_costs = []     # For STD/LTD/Life
     
     for code, details in sorted(benefits_lookup.items()):
-        legend_data.append({
-            'Code': code,
-            'Description': details.get('description', '')
-        })
+        is_formula = details.get('is_formula', False)
+        
+        if is_formula:
+            # Formula-based: just code and description
+            legend_data_no_costs.append({
+                'Code': code,
+                'Description': details.get('description', '')
+            })
+        else:
+            # Fixed-cost: show all costs
+            legend_data_with_costs.append({
+                'Code': code,
+                'Description': details.get('description', ''),
+                'Total Cost': f"${details.get('total_cost', 0):,.2f}",
+                'Employee Cost': f"${details.get('ee_cost', 0):,.2f}",
+                'Firm Cost': f"${details.get('firm_cost', 0):,.2f}"
+            })
     
-    legend_df = pd.DataFrame(legend_data)
+    legend_with_costs_df = pd.DataFrame(legend_data_with_costs)
+    legend_no_costs_df = pd.DataFrame(legend_data_no_costs)
     
     # Separate by benefit type
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("Medical, Dental, Vision")
-        mdv_df = legend_df[legend_df['Code'].str.match(r'^(M|D|V)', na=False)].copy()
+        mdv_df = legend_with_costs_df[legend_with_costs_df['Code'].str.match(r'^(M|D|V)', na=False)].copy()
         st.dataframe(mdv_df, use_container_width=True, hide_index=True)
     
     with col2:
         st.subheader("STD, LTD, Life/AD&D")
-        other_df = legend_df[legend_df['Code'].str.match(r'^(SE|LE|TE)', na=False)].copy()
+        other_df = legend_no_costs_df[legend_no_costs_df['Code'].str.match(r'^(SE|LE|TE)', na=False)].copy()
         st.dataframe(other_df, use_container_width=True, hide_index=True)
     
     st.info("""
