@@ -148,10 +148,10 @@ def check_google_drive():
                 'details': 'No FOLDER_* settings found in secrets'
             }
         
-        # Create credentials with Drive scope
+        # Create credentials with Drive scope (use full drive scope to match vault apps)
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
-            scopes=['https://www.googleapis.com/auth/drive.readonly']
+            scopes=['https://www.googleapis.com/auth/drive']
         )
         
         # Build Drive service
