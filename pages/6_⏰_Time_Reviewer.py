@@ -394,70 +394,19 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
             numeric_cols = detailed_df.select_dtypes(include=['number', 'float64', 'int64']).columns.tolist()
             st.info(f"🔢 Found {len(numeric_cols)} numeric columns: {', '.join(numeric_cols[:20])}")
             
-            # ChatGPT's comprehensive hour column detection
-            HOUR_COLUMN_CANDIDATES = [
-                # Primary (most common per ChatGPT)
-                "tmduration",
-                "tmdurationdecimal", 
-                "tmhrsworked",
-                "tmhours",
-                "tmamt",  # Gemini's most likely
-                # Billable/Non-billable split
-                "tmbillablehrs",
-                "tmnonbillablehrs",
-                "tmbillhrs",
-                "tmnonbillhrs",
-                "tmhrsbill",
-                "tmhrsnb",
-                # Legacy/report-specific
-                "tmqty",
-                "tmqtydecimal",
-                "tmactualhrs",
-                "tmworkhrs",
-                "inputhrs",
-                # If stored as minutes
-                "tmdurationminutes",
-                "tmdurationmins",
-                # Original guesses
-                "tmhrs",
-                "Hours",
-                "Hrs"
-            ]
+            # CRITICAL: Use tmhrsin for total hours (input hours)
+            # This is the actual hours worked, not billable hours or IDs
             
-            # Find ALL hour-related columns that exist
-            found_hour_cols = [col for col in HOUR_COLUMN_CANDIDATES if col in detailed_df.columns]
-            
-            st.info(f"⏰ Found these hour columns: {found_hour_cols if found_hour_cols else 'NONE FOUND'}")
-            
-            # Also search by keyword (ChatGPT's robust method)
-            HOUR_KEYWORDS = ["hour", "hrs", "duration", "qty", "work", "amt"]
-            keyword_matches = [
-                col for col in detailed_df.columns
-                if any(k in col.lower() for k in HOUR_KEYWORDS)
-                and col in numeric_cols
-            ]
-            st.info(f"🔍 Keyword search found: {keyword_matches}")
-            
-            # Combine found columns
-            all_hour_candidates = list(set(found_hour_cols + keyword_matches))
-            
-            if not all_hour_candidates:
-                st.error("❌ CRITICAL: No hour columns found!")
-                st.error(f"📋 All columns: {', '.join(all_cols)}")
-                st.error(f"🔢 Numeric columns: {', '.join(numeric_cols)}")
+            if 'tmhrsin' not in detailed_df.columns:
+                st.error("❌ CRITICAL: 'tmhrsin' (input hours) column not found!")
+                st.error(f"📋 Available columns: {', '.join(all_cols)}")
                 st.stop()
             
-            # Create Total_Hours by summing all hour-related columns
-            st.success(f"✓ Using these columns for hours: {all_hour_candidates}")
+            # Create Total_Hours from tmhrsin only
+            detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['tmhrsin'], errors='coerce').fillna(0)
             
-            # Convert all to numeric and sum
-            for col in all_hour_candidates:
-                detailed_df[col] = pd.to_numeric(detailed_df[col], errors='coerce').fillna(0)
-            
-            detailed_df['Total_Hours'] = detailed_df[all_hour_candidates].sum(axis=1)
-            
-            # Show statistics
-            st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min():.1f}, max={detailed_df['Total_Hours'].max():.1f}, sum={detailed_df['Total_Hours'].sum():.1f}")
+            st.success(f"✓ Using 'tmhrsin' for Total Hours")
+            st.info(f"📊 Total_Hours stats: min={detailed_df['Total_Hours'].min():.1f}, max={detailed_df['Total_Hours'].max():.1f}, sum={detailed_df['Total_Hours'].sum():.1f}, mean={detailed_df['Total_Hours'].mean():.1f}")
             
             # Map other columns
             col_mapping = {
