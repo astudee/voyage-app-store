@@ -1,12 +1,13 @@
 """
-Benefits Calculator
-Calculate employee benefits costs based on current selections
+Expense Reviewer App
+Reviews expenses for compliance and quality
 """
 
 import streamlit as st
 import pandas as pd
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
+import requests
 from io import BytesIO
 
 # Authentication check - shared session state from Home page
@@ -16,606 +17,482 @@ if 'authenticated' not in st.session_state or not st.session_state.authenticated
 
 # Add functions to path
 sys.path.append('./functions')
+
 import sheets
 
-st.set_page_config(page_title="Benefits Calculator", page_icon="💊", layout="wide")
+st.set_page_config(page_title="Expense Reviewer", page_icon="💳", layout="wide")
 
-st.title("💊 Benefits Calculator")
-st.markdown("Calculate total benefits costs based on current employee selections")
+st.title("💳 Expense Reviewer")
+st.markdown("Review expenses for compliance and quality")
 
-# Config from secrets
-config_sheet_id = st.secrets.get("SHEET_CONFIG_ID")
-if not config_sheet_id:
-    st.error("❌ SHEET_CONFIG_ID not found in secrets")
-    st.stop()
+# ============================================
+# HELPER FUNCTIONS
+# ============================================
 
-# -----------------------------
-# Helpers
-# -----------------------------
-def to_float(val) -> float:
-    """Robust float conversion for sheet values (handles $, commas, blanks, strings)."""
+def get_bigtime_report(report_id, start_date, end_date):
+    """Fetch data from BigTime report API"""
     try:
-        if pd.isna(val):
-            return 0.0
-        s = str(val).strip()
-        if s == "" or s.lower() in ("none", "nan"):
-            return 0.0
-        s = s.replace("$", "").replace(",", "")
-        return float(s)
-    except Exception:
-        return 0.0
-
-def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize column names to consistent snake-ish format."""
-    df = df.copy()
-    df.columns = (
-        df.columns.astype(str)
-        .str.strip()
-        .str.replace("\n", " ")
-        .str.replace("\t", " ")
-        .str.replace("  ", " ")
-        .str.replace(" ", "_")
-    )
-    return df
-
-# -----------------------------
-# Load configuration data
-# -----------------------------
-with st.spinner("📊 Loading configuration data..."):
-    try:
-        staff_df = sheets.read_config(config_sheet_id, "Staff")
-        benefits_df = sheets.read_config(config_sheet_id, "Benefits")
-
-        if staff_df is None or staff_df.empty:
-            st.error("❌ Could not load Staff configuration")
-            st.stop()
-
-        if benefits_df is None or benefits_df.empty:
-            st.error("❌ Could not load Benefits configuration")
-            st.stop()
-
+        api_key = st.secrets["BIGTIME_API_KEY"]
+        firm_id = st.secrets["BIGTIME_FIRM_ID"]
     except Exception as e:
-        st.error(f"❌ Error loading configuration: {str(e)}")
-        st.stop()
-
-# Normalize columns (this prevents subtle header mismatch issues)
-staff_df = normalize_columns(staff_df)
-benefits_df = normalize_columns(benefits_df)
-
-# Defensive rename in case sheet uses slightly different labels
-benefits_df = benefits_df.rename(columns={
-    "EE_Monthly": "EE_Monthly_Cost",
-    "Firm_Monthly": "Firm_Monthly_Cost",
-    "Employee_Monthly_Cost": "EE_Monthly_Cost",
-    "Company_Monthly_Cost": "Firm_Monthly_Cost",
-    "Employer_Monthly_Cost": "Firm_Monthly_Cost",
-})
-
-st.success(f"✅ Loaded {len(staff_df)} staff members and {len(benefits_df)} benefit options")
-
-# Generate Report button
-st.markdown("---")
-if not st.button("📊 Generate Benefits Report", type="primary", use_container_width=True):
-    st.info("👆 Click the button above to generate the benefits cost report")
-    st.stop()
-
-st.markdown("---")
-
-# -----------------------------
-# Create lookup dictionary for benefits
-# -----------------------------
-required_cols = ["Code", "Description", "Total_Monthly_Cost", "EE_Monthly_Cost", "Firm_Monthly_Cost"]
-missing = [c for c in required_cols if c not in benefits_df.columns]
-if missing:
-    st.error(f"❌ Benefits tab is missing required columns: {', '.join(missing)}")
-    st.stop()
-
-benefits_lookup = {}
-for _, row in benefits_df.iterrows():
-    code = str(row["Code"]).strip() if not pd.isna(row["Code"]) else ""
-    if code == "":
-        continue
-
-    benefits_lookup[code] = {
-        "description": row.get("Description", ""),
-        "is_formula": bool(row.get("Is_Formula_Based", False)),
-        "total_cost": to_float(row.get("Total_Monthly_Cost")),
-        "ee_cost": to_float(row.get("EE_Monthly_Cost")),
-        "firm_cost": to_float(row.get("Firm_Monthly_Cost")),
-        "coverage_pct": row.get("Coverage_Percentage", None),
-        "max_weekly": row.get("Max_Weekly_Benefit", None),
-        "max_monthly": row.get("Max_Monthly_Benefit", None),
-        "rate": row.get("Rate_Per_Unit", None),
+        st.error(f"Missing BigTime credentials: {str(e)}")
+        return None
+    
+    url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/{report_id}"
+    
+    headers = {
+        "X-Auth-ApiToken": api_key,
+        "X-Auth-Realm": firm_id,
+        "Accept": "application/json"
     }
+    
+    payload = {
+        "DT_BEGIN": start_date.strftime("%Y-%m-%d"),
+        "DT_END": end_date.strftime("%Y-%m-%d")
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers)
+        if response.status_code == 200:
+            report_data = response.json()
+            data_rows = report_data.get('Data', [])
+            field_list = report_data.get('FieldList', [])
+            
+            if not data_rows:
+                return pd.DataFrame()
+            
+            column_names = [field.get('FieldNm') for field in field_list]
+            df = pd.DataFrame(data_rows, columns=column_names)
+            return df
+        else:
+            st.error(f"BigTime API Error {response.status_code}")
+            return None
+    except Exception as e:
+        st.error(f"BigTime API Exception: {str(e)}")
+        return None
 
-# -----------------------------
-# Formula calculations
-# -----------------------------
-def calculate_std_cost(salary: float) -> float:
-    """Calculate STD monthly cost based on salary."""
-    weekly_salary = salary / 52
-    weekly_benefit = min(weekly_salary * 0.6667, 2100)
-    monthly_cost = (weekly_benefit / 10) * 0.18
-    return round(monthly_cost, 2)
 
-def calculate_ltd_cost(salary: float) -> float:
-    """Calculate LTD monthly cost based on salary."""
-    monthly_salary = salary / 12
-    # Benefit cap exists but cost formula is based on salary per your spec
-    monthly_cost = (monthly_salary / 100) * 0.21
-    return round(monthly_cost, 2)
+# ============================================
+# MAIN UI
+# ============================================
 
-# -----------------------------
-# Benefit cost resolver
-# -----------------------------
-DECLINED_CODES = {
-    "Medical_Plan": "MX",
-    "Dental_Plan": "DX",
-    "Vision_Plan": "VX",
-    "STD": "SEX",
-    "LTD": "LEX",
-    "Life": "TEX",
-}
+# Sidebar configuration
+st.sidebar.header("Report Configuration")
 
-def get_benefit_cost(code, salary: float, benefit_type: str):
-    """Return (total, ee, firm, note)."""
-    # Handle blanks / missing as declined
-    if pd.isna(code) or code is None or str(code).strip() == "":
-        return 0.0, 0.0, 0.0, None
-
-    code = str(code).strip()
-
-    if code not in benefits_lookup:
-        note = f"Unknown {benefit_type} code: {code} - assumed declined"
-        return 0.0, 0.0, 0.0, note
-
-    benefit = benefits_lookup[code]
-
-    # Formula-based benefits (STD/LTD)
-    if benefit["is_formula"]:
-        if code.startswith("SE"):  # STD
-            total_cost = calculate_std_cost(salary)
-            if code == "SE1":  # Firm paid
-                return total_cost, 0.0, total_cost, None
-            if code == "SE2":  # Employee paid
-                return total_cost, total_cost, 0.0, None
-            # SEX or other declined-like
-            return 0.0, 0.0, 0.0, None
-
-        if code.startswith("LE"):  # LTD
-            total_cost = calculate_ltd_cost(salary)
-            if code == "LE1":  # Firm paid
-                return total_cost, 0.0, total_cost, None
-            if code == "LE2":  # Employee paid
-                return total_cost, total_cost, 0.0, None
-            # LEX or other declined-like
-            return 0.0, 0.0, 0.0, None
-
-    # Fixed cost from lookup
-    total_cost = float(benefit["total_cost"]) if not pd.isna(benefit["total_cost"]) else 0.0
-    ee_cost = float(benefit["ee_cost"]) if not pd.isna(benefit["ee_cost"]) else 0.0
-    firm_cost = float(benefit["firm_cost"]) if not pd.isna(benefit["firm_cost"]) else 0.0
-
-    return total_cost, ee_cost, firm_cost, None
-
-# -----------------------------
-# Calculate costs for each employee
-# -----------------------------
-results = []
-
-# Normalize expected staff column names (in case sheet headers differ slightly)
-staff_df = staff_df.rename(columns={
-    "Staff_Name": "Staff_Name",
-    "Medical_Plan": "Medical_Plan",
-    "Dental_Plan": "Dental_Plan",
-    "Vision_Plan": "Vision_Plan",
-})
-
-# Validate required staff cols
-staff_required = ["Staff_Name", "Salary", "Medical_Plan", "Dental_Plan", "Vision_Plan", "STD", "LTD", "Life"]
-missing_staff = [c for c in staff_required if c not in staff_df.columns]
-if missing_staff:
-    st.error(f"❌ Staff tab is missing required columns: {', '.join(missing_staff)}")
-    st.stop()
-
-for _, employee in staff_df.iterrows():
-    name = employee.get("Staff_Name", "")
-    salary = to_float(employee.get("Salary", 0))
-
-    medical_code = employee.get("Medical_Plan")
-    dental_code = employee.get("Dental_Plan")
-    vision_code = employee.get("Vision_Plan")
-    std_code = employee.get("STD")
-    ltd_code = employee.get("LTD")
-    life_code = employee.get("Life")
-
-    notes = []
-
-    med_total, med_ee, med_firm, med_note = get_benefit_cost(medical_code, salary, "Medical_Plan")
-    den_total, den_ee, den_firm, den_note = get_benefit_cost(dental_code, salary, "Dental_Plan")
-    vis_total, vis_ee, vis_firm, vis_note = get_benefit_cost(vision_code, salary, "Vision_Plan")
-    std_total, std_ee, std_firm, std_note = get_benefit_cost(std_code, salary, "STD")
-    ltd_total, ltd_ee, ltd_firm, ltd_note = get_benefit_cost(ltd_code, salary, "LTD")
-    life_total, life_ee, life_firm, life_note = get_benefit_cost(life_code, salary, "Life")
-
-    for n in [med_note, den_note, vis_note, std_note, ltd_note, life_note]:
-        if n:
-            notes.append(n)
-
-    total_monthly = med_total + den_total + vis_total + std_total + ltd_total + life_total
-    ee_monthly = med_ee + den_ee + vis_ee + std_ee + ltd_ee + life_ee
-    firm_monthly = med_firm + den_firm + vis_firm + std_firm + ltd_firm + life_firm
-
-    results.append({
-        "Staff_Name": name,
-        "Salary": salary,
-
-        # Selections
-        "Medical": str(medical_code).strip() if not pd.isna(medical_code) and str(medical_code).strip() else "MX",
-        "Dental": str(dental_code).strip() if not pd.isna(dental_code) and str(dental_code).strip() else "DX",
-        "Vision": str(vision_code).strip() if not pd.isna(vision_code) and str(vision_code).strip() else "VX",
-        "STD": str(std_code).strip() if not pd.isna(std_code) and str(std_code).strip() else "SEX",
-        "LTD": str(ltd_code).strip() if not pd.isna(ltd_code) and str(ltd_code).strip() else "LEX",
-        "Life": str(life_code).strip() if not pd.isna(life_code) and str(life_code).strip() else "TEX",
-
-        # Totals (monthly)
-        "Medical_Cost": med_total,
-        "Dental_Cost": den_total,
-        "Vision_Cost": vis_total,
-        "STD_Cost": std_total,
-        "LTD_Cost": ltd_total,
-        "Life_Cost": life_total,
-
-        "Total_Monthly": total_monthly,
-        "EE_Monthly": ee_monthly,
-        "Firm_Monthly": firm_monthly,
-
-        # Annual
-        "Total_Yearly": total_monthly * 12,
-        "EE_Yearly": ee_monthly * 12,
-        "Firm_Yearly": firm_monthly * 12,
-
-        # EE Split (monthly)
-        "EE_Medical": med_ee,
-        "EE_Dental": den_ee,
-        "EE_Vision": vis_ee,
-        "EE_STD": std_ee,
-        "EE_LTD": ltd_ee,
-        "EE_Life": life_ee,
-
-        # Firm Split (monthly)
-        "Firm_Medical": med_firm,
-        "Firm_Dental": den_firm,
-        "Firm_Vision": vis_firm,
-        "Firm_STD": std_firm,
-        "Firm_LTD": ltd_firm,
-        "Firm_Life": life_firm,
-
-        "Notes": "; ".join(notes) if notes else "",
-    })
-
-results_df = pd.DataFrame(results)
-
-# Sort by staff name
-if not results_df.empty:
-    results_df = results_df.sort_values(by="Staff_Name", ignore_index=True)
-
-# -----------------------------
-# Summary metrics
-# -----------------------------
-st.header("📊 Summary")
-
-col1, col2, col3 = st.columns(3)
-
-total_monthly = results_df["Total_Monthly"].sum()
-total_yearly = results_df["Total_Yearly"].sum()
-ee_monthly_sum = results_df["EE_Monthly"].sum()
-ee_yearly_sum = results_df["EE_Yearly"].sum()
-firm_monthly_sum = results_df["Firm_Monthly"].sum()
-firm_yearly_sum = results_df["Firm_Yearly"].sum()
-
-card_style = "padding: 1rem; background-color: #FFF4E6; border-radius: 0.5rem; border-left: 4px solid #FF9800;"
-
-with col1:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Total Monthly Cost</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_yearly:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col2:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Employee Paid (Monthly)</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${ee_monthly_sum:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${ee_yearly_sum:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col3:
-    st.markdown(
-        f"""
-        <div style='{card_style}'>
-            <h3 style='margin: 0; color: #666;'>Firm Paid (Monthly)</h3>
-            <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${firm_monthly_sum:,.2f}</h2>
-            <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${firm_yearly_sum:,.2f}/year</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.divider()
-
-# -----------------------------
-# Breakdown by benefit type
-# -----------------------------
-st.header("📈 Breakdown by Benefit Type")
-
-breakdown_rows = [
-    {
-        "Benefit Type": "Medical",
-        "Employee Monthly Cost": results_df["EE_Medical"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Medical"].sum(),
-    },
-    {
-        "Benefit Type": "Dental",
-        "Employee Monthly Cost": results_df["EE_Dental"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Dental"].sum(),
-    },
-    {
-        "Benefit Type": "Vision",
-        "Employee Monthly Cost": results_df["EE_Vision"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Vision"].sum(),
-    },
-    {
-        "Benefit Type": "STD",
-        "Employee Monthly Cost": results_df["EE_STD"].sum(),
-        "Firm Monthly Cost": results_df["Firm_STD"].sum(),
-    },
-    {
-        "Benefit Type": "LTD",
-        "Employee Monthly Cost": results_df["EE_LTD"].sum(),
-        "Firm Monthly Cost": results_df["Firm_LTD"].sum(),
-    },
-    {
-        "Benefit Type": "Life/AD&D",
-        "Employee Monthly Cost": results_df["EE_Life"].sum(),
-        "Firm Monthly Cost": results_df["Firm_Life"].sum(),
-    },
-]
-
-for r in breakdown_rows:
-    r["Total Monthly Cost"] = r["Employee Monthly Cost"] + r["Firm Monthly Cost"]
-    r["Employee Annual Cost"] = r["Employee Monthly Cost"] * 12
-    r["Firm Annual Cost"] = r["Firm Monthly Cost"] * 12
-    r["Total Annual Cost"] = r["Total Monthly Cost"] * 12
-
-# Totals row
-total_ee = sum(r["Employee Monthly Cost"] for r in breakdown_rows)
-total_firm = sum(r["Firm Monthly Cost"] for r in breakdown_rows)
-total_all = sum(r["Total Monthly Cost"] for r in breakdown_rows)
-
-breakdown_rows.append({
-    "Benefit Type": "TOTAL",
-    "Employee Monthly Cost": total_ee,
-    "Firm Monthly Cost": total_firm,
-    "Total Monthly Cost": total_all,
-    "Employee Annual Cost": total_ee * 12,
-    "Firm Annual Cost": total_firm * 12,
-    "Total Annual Cost": total_all * 12,
-})
-
-breakdown_export_df = pd.DataFrame(breakdown_rows)
-
-# Display formatted
-breakdown_display_df = breakdown_export_df.copy()
-for col in breakdown_display_df.columns:
-    if "Cost" in col:
-        breakdown_display_df[col] = breakdown_display_df[col].apply(lambda x: f"${x:,.2f}")
-
-def highlight_total(row):
-    if row["Benefit Type"] == "TOTAL":
-        return ["font-weight: bold; background-color: #f0f0f0"] * len(row)
-    return [""] * len(row)
-
-st.dataframe(
-    breakdown_display_df.style.apply(highlight_total, axis=1),
-    use_container_width=True,
-    hide_index=True
+# Date range mode selection
+date_mode = st.sidebar.radio(
+    "Select Date Range Mode",
+    options=["Weekly (Week Ending)", "Custom Date Range"],
+    help="Choose how to filter expenses"
 )
 
-st.divider()
-
-# -----------------------------
-# Benefits Legend
-# -----------------------------
-st.header("📖 Benefits Legend")
-
-with st.expander("View benefit plan codes and descriptions", expanded=False):
-    # Prepare legend data
-    legend_data_with_costs = []  # For Medical/Dental/Vision/Life (fixed costs)
-    legend_data_no_costs = []     # For STD/LTD (formula-based)
+if date_mode == "Weekly (Week Ending)":
+    # Friday-only selector (similar to Time Reviewer)
+    selected_date = st.sidebar.date_input(
+        "Week Ending Date",
+        value=datetime.now().date(),
+        help="Select a Friday (week ending date)"
+    )
     
-    for code, details in sorted(benefits_lookup.items()):
-        # Detect formula-based by code prefix, not by column
-        is_formula = code.startswith('SE') or code.startswith('LE')
+    # Validate it's a Friday
+    if selected_date.weekday() != 4:  # Friday is 4
+        st.sidebar.error("⚠️ Please select a Friday")
+        st.sidebar.info(f"You selected {selected_date.strftime('%A, %B %d, %Y')}")
         
-        if is_formula:
-            # Formula-based: just code and description
-            legend_data_no_costs.append({
-                'Code': code,
-                'Description': details.get('description', '')
-            })
-        else:
-            # Fixed-cost: show all costs
-            legend_data_with_costs.append({
-                'Code': code,
-                'Description': details.get('description', ''),
-                'Total Cost': f"${details.get('total_cost', 0):,.2f}",
-                'Employee Cost': f"${details.get('ee_cost', 0):,.2f}",
-                'Firm Cost': f"${details.get('firm_cost', 0):,.2f}"
-            })
+        # Find nearest Friday
+        days_until_friday = (4 - selected_date.weekday()) % 7
+        if days_until_friday == 0:
+            days_until_friday = 7
+        nearest_friday = selected_date + timedelta(days=days_until_friday)
+        
+        st.sidebar.info(f"💡 Next Friday: {nearest_friday.strftime('%B %d, %Y')}")
+        st.stop()
     
-    legend_with_costs_df = pd.DataFrame(legend_data_with_costs)
-    legend_no_costs_df = pd.DataFrame(legend_data_no_costs)
+    week_ending = selected_date
+    week_starting = week_ending - timedelta(days=6)
+    use_week_end_field = True
     
-    # Separate by benefit type
-    col1, col2 = st.columns(2)
+    st.sidebar.write(f"**Report Period:**")
+    st.sidebar.write(f"{week_starting.strftime('%A, %B %d, %Y')}")
+    st.sidebar.write(f"through")
+    st.sidebar.write(f"{week_ending.strftime('%A, %B %d, %Y')}")
     
+else:  # Custom Date Range
+    col1, col2 = st.sidebar.columns(2)
     with col1:
-        st.subheader("Medical, Dental, Vision")
-        if not legend_with_costs_df.empty:
-            mdv_df = legend_with_costs_df[legend_with_costs_df['Code'].str.match(r'^(M|D|V)', na=False)].copy()
-            st.dataframe(mdv_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No fixed-cost benefits found")
-    
+        start_date = st.date_input("Start Date", value=datetime.now().date() - timedelta(days=30))
     with col2:
-        st.subheader("STD, LTD, Life/AD&D")
-        if not legend_no_costs_df.empty:
-            other_df = legend_no_costs_df[legend_no_costs_df['Code'].str.match(r'^(SE|LE|TE)', na=False)].copy()
-            st.dataframe(other_df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No formula-based benefits found")
+        end_date = st.date_input("End Date", value=datetime.now().date())
     
-    st.info("""
-    **Formula-Based Benefits:**
-    - **SE1/SE2**: STD cost calculated from salary (66.67% of weekly salary, max $2,100/week benefit)
-    - **LE1/LE2**: LTD cost calculated from salary (60% benefit cap; premium based on salary formula)
-    - **SE1/LE1**: 100% Firm Paid
-    - **SE2/LE2**: 100% Employee Paid
-    """)
+    if start_date > end_date:
+        st.sidebar.error("Start date must be before end date")
+        st.stop()
+    
+    week_starting = start_date
+    week_ending = end_date
+    use_week_end_field = False
+    
+    st.sidebar.write(f"**Report Period:**")
+    st.sidebar.write(f"{week_starting.strftime('%B %d, %Y')} through {week_ending.strftime('%B %d, %Y')}")
 
-st.divider()
-
-# -----------------------------
-# Employee Details (Sorted)
-# -----------------------------
-st.header("👥 Employee Details")
-
-# Create display table - keep numeric values for sorting
-detail_df = pd.DataFrame({
-    "Staff Member": results_df["Staff_Name"],
-
-    "Medical": results_df["Medical"],
-    "Dental": results_df["Dental"],
-    "Vision": results_df["Vision"],
-    "STD": results_df["STD"],
-    "LTD": results_df["LTD"],
-    "Life AD&D": results_df["Life"],
-
-    "Medical Cost": results_df["Medical_Cost"],
-    "Dental Cost": results_df["Dental_Cost"],
-    "Vision Cost": results_df["Vision_Cost"],
-    "STD Cost": results_df["STD_Cost"],
-    "LTD Cost": results_df["LTD_Cost"],
-    "Life AD&D Cost": results_df["Life_Cost"],
-
-    "Total $/mo": results_df["Total_Monthly"],
-    "Total $/year": results_df["Total_Yearly"],
-
-    "EE Medical": results_df["EE_Medical"],
-    "EE Dental": results_df["EE_Dental"],
-    "EE Vision": results_df["EE_Vision"],
-    "EE STD": results_df["EE_STD"],
-    "EE LTD": results_df["EE_LTD"],
-    "EE Life AD&D": results_df["EE_Life"],
-    "EE $/mo": results_df["EE_Monthly"],
-    "EE $/year": results_df["EE_Yearly"],
-
-    "Firm Medical": results_df["Firm_Medical"],
-    "Firm Dental": results_df["Firm_Dental"],
-    "Firm Vision": results_df["Firm_Vision"],
-    "Firm STD": results_df["Firm_STD"],
-    "Firm LTD": results_df["Firm_LTD"],
-    "Firm Life AD&D": results_df["Firm_Life"],
-    "Firm $/mo": results_df["Firm_Monthly"],
-    "Firm $/year": results_df["Firm_Yearly"],
-
-    "Notes": results_df["Notes"],
-})
-
-# Use column_config to format as currency while keeping numeric for sorting
-st.dataframe(
-    detail_df,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        **{col: st.column_config.NumberColumn(col, format="$%.2f")
-           for col in detail_df.columns
-           if 'Cost' in col or '$/mo' in col or '$/year' in col or col.startswith('EE ') or col.startswith('Firm ')}
+if st.sidebar.button("🔍 Review Expenses", type="primary"):
+    
+    # ============================================================
+    # PHASE 1: FETCH EXPENSE DATA
+    # ============================================================
+    
+    with st.spinner("📡 Fetching expense data from BigTime..."):
+        
+        # Report ID: 284803 (Detailed Expense Report)
+        expenses_df = get_bigtime_report(284803, week_starting, week_ending)
+        
+        if expenses_df is None or expenses_df.empty:
+            st.warning("No expense data found for the selected period")
+            st.stop()
+        
+        st.success(f"✅ Fetched {len(expenses_df)} expense entries")
+    
+    # ============================================================
+    # PHASE 2: MAP COLUMNS
+    # ============================================================
+    
+    with st.spinner("🔧 Mapping expense columns..."):
+        # Map BigTime column names based on actual API response
+        # Actual columns: fromcurrencysid, currencysid, sid, issubmitted, exprojectnm, exprojectnm_id,
+        # exclientnm, exclientnm_id, exsourcenm, exsourcenm_id, exdt, exdt_id, exweekenddt,
+        # excatnm, excatnm_id, excatnm_sort, exnt, excostin, excostin_id, excostbill, excostbill_id,
+        # excostnc, excostnc_id, exnc, exnc_id, expaidbyco, exhasreceipt, exissubmitted, exissubmitted_id,
+        # exapprstatus, exapprstatus_id, exisinvoiced, exisinvoiced_id
+        
+        rename_map = {
+            'exsourcenm': 'Staff',           # Staff/Source name
+            'exclientnm': 'Client',          # Client name
+            'exprojectnm': 'Project',        # Project name
+            'exdt': 'Date',                   # Expense date
+            'exweekenddt': 'Week_End',       # Week ending date
+            'excatnm': 'Category',           # Category (Billable:Meals, etc.)
+            'exnt': 'Note',                   # Note/description
+            'excostin': 'Amount_Input',      # Input amount
+            'excostbill': 'Amount_Billable', # Billable amount
+            'excostnc': 'Amount_NoCharge',   # No-charge amount
+            'exnc': 'No_Charge',             # No-charge flag (yes/no)
+            'expaidbyco': 'Non_Reimbursable', # Non-reimbursable/paid by company
+            'exhasreceipt': 'Receipt_Attached' # Receipt attached (yes/no)
+        }
+        
+        # Rename columns
+        expenses_df = expenses_df.rename(columns=rename_map)
+        
+        st.success(f"✓ Mapped BigTime columns to standard names")
+        
+        # Convert amounts to numeric
+        for col in ['Amount_Input', 'Amount_Billable', 'Amount_NoCharge']:
+            if col in expenses_df.columns:
+                expenses_df[col] = pd.to_numeric(expenses_df[col], errors='coerce').fillna(0)
+        
+        # Use Amount_Input as the primary amount
+        expenses_df['Amount'] = expenses_df.get('Amount_Input', 0)
+    
+    # ============================================================
+    # PHASE 3: FILTER BY DATE
+    # ============================================================
+    
+    if use_week_end_field and 'Week_End' in expenses_df.columns:
+        # Filter by Week End field - convert to datetime for comparison
+        expenses_df['Week_End_dt'] = pd.to_datetime(expenses_df['Week_End'], errors='coerce')
+        week_end_target = pd.Timestamp(week_ending)
+        
+        # Filter to exact week ending date
+        filtered_df = expenses_df[expenses_df['Week_End_dt'] == week_end_target]
+        
+        st.info(f"📅 Filtered to week ending {week_ending.strftime('%m/%d/%y')}: {len(filtered_df)} expenses (from {len(expenses_df)} total)")
+        
+        # Debug: Show what week end dates we found
+        if len(filtered_df) == 0:
+            unique_weeks = expenses_df['Week_End_dt'].dropna().unique()
+            st.warning(f"⚠️ No expenses found for week ending {week_ending.strftime('%m/%d/%y')}")
+            st.write(f"Available week ending dates in data: {sorted([pd.Timestamp(d).strftime('%m/%d/%y') for d in unique_weeks])}")
+            
+    elif 'Date' in expenses_df.columns:
+        # Filter by Date field
+        expenses_df['Date_dt'] = pd.to_datetime(expenses_df['Date'], errors='coerce')
+        filtered_df = expenses_df[
+            (expenses_df['Date_dt'] >= pd.Timestamp(week_starting)) &
+            (expenses_df['Date_dt'] <= pd.Timestamp(week_ending))
+        ]
+        st.info(f"📅 Filtered by date range: {len(filtered_df)} expenses")
+    else:
+        st.warning("⚠️ Could not filter by date - using all expenses")
+        filtered_df = expenses_df
+    
+    if len(filtered_df) == 0:
+        st.error("❌ No expenses found for the selected period")
+        st.stop()
+    
+    # Use filtered data for analysis
+    df = filtered_df.copy()
+    
+    # ============================================================
+    # PHASE 4: RUN COMPLIANCE CHECKS
+    # ============================================================
+    
+    issues = {
+        'incorrect_contractor_fees': [],
+        'inconsistent_classification': [],
+        'missing_receipts': [],
+        'company_paid': [],
+        'non_reimbursable': []
     }
-)
-
-if (results_df["Notes"].fillna("") != "").any():
-    st.warning("⚠️ Some employees have notes about benefit selections — see Notes column above")
-
-st.divider()
-
-# -----------------------------
-# Export options
-# -----------------------------
-st.header("📥 Download Report")
-
-# Build Excel file for download
-output_download = BytesIO()
-with pd.ExcelWriter(output_download, engine="openpyxl") as writer:
-    summary_export_df = pd.DataFrame([
-        {"Metric": "Total Monthly Cost", "Amount": total_monthly},
-        {"Metric": "Total Yearly Cost", "Amount": total_yearly},
-        {"Metric": "Employee Paid (Monthly)", "Amount": ee_monthly_sum},
-        {"Metric": "Employee Paid (Yearly)", "Amount": ee_yearly_sum},
-        {"Metric": "Firm Paid (Monthly)", "Amount": firm_monthly_sum},
-        {"Metric": "Firm Paid (Yearly)", "Amount": firm_yearly_sum},
-    ])
-    summary_export_df.to_excel(writer, sheet_name="Summary", index=False)
-    breakdown_export_df.to_excel(writer, sheet_name="Breakdown", index=False)
     
-    # Export details WITHOUT Salary
-    export_details = results_df.drop(columns=["Salary"], errors="ignore")
-    export_details.to_excel(writer, sheet_name="Employee Details", index=False)
+    with st.spinner("🔍 Running compliance checks..."):
+        
+        # CRITICAL: BigTime API returns 0/1 (numeric), not "yes"/"no" (text)
+        # Convert all flag fields to numeric for proper comparison
+        if 'No_Charge' in df.columns:
+            df['No_Charge_numeric'] = pd.to_numeric(df['No_Charge'], errors='coerce').fillna(0)
+            # 1 = yes (no charge), 0 = no (charged)
+        
+        if 'Non_Reimbursable' in df.columns:
+            df['Non_Reimbursable_numeric'] = pd.to_numeric(df['Non_Reimbursable'], errors='coerce').fillna(0)
+            # 1 = yes (non-reimbursable), 0 = no (reimbursable)
+        
+        if 'Receipt_Attached' in df.columns:
+            df['Receipt_Attached_numeric'] = pd.to_numeric(df['Receipt_Attached'], errors='coerce').fillna(0)
+            # 1 = yes (has receipt), 0 = no (missing receipt)
+        
+        # Check 1: Incorrect Contractor Fees
+        # Category contains "Contractor Fees" AND No-Charge is NOT 1 (i.e., it's being charged)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric']):
+            contractor_fees = df[
+                (df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False)) &
+                (df['No_Charge_numeric'] != 1)  # Should be 1 (no-charge=yes)
+            ]
+            
+            for _, row in contractor_fees.iterrows():
+                issues['incorrect_contractor_fees'].append({
+                    'Staff': row.get('Staff', ''),
+                    'Client': row.get('Client', ''),
+                    'Project': row.get('Project', ''),
+                    'Date': row.get('Date', ''),
+                    'Amount': row.get('Amount', 0)
+                })
+        
+        # Check 2: Inconsistent Classification
+        # Non-Billable but charged (No-Charge = 0) OR Billable but not charged (No-Charge = 1)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric', 'No_Charge']):
+            # Non-Billable but charged (should be no-charge=1 but is 0)
+            non_billable_charged = df[
+                (df['Category'].astype(str).str.startswith('Non-Billable', na=False)) &
+                (df['No_Charge_numeric'] != 1)  # Should be 1
+            ]
+            
+            # Billable but not charged (should be no-charge=0 but is 1)
+            billable_not_charged = df[
+                (df['Category'].astype(str).str.startswith('Billable', na=False)) &
+                (df['No_Charge_numeric'] == 1)  # Should be 0
+            ]
+            
+            for _, row in pd.concat([non_billable_charged, billable_not_charged]).iterrows():
+                issues['inconsistent_classification'].append({
+                    'Staff': row.get('Staff', ''),
+                    'Client': row.get('Client', ''),
+                    'Project': row.get('Project', ''),
+                    'Date': row.get('Date', ''),
+                    'Category': row.get('Category', ''),
+                    'Amount': row.get('Amount', 0),
+                    'No_Charge': row.get('No_Charge', '')
+                })
+        
+        # Check 3: Missing Receipts
+        # Receipt_Attached should be 1, flag if 0
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Receipt_Attached_numeric']):
+            missing_receipts = df[
+                (df['Receipt_Attached_numeric'] != 1)
+            ]
+            
+            for _, row in missing_receipts.iterrows():
+                issues['missing_receipts'].append({
+                    'Staff': row.get('Staff', ''),
+                    'Client': row.get('Client', ''),
+                    'Project': row.get('Project', ''),
+                    'Date': row.get('Date', ''),
+                    'Category': row.get('Category', ''),
+                    'Amount': row.get('Amount', 0)
+                })
+        
+        # Check 4: Company Paid Expenses (No-Charge = 1, excluding contractor fees)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'No_Charge_numeric']):
+            company_paid = df[
+                (df['No_Charge_numeric'] == 1) &  # No charge = yes
+                (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
+            ]
+            
+            for _, row in company_paid.iterrows():
+                issues['company_paid'].append({
+                    'Staff': row.get('Staff', ''),
+                    'Client': row.get('Client', ''),
+                    'Project': row.get('Project', ''),
+                    'Date': row.get('Date', ''),
+                    'Category': row.get('Category', ''),
+                    'Amount': row.get('Amount', 0)
+                })
+        
+        # Check 5: Non-Reimbursable Expenses (excluding contractor fees)
+        if all(col in df.columns for col in ['Staff', 'Client', 'Project', 'Date', 'Category', 'Amount', 'Non_Reimbursable_numeric']):
+            non_reimbursable = df[
+                (df['Non_Reimbursable_numeric'] == 1) &  # Non-reimbursable = yes
+                (~df['Category'].astype(str).str.contains('Contractor Fees', case=False, na=False))
+            ]
+            
+            for _, row in non_reimbursable.iterrows():
+                issues['non_reimbursable'].append({
+                    'Staff': row.get('Staff', ''),
+                    'Client': row.get('Client', ''),
+                    'Project': row.get('Project', ''),
+                    'Date': row.get('Date', ''),
+                    'Category': row.get('Category', ''),
+                    'Amount': row.get('Amount', 0)
+                })
+    
+    # ============================================================
+    # PHASE 5: DISPLAY RESULTS
+    # ============================================================
+    
+    st.success("✅ Analysis complete!")
+    
+    st.header(f"📊 Expense Reviewer Report")
+    if use_week_end_field:
+        st.subheader(f"Week Ending {week_ending.strftime('%A, %B %d, %Y')}")
+        st.caption(f"Period: {week_starting.strftime('%b %d')} - {week_ending.strftime('%b %d, %Y')}")
+    else:
+        st.subheader(f"Date Range: {week_starting.strftime('%b %d, %Y')} - {week_ending.strftime('%b %d, %Y')}")
+    
+    # Summary metrics
+    total_issues = sum(len(v) for v in issues.values())
+    
+    if total_issues == 0:
+        st.success("🎉 No compliance issues found! All expenses look good.")
+    else:
+        st.warning(f"⚠️ Found {total_issues} total compliance issues")
+    
+    st.divider()
+    
+    # Debug section
+    with st.expander("🔧 Debug Information", expanded=False):
+        st.write("**BigTime API Columns**")
+        st.write(f"• Total columns: {len(df.columns)}")
+        st.code(', '.join(expenses_df.columns.tolist()), language=None)
+        
+        st.write("\n**BigTime API Field Values**")
+        if 'No_Charge' in df.columns:
+            st.write(f"• No_Charge unique values: {sorted(df['No_Charge'].dropna().unique())}")
+        if 'Receipt_Attached' in df.columns:
+            st.write(f"• Receipt_Attached unique values: {sorted(df['Receipt_Attached'].dropna().unique())}")
+        if 'Non_Reimbursable' in df.columns:
+            st.write(f"• Non_Reimbursable unique values: {sorted(df['Non_Reimbursable'].dropna().unique())}")
+        
+        st.write("\n**Data Summary**")
+        st.write(f"• Total expenses analyzed: {len(df)}")
+        st.write(f"• Date range: {df['Date'].min()} to {df['Date'].max()}")
+        if 'Category' in df.columns:
+            st.write(f"• Unique categories: {df['Category'].nunique()}")
+        if 'Staff' in df.columns:
+            st.write(f"• Unique staff members: {df['Staff'].nunique()}")
+    
+    # Issue sections
+    # 1. Incorrect Contractor Fees
+    with st.expander(f"❌ Incorrect Contractor Fees ({len(issues['incorrect_contractor_fees'])})", expanded=len(issues['incorrect_contractor_fees']) > 0):
+        if issues['incorrect_contractor_fees']:
+            st.write("Contractor fees should always be marked as No-Charge. The following are charged:")
+            for issue in issues['incorrect_contractor_fees']:
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, ${issue['Amount']:.2f}")
+        else:
+            st.success("✅ All contractor fees properly marked as no-charge")
+    
+    # 2. Inconsistent Classification
+    with st.expander(f"⚠️ Inconsistent Classification ({len(issues['inconsistent_classification'])})", expanded=len(issues['inconsistent_classification']) > 0):
+        if issues['inconsistent_classification']:
+            st.write("Non-Billable expenses should be No-Charge=Yes. Billable expenses should be No-Charge=No:")
+            for issue in issues['inconsistent_classification']:
+                nc_flag = issue.get('No_Charge', '')
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f} (No-Charge: {nc_flag})")
+        else:
+            st.success("✅ All expenses properly classified")
+    
+    # 3. Missing Receipts
+    with st.expander(f"📎 Missing Receipts ({len(issues['missing_receipts'])})", expanded=len(issues['missing_receipts']) > 0):
+        if issues['missing_receipts']:
+            st.write("The following expenses are missing receipts:")
+            for issue in issues['missing_receipts']:
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f}")
+        else:
+            st.success("✅ All expenses have receipts attached")
+    
+    # 4. Company Paid Expenses
+    with st.expander(f"💰 Company Paid Expenses ({len(issues['company_paid'])})", expanded=len(issues['company_paid']) > 0):
+        if issues['company_paid']:
+            st.write("The following expenses are being paid by the company (No-Charge=Yes):")
+            total_company_paid = sum(issue['Amount'] for issue in issues['company_paid'])
+            st.info(f"**Total Company Paid: ${total_company_paid:,.2f}**")
+            for issue in issues['company_paid']:
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f}")
+        else:
+            st.success("✅ No company-paid expenses (excluding contractor fees)")
+    
+    # 5. Non-Reimbursable Expenses
+    with st.expander(f"🚫 Non-Reimbursable Expenses ({len(issues['non_reimbursable'])})", expanded=len(issues['non_reimbursable']) > 0):
+        if issues['non_reimbursable']:
+            st.write("The following expenses are marked as non-reimbursable:")
+            total_non_reimbursable = sum(issue['Amount'] for issue in issues['non_reimbursable'])
+            st.info(f"**Total Non-Reimbursable: ${total_non_reimbursable:,.2f}**")
+            for issue in issues['non_reimbursable']:
+                st.write(f"- {issue['Staff']}, {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Category']}, ${issue['Amount']:.2f}")
+        else:
+            st.success("✅ No non-reimbursable expenses (excluding contractor fees)")
+    
+    # Store report data for export
+    st.session_state.expense_review_data = {
+        'date_mode': date_mode,
+        'week_ending': week_ending if use_week_end_field else None,
+        'week_starting': week_starting,
+        'issues': issues,
+        'total_issues': total_issues
+    }
 
-download_data = output_download.getvalue()
+else:
+    st.info("👈 Configure your date range and click 'Review Expenses'")
+    
+    with st.expander("ℹ️ How it works"):
+        st.markdown("""
+        This app reviews expense entries for compliance:
+        
+        **Checks performed:**
+        1. **Incorrect Contractor Fees** - Contractor fees must be marked No-Charge
+        2. **Inconsistent Classification** - Non-Billable must be No-Charge, Billable must be charged
+        3. **Missing Receipts** - All expenses must have receipts attached
+        4. **Company Paid Expenses** - Track when company pays (No-Charge=Yes)
+        5. **Non-Reimbursable Expenses** - Track expenses marked non-reimbursable
+        
+        **Data Source:**
+        - BigTime Report 284803 (Detailed Expense Report)
+        
+        **Date Filtering:**
+        - Weekly mode uses "Week End" field
+        - Custom range mode uses "Date" field
+        """)
 
-st.download_button(
-    label="📊 Download Excel Report",
-    data=download_data,
-    file_name=f"benefits_calculator_{datetime.now().strftime('%Y%m%d')}.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    use_container_width=True,
-)
-
-# Store report data for email functionality
-st.session_state.benefits_report_data = {
-    'total_monthly': total_monthly,
-    'total_yearly': total_yearly,
-    'ee_monthly': ee_monthly_sum,
-    'ee_yearly': ee_yearly_sum,
-    'firm_monthly': firm_monthly_sum,
-    'firm_yearly': firm_yearly_sum,
-    'excel_data': download_data
-}
-
-# Email functionality (after report is generated - sidebar pattern from Expense Reviewer)
-if 'benefits_report_data' in st.session_state:
+# Email functionality (similar to Time Reviewer)
+if 'expense_review_data' in st.session_state:
     st.sidebar.markdown("---")
     st.sidebar.subheader("📧 Email Report")
     
     email_to = st.sidebar.text_input(
         "Send to:",
         placeholder="email@example.com",
-        key="benefits_email"
+        key="expense_review_email"
     )
     
-    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_benefits")
+    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_expense_review")
     
     if send_clicked:
         if not email_to:
@@ -627,10 +504,8 @@ if 'benefits_report_data' in st.session_state:
                 import base64
                 from email.mime.multipart import MIMEMultipart
                 from email.mime.text import MIMEText
-                from email.mime.base import MIMEBase
-                from email import encoders
                 
-                rd = st.session_state.benefits_report_data
+                rd = st.session_state.expense_review_data
                 
                 creds = service_account.Credentials.from_service_account_info(
                     st.secrets["SERVICE_ACCOUNT_KEY"],
@@ -643,34 +518,34 @@ if 'benefits_report_data' in st.session_state:
                 msg = MIMEMultipart()
                 msg['From'] = 'astudee@voyageadvisory.com'
                 msg['To'] = email_to
-                msg['Subject'] = f"Benefits Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
                 
-                body = f"""Benefits Calculator Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+                if rd['date_mode'] == "Weekly (Week Ending)":
+                    msg['Subject'] = f"Expense Review - Week Ending {rd['week_ending'].strftime('%b %d, %Y')}"
+                    period = f"Week Ending: {rd['week_ending'].strftime('%b %d, %Y')}"
+                else:
+                    msg['Subject'] = f"Expense Review - {rd['week_starting'].strftime('%b %d')} to {rd['week_ending'].strftime('%b %d, %Y')}"
+                    period = f"Period: {rd['week_starting'].strftime('%b %d, %Y')} - {rd['week_ending'].strftime('%b %d, %Y')}"
+                
+                body = f"""Expense Reviewer Report
+
+{period}
+
+Total Issues Found: {rd['total_issues']}
 
 Summary:
-- Total Monthly Cost: ${rd['total_monthly']:,.2f}
-- Employee Paid: ${rd['ee_monthly']:,.2f}
-- Firm Paid: ${rd['firm_monthly']:,.2f}
+- Incorrect Contractor Fees: {len(rd['issues']['incorrect_contractor_fees'])}
+- Inconsistent Classification: {len(rd['issues']['inconsistent_classification'])}
+- Missing Receipts: {len(rd['issues']['missing_receipts'])}
+- Company Paid Expenses: {len(rd['issues']['company_paid'])}
+- Non-Reimbursable Expenses: {len(rd['issues']['non_reimbursable'])}
 
-Total Annual Cost: ${rd['total_yearly']:,.2f}
-- Employee: ${rd['ee_yearly']:,.2f}
-- Firm: ${rd['firm_yearly']:,.2f}
-
-Detailed breakdown attached in Excel file.
+Please review the details in the Streamlit app.
 
 Best regards,
 Voyage Advisory
 """
                 
                 msg.attach(MIMEText(body, 'plain'))
-                
-                # Attach Excel file
-                part = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-                part.set_payload(rd['excel_data'])
-                encoders.encode_base64(part)
-                part.add_header('Content-Disposition', f'attachment; filename=benefits_calculator_{datetime.now().strftime("%Y%m%d")}.xlsx')
-                msg.attach(part)
                 
                 raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
                 result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
