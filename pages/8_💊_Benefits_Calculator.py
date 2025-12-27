@@ -56,14 +56,14 @@ for _, row in benefits_df.iterrows():
     code = row['Code']
     benefits_lookup[code] = {
         'description': row['Description'],
-        'is_formula': row.get('Is_Formula_Based', False),
-        'total_cost': float(row.get('Total_Monthly_Cost', 0)) if pd.notna(row.get('Total_Monthly_Cost')) else 0,
-        'ee_cost': float(row.get('EE_Monthly_Cost', 0)) if pd.notna(row.get('EE_Monthly_Cost')) else 0,
-        'firm_cost': float(row.get('Firm_Monthly_Cost', 0)) if pd.notna(row.get('Firm_Monthly_Cost')) else 0,
-        'coverage_pct': row.get('Coverage_Percentage'),
-        'max_weekly': row.get('Max_Weekly_Benefit'),
-        'max_monthly': row.get('Max_Monthly_Benefit'),
-        'rate': row.get('Rate_Per_Unit')
+        'is_formula': row['Is_Formula_Based'] if 'Is_Formula_Based' in row else False,
+        'total_cost': float(row['Total_Monthly_Cost']) if pd.notna(row['Total_Monthly_Cost']) else 0,
+        'ee_cost': float(row['EE_Monthly_Cost']) if pd.notna(row['EE_Monthly_Cost']) else 0,
+        'firm_cost': float(row['Firm_Monthly_Cost']) if pd.notna(row['Firm_Monthly_Cost']) else 0,
+        'coverage_pct': row['Coverage_Percentage'] if 'Coverage_Percentage' in row else None,
+        'max_weekly': row['Max_Weekly_Benefit'] if 'Max_Weekly_Benefit' in row else None,
+        'max_monthly': row['Max_Monthly_Benefit'] if 'Max_Monthly_Benefit' in row else None,
+        'rate': row['Rate_Per_Unit'] if 'Rate_Per_Unit' in row else None
     }
 
 # Debug: Show a sample lookup
