@@ -150,12 +150,13 @@ def check_google_sheets():
         }
 
 def check_gmail():
-    """Test Gmail API connection using draft creation (safe, no email sent)"""
+    """Test Gmail API connection by sending a real test email (gmail.send scope only allows sending)"""
     try:
         from googleapiclient.discovery import build
         from google.oauth2 import service_account
         import base64
         from email.message import EmailMessage
+        from datetime import datetime
         
         # Get credentials from secrets
         service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
@@ -167,11 +168,11 @@ def check_gmail():
                 'details': 'Missing service account credentials'
             }
         
-        # Extract service account email for debugging
+        # Extract service account info for reference
         sa_email = service_account_info.get('client_email', 'unknown')
-        sa_client_id = service_account_info.get('client_id', 'unknown')
         
         # Use only gmail.send scope (matches production usage)
+        # NOTE: gmail.send can ONLY send emails, cannot create drafts or read
         credentials = service_account.Credentials.from_service_account_info(
             service_account_info,
             scopes=['https://www.googleapis.com/auth/gmail.send'],
@@ -181,65 +182,52 @@ def check_gmail():
         # Build Gmail service
         service = build('gmail', 'v1', credentials=credentials)
         
-        # Create a test draft (does NOT send email)
+        # Create and send a real test email (to self)
         msg = EmailMessage()
         msg['To'] = 'astudee@voyageadvisory.com'
         msg['From'] = 'astudee@voyageadvisory.com'
-        msg['Subject'] = 'Voyage App Store - Permission Test'
-        msg.set_content('This is a permission test draft. It will not be sent.')
+        msg['Subject'] = '✅ Voyage App Store - Gmail Health Check'
+        msg.set_content(f"""This is an automated health check test.
+
+Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+Service Account: {sa_email}
+
+If you received this, Gmail API is working correctly!
+
+You can safely delete this email.
+""")
         
         encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
         
-        # Create draft
-        draft = service.users().drafts().create(
+        # Send the email (the ONLY operation gmail.send scope allows)
+        service.users().messages().send(
             userId='me',
-            body={'message': {'raw': encoded}}
+            body={'raw': encoded}
         ).execute()
-        
-        draft_id = draft['id']
-        
-        # Delete the draft immediately (cleanup)
-        service.users().drafts().delete(userId='me', id=draft_id).execute()
         
         return {
             'status': 'success',
             'icon': '✅',
             'message': 'Connected successfully',
-            'details': 'Draft created and deleted successfully. Email sending works.'
+            'details': 'Test email sent to astudee@voyageadvisory.com. Check inbox to confirm delivery.'
         }
     except Exception as e:
         error_msg = str(e).lower()
         error_full = str(e)
-        
-        # Provide detailed debugging info
-        debug_info = f"""
-Service Account Email: {sa_email}
-Service Account Client ID: {sa_client_id}
-Delegating to: astudee@voyageadvisory.com
-Scope requested: https://www.googleapis.com/auth/gmail.send
-
-Error: {error_full}
-
-Common causes:
-1. Client ID {sa_client_id} not authorized in Workspace Admin
-2. Scope URL has typo in Workspace Admin
-3. Changes haven't propagated yet (wait 15 min)
-4. Wrong user email (should be astudee@voyageadvisory.com)
-"""
         
         if 'delegat' in error_msg or 'domain-wide' in error_msg or 'insufficient' in error_msg:
             return {
                 'status': 'error',
                 'icon': '❌',
                 'message': 'Domain-wide delegation issue',
-                'details': debug_info
+                'details': f'Verify Client ID {service_account_info.get("client_id", "unknown")} is authorized in Workspace Admin with gmail.send scope. Error: {error_full}'
             }
         else:
             return {
                 'status': 'error',
                 'icon': '❌',
                 'message': f'Connection failed: {type(e).__name__}',
-                'details': debug_info
+                'details': error_full
             }
 
 def check_claude_api():
@@ -464,83 +452,12 @@ if st.session_state.health_results:
     # Summary recommendation
     if error_count == 0 and warning_count == 0:
         st.success("🎉 All systems operational! All apps should work correctly.")
+        if 'Gmail' in st.session_state.health_results and st.session_state.health_results['Gmail']['status'] == 'success':
+            st.info("📬 Check astudee@voyageadvisory.com inbox for Gmail health check test email.")
     elif error_count == 0:
         st.warning(f"⚠️ {warning_count} warning(s). Core functionality works but some features may be limited.")
     else:
         st.error(f"❌ {error_count} error(s) detected. Some apps may not work. Please fix the issues above.")
-    
-    # Optional: Send test email
-    if 'Gmail' in st.session_state.health_results:
-        gmail_result = st.session_state.health_results['Gmail']
-        
-        if gmail_result['status'] == 'success':
-            st.divider()
-            st.subheader("📧 Optional: Send Test Email")
-            st.info("The draft test confirms Gmail works, but you can send a real test email to verify end-to-end.")
-            
-            col1, col2 = st.columns([2, 1])
-            with col1:
-                test_email = st.text_input(
-                    "Send test email to:",
-                    value="astudee@voyageadvisory.com",
-                    placeholder="email@example.com"
-                )
-            with col2:
-                st.write("")  # Spacing
-                st.write("")  # Spacing
-                send_test = st.button("📨 Send Test Email")
-            
-            if send_test and test_email:
-                try:
-                    from googleapiclient.discovery import build
-                    from google.oauth2 import service_account
-                    import base64
-                    from email.message import EmailMessage
-                    from datetime import datetime
-                    
-                    service_account_info = st.secrets["SERVICE_ACCOUNT_KEY"]
-                    credentials = service_account.Credentials.from_service_account_info(
-                        service_account_info,
-                        scopes=['https://www.googleapis.com/auth/gmail.send'],
-                        subject='astudee@voyageadvisory.com'
-                    )
-                    
-                    service = build('gmail', 'v1', credentials=credentials)
-                    
-                    # Create test message
-                    msg = EmailMessage()
-                    msg['To'] = test_email
-                    msg['From'] = 'astudee@voyageadvisory.com'
-                    msg['Subject'] = 'Voyage App Store - Connection Test ✅'
-                    msg.set_content(f"""This is a test email from Voyage App Store Connection Health Checker.
-
-If you received this, Gmail API is working correctly!
-
-Test Details:
-- Sent: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-- From: astudee@voyageadvisory.com
-- Service: Gmail API via service account
-
-You can safely delete this email.
-
---
-Voyage Advisory App Store
-Automated Connection Test
-""")
-                    
-                    encoded = base64.urlsafe_b64encode(msg.as_bytes()).decode()
-                    
-                    # Send message
-                    service.users().messages().send(
-                        userId='me',
-                        body={'raw': encoded}
-                    ).execute()
-                    
-                    st.success(f"✅ Test email sent to {test_email}!")
-                    st.info("📬 Check your inbox to confirm delivery.")
-                    
-                except Exception as e:
-                    st.error(f"❌ Failed to send test email: {str(e)}")
 
 else:
     st.info("👆 Click the button above to check all API connections")
