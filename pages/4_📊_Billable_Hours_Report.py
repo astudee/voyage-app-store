@@ -86,7 +86,7 @@ def get_bigtime_report(start_date, end_date, report_id=284796):
         st.error(f"❌ BigTime API Exception: {str(e)}")
         return None
 
-st.title("📊 Billable Hours Report")
+st.title("📊 Billable Hours & Revenue Report")
 
 # Staff Override Section
 with st.expander("⚙️ Staff Classification Overrides (Optional)"):
@@ -133,6 +133,25 @@ with st.expander("⚙️ Staff Classification Overrides (Optional)"):
 
 # Configuration
 st.sidebar.header("Report Configuration")
+
+# Metric type selection
+metric_type = st.sidebar.radio(
+    "Report Type",
+    options=["Billable Hours", "Billable Revenue ($)"],
+    help="Choose whether to view hours or revenue"
+)
+
+# Determine which column to use and display settings
+if metric_type == "Billable Hours":
+    value_column = 'Billable'  # tmhrsbill column
+    value_label = "Hours"
+    value_format = "{:.1f}"
+    value_suffix = " hours"
+else:
+    value_column = 'Billable ($)'  # tmchgbillbase column
+    value_label = "Revenue"
+    value_format = "${:,.0f}"
+    value_suffix = ""
 
 # Date range selection
 col1, col2 = st.sidebar.columns(2)
@@ -641,8 +660,8 @@ if st.sidebar.button("Generate Report", type="primary"):
                 else:
                     st.stop()
             
-            # Filter to billable hours only
-            df = df[df['Billable'] > 0].copy()
+            # Filter to billable entries only (hours > 0 or revenue > 0)
+            df = df[df[value_column] > 0].copy()
             
             st.success(f"✅ Loaded {len(df):,} billable time entries from BigTime")
             
@@ -656,7 +675,7 @@ if st.sidebar.button("Generate Report", type="primary"):
             pivot = df.pivot_table(
                 index='Staff Member',
                 columns='YearMonth',
-                values='Billable',
+                values=value_column,
                 aggfunc='sum',
                 fill_value=0
             )
@@ -704,8 +723,28 @@ if st.sidebar.button("Generate Report", type="primary"):
             pivot = pivot.sort_index()
             
             # Display results by category
-            st.header("Billable Hours Report")
+            st.header(f"Billable {value_label} Report")
             st.subheader(f"{start_date.strftime('%B %Y')} - {end_date.strftime('%B %Y')}")
+            
+            # Color legend (different for hours vs revenue)
+            if metric_type == "Billable Hours":
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown("🟢 **Green**: ≥100% capacity")
+                with col2:
+                    st.markdown("🟡 **Yellow**: 80-99% capacity")
+                with col3:
+                    st.markdown("🔵 **Blue**: <80% capacity")
+            else:
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown("🟢 **Green**: Top 25% (per month)")
+                with col2:
+                    st.markdown("🟡 **Yellow**: 25-50th percentile")
+                with col3:
+                    st.markdown("🔵 **Blue**: Bottom 50%")
+            
+            st.write("")  # Add spacing
             
             # Show override notice if any are active
             if overrides:
@@ -726,24 +765,64 @@ if st.sidebar.button("Generate Report", type="primary"):
                 display_df = category_data.copy()
                 display_df.columns = [str(c) for c in display_df.columns]
                 
-                # Apply styling
-                def style_category(row):
-                    styles = []
-                    for col in row.index[:-1]:  # Exclude Total column
-                        try:
-                            period = pd.Period(col, freq='M')
-                            if period in monthly_capacity:
-                                cap = monthly_capacity[period]
-                                val = row[col]
-                                styles.append(apply_color_coding(val, cap))
-                            else:
+                # Apply styling based on metric type
+                if metric_type == "Billable Hours":
+                    # Hours: Use capacity-based coloring (original logic)
+                    def style_hours(row):
+                        styles = []
+                        for col in row.index[:-1]:  # Exclude Total column
+                            try:
+                                period = pd.Period(col, freq='M')
+                                if period in monthly_capacity:
+                                    cap = monthly_capacity[period]
+                                    val = row[col]
+                                    if pd.isna(val) or cap == 0:
+                                        styles.append('')
+                                    else:
+                                        pct = val / cap
+                                        if pct < 0.8:
+                                            styles.append('background-color: #D6EAF8')  # Light blue
+                                        elif pct < 1.0:
+                                            styles.append('background-color: #FCF3CF')  # Light yellow
+                                        else:
+                                            styles.append('background-color: #D5F4E6')  # Light green
+                                else:
+                                    styles.append('')
+                            except:
                                 styles.append('')
-                        except:
-                            styles.append('')
-                    styles.append('')  # Total column - no color
-                    return styles
+                        styles.append('')  # Total column - no color
+                        return styles
+                    
+                    styled = display_df.style.apply(style_hours, axis=1).format("{:.1f}")
                 
-                styled = display_df.style.apply(style_category, axis=1).format("{:.1f}")
+                else:
+                    # Revenue: Use quartile-based coloring (new logic)
+                    def style_revenue(row):
+                        styles = []
+                        for col in row.index[:-1]:  # Exclude Total column
+                            val = row[col]
+                            if pd.isna(val) or val == 0:
+                                styles.append('')
+                            else:
+                                # Get all non-zero values in this column across all staff in this category
+                                col_values = category_data[col][category_data[col] > 0]
+                                if len(col_values) > 0:
+                                    q75 = col_values.quantile(0.75)  # Top 25%
+                                    q50 = col_values.quantile(0.50)  # Top 50%
+                                    
+                                    if val >= q75:
+                                        styles.append('background-color: #D5F4E6')  # Light green - top 25%
+                                    elif val >= q50:
+                                        styles.append('background-color: #FCF3CF')  # Light yellow - 25-50%
+                                    else:
+                                        styles.append('background-color: #D6EAF8')  # Light blue - bottom 50%
+                                else:
+                                    styles.append('')
+                        styles.append('')  # Total column - no color
+                        return styles
+                    
+                    styled = display_df.style.apply(style_revenue, axis=1).format("${:,.0f}")
+                
                 st.dataframe(styled, use_container_width=True)
             
             # Show capacity reference
@@ -774,9 +853,10 @@ if st.sidebar.button("Generate Report", type="primary"):
             output.seek(0)
             
             # Store report data in session state for email sending
+            metric_slug = "hours" if metric_type == "Billable Hours" else "revenue"
             st.session_state.report_data = {
                 'excel_file': output.getvalue(),
-                'filename': f"billable_hours_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
+                'filename': f"billable_{metric_slug}_report_{start_date.strftime('%Y%m')}-{end_date.strftime('%Y%m')}.xlsx",
                 'start_date': start_date,
                 'end_date': end_date,
                 'summary': {
