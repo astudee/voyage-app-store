@@ -297,6 +297,9 @@ with col3:
 st.divider()
 
 # Secondary metrics with different styling
+# Calculate burden rate first
+burden_rate = ((total_monthly_sum - total_salary_monthly) / total_salary_monthly * 100) if total_salary_monthly > 0 else 0
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
