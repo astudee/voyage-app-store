@@ -149,13 +149,23 @@ def calculate_firm_benefits(employee_row):
 # =========================================================
 st.divider()
 
-include_utilization_bonus = st.checkbox(
-    "Include Utilization Bonus",
+include_bonuses = st.checkbox(
+    "Include Bonuses",
     value=True,
-    help="Include utilization bonus in total compensation. 401(k) and FICA will be calculated based on included components."
+    help="Include utilization and other bonuses in total compensation. 401(k) and FICA will be calculated based on included components."
 )
 
 st.caption("💡 401(k) match (4%) and FICA (7.65%) are calculated based on components included in the report")
+
+st.divider()
+
+# Time period selector
+time_period = st.radio(
+    "Display costs as:",
+    options=["Per Pay Period (2x/month)", "Monthly", "Annual"],
+    horizontal=True,
+    help="Choose how to display employee costs in the details section"
+)
 
 # =========================================================
 # Generate Report Button
@@ -188,7 +198,7 @@ for _, employee in staff_df.iterrows():
     annual_salary = safe_float(employee.get("Salary", 0))
     monthly_salary = annual_salary / 12
     
-    utilization_bonus = safe_float(employee.get("Utilization_Bonus_Target", 0)) if include_utilization_bonus else 0.0
+    utilization_bonus = safe_float(employee.get("Utilization_Bonus_Target", 0)) if include_bonuses else 0.0
     other_bonus = safe_float(employee.get("Other_Bonus_Target", 0))
     phone_allowance = safe_float(employee.get("Phone_Allowance", 0))
     
@@ -196,7 +206,7 @@ for _, employee in staff_df.iterrows():
     firm_benefits = calculate_firm_benefits(employee)
     
     # Calculate based on bonus toggle
-    if include_utilization_bonus:
+    if include_bonuses:
         # Bonus ON: include all bonuses
         total_annual_comp = annual_salary + utilization_bonus + other_bonus
         total_monthly_comp = monthly_salary + (utilization_bonus / 12) + (other_bonus / 12)
@@ -245,51 +255,59 @@ st.header("📊 Summary")
 
 total_monthly_sum = float(results_df["Total_Monthly_Cost"].sum())
 total_annual_sum = float(results_df["Total_Annual_Cost"].sum())
+total_per_payroll_sum = total_monthly_sum / 2  # 2 pay periods per month
+
 total_salary_monthly = float(results_df["Monthly_Salary"].sum())
 total_benefits = float(results_df["Firm_Benefits"].sum())
 total_401k = float(results_df["Monthly_401k"].sum())
 total_fica = float(results_df["Monthly_FICA"].sum())
 
-col1, col2, col3, col4 = st.columns(4)
+# Create 3 columns for the three time periods
+col1, col2, col3 = st.columns(3)
 
 card_style = "padding: 1rem; background-color: #E8F5E9; border-radius: 0.5rem; border-left: 4px solid #4CAF50;"
 
 with col1:
     st.markdown(f"""
     <div style='{card_style}'>
-        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Total Monthly Cost</h3>
-        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly_sum:,.2f}</h2>
-        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_annual_sum:,.2f}/year</p>
+        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Per Payroll Cost</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_per_payroll_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>2 pay periods/month</p>
     </div>
     """, unsafe_allow_html=True)
 
 with col2:
     st.markdown(f"""
     <div style='{card_style}'>
-        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Base Salaries</h3>
-        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_salary_monthly:,.2f}</h2>
-        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${total_salary_monthly * 12:,.2f}/year</p>
+        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Total Monthly Cost</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_monthly_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>Per month</p>
     </div>
     """, unsafe_allow_html=True)
 
 with col3:
     st.markdown(f"""
     <div style='{card_style}'>
-        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Benefits + Taxes</h3>
-        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_benefits + total_401k + total_fica:,.2f}</h2>
-        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>${(total_benefits + total_401k + total_fica) * 12:,.2f}/year</p>
+        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Total Annual Cost</h3>
+        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>${total_annual_sum:,.2f}</h2>
+        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>Per year</p>
     </div>
     """, unsafe_allow_html=True)
 
-with col4:
+st.divider()
+
+# Secondary metrics
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Base Salaries (Monthly)", f"${total_salary_monthly:,.2f}", f"${total_salary_monthly * 12:,.2f}/year")
+
+with col2:
+    st.metric("Benefits + Taxes (Monthly)", f"${total_benefits + total_401k + total_fica:,.2f}", f"${(total_benefits + total_401k + total_fica) * 12:,.2f}/year")
+
+with col3:
     burden_rate = ((total_monthly_sum - total_salary_monthly) / total_salary_monthly * 100) if total_salary_monthly > 0 else 0
-    st.markdown(f"""
-    <div style='{card_style}'>
-        <h3 style='margin: 0; color: #666; font-size: 1rem;'>Burden Rate</h3>
-        <h2 style='margin: 0.5rem 0 0 0; color: #333;'>{burden_rate:.1f}%</h2>
-        <p style='margin: 0.5rem 0 0 0; color: #666; font-size: 0.9rem;'>Above base salary</p>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric("Burden Rate", f"{burden_rate:.1f}%", "Above base salary")
 
 st.divider()
 
@@ -298,7 +316,7 @@ st.divider()
 # =========================================================
 st.header("📈 Cost Breakdown")
 
-if include_utilization_bonus:
+if include_bonuses:
     breakdown_data = {
         "Component": [
             "Base Salaries",
@@ -374,7 +392,19 @@ st.divider()
 # =========================================================
 st.header("👥 Employee Details")
 
-if include_utilization_bonus:
+# Calculate multiplier based on time period selection
+if time_period == "Per Pay Period (2x/month)":
+    multiplier = 0.5  # Divide monthly by 2
+    period_label = "Pay Period"
+elif time_period == "Monthly":
+    multiplier = 1.0
+    period_label = "Month"
+else:  # Annual
+    multiplier = 12.0
+    period_label = "Year"
+
+# Create display dataframe with adjusted values
+if include_bonuses:
     display_df = results_df[[
         "Staff_Name",
         "Monthly_Salary",
@@ -385,21 +415,25 @@ if include_utilization_bonus:
         "Monthly_401k",
         "Monthly_FICA",
         "Total_Monthly_Cost",
-        "Total_Annual_Cost"
     ]].copy()
+    
+    # Apply multiplier to all numeric columns
+    numeric_cols = ["Monthly_Salary", "Monthly_Utilization_Bonus", "Monthly_Other_Bonus", 
+                    "Phone_Allowance", "Firm_Benefits", "Monthly_401k", "Monthly_FICA", "Total_Monthly_Cost"]
+    for col in numeric_cols:
+        display_df[col] = display_df[col] * multiplier
     
     # Rename for display
     column_names = {
         "Staff_Name": "Staff Member",
-        "Monthly_Salary": "Base Salary",
-        "Monthly_Utilization_Bonus": "Util. Bonus",
-        "Monthly_Other_Bonus": "Other Bonus",
-        "Phone_Allowance": "Phone",
-        "Firm_Benefits": "Benefits",
-        "Monthly_401k": "401(k)",
-        "Monthly_FICA": "FICA",
-        "Total_Monthly_Cost": "Total $/mo",
-        "Total_Annual_Cost": "Total $/year"
+        "Monthly_Salary": f"Base Salary",
+        "Monthly_Utilization_Bonus": f"Util. Bonus",
+        "Monthly_Other_Bonus": f"Other Bonus",
+        "Phone_Allowance": f"Phone",
+        "Firm_Benefits": f"Benefits",
+        "Monthly_401k": f"401(k)",
+        "Monthly_FICA": f"FICA",
+        "Total_Monthly_Cost": f"Total $/{period_label.lower()}",
     }
     
     display_df = display_df.rename(columns=column_names)
@@ -416,8 +450,7 @@ if include_utilization_bonus:
             "Benefits": st.column_config.NumberColumn(format="$%.2f"),
             "401(k)": st.column_config.NumberColumn(format="$%.2f"),
             "FICA": st.column_config.NumberColumn(format="$%.2f"),
-            "Total $/mo": st.column_config.NumberColumn(format="$%.2f"),
-            "Total $/year": st.column_config.NumberColumn(format="$%.2f"),
+            f"Total $/{period_label.lower()}": st.column_config.NumberColumn(format="$%.2f"),
         }
     )
 else:
@@ -429,19 +462,22 @@ else:
         "Monthly_401k",
         "Monthly_FICA",
         "Total_Monthly_Cost",
-        "Total_Annual_Cost"
     ]].copy()
+    
+    # Apply multiplier to all numeric columns
+    numeric_cols = ["Monthly_Salary", "Phone_Allowance", "Firm_Benefits", "Monthly_401k", "Monthly_FICA", "Total_Monthly_Cost"]
+    for col in numeric_cols:
+        display_df[col] = display_df[col] * multiplier
     
     # Rename for display
     column_names = {
         "Staff_Name": "Staff Member",
-        "Monthly_Salary": "Base Salary",
-        "Phone_Allowance": "Phone",
-        "Firm_Benefits": "Benefits",
-        "Monthly_401k": "401(k)",
-        "Monthly_FICA": "FICA",
-        "Total_Monthly_Cost": "Total $/mo",
-        "Total_Annual_Cost": "Total $/year"
+        "Monthly_Salary": f"Base Salary",
+        "Phone_Allowance": f"Phone",
+        "Firm_Benefits": f"Benefits",
+        "Monthly_401k": f"401(k)",
+        "Monthly_FICA": f"FICA",
+        "Total_Monthly_Cost": f"Total $/{period_label.lower()}",
     }
     
     display_df = display_df.rename(columns=column_names)
@@ -456,8 +492,7 @@ else:
             "Benefits": st.column_config.NumberColumn(format="$%.2f"),
             "401(k)": st.column_config.NumberColumn(format="$%.2f"),
             "FICA": st.column_config.NumberColumn(format="$%.2f"),
-            "Total $/mo": st.column_config.NumberColumn(format="$%.2f"),
-            "Total $/year": st.column_config.NumberColumn(format="$%.2f"),
+            f"Total $/{period_label.lower()}": st.column_config.NumberColumn(format="$%.2f"),
         }
     )
 
@@ -500,7 +535,7 @@ st.download_button(
 st.session_state.payroll_report_data = {
     "total_monthly": total_monthly_sum,
     "total_annual": total_annual_sum,
-    "include_utilization_bonus": include_utilization_bonus,
+    "include_bonuses": include_bonuses,
     "include_401k": include_401k,
     "excel_bytes": excel_bytes,
 }
@@ -557,7 +592,7 @@ if "payroll_report_data" in st.session_state:
                     msg["From"] = "astudee@voyageadvisory.com"
                     msg["Subject"] = f"Payroll Calculator Report - {datetime.now().strftime('%B %d, %Y')}"
 
-                    bonus_note = "with Utilization Bonus" if data['include_utilization_bonus'] else "without Utilization Bonus"
+                    bonus_note = "with Utilization Bonus" if data['include_bonuses'] else "without Utilization Bonus"
                     k401_note = "with 401(k) Match" if data['include_401k'] else "without 401(k) Match"
 
                     msg.set_content(
