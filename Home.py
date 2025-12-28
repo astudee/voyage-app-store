@@ -72,6 +72,7 @@ apps = [
     {
         'icon': '💰',
         'name': 'Commission Calculator',
+        'page': '01_💰_Commission_Calculator',
         'description': 'Calculate sales commissions from QuickBooks and BigTime data',
         'features': [
             'Client commissions with date ranges (Year 1 vs Year 2+)',
@@ -86,6 +87,7 @@ apps = [
     {
         'icon': '📧',
         'name': 'Email to To File',
+        'page': '02_📧_Email_to_To_File',
         'description': 'Automated email processing and archiving',
         'features': [
             'Reads emails from vault@voyageadvisory.com',
@@ -99,6 +101,7 @@ apps = [
     {
         'icon': '📄',
         'name': 'To File to Vault',
+        'page': '03_📄_To_File_to_Vault',
         'description': 'AI-powered document classification and archiving',
         'features': [
             'Uses AI (Claude/Gemini/OpenAI) to classify documents',
@@ -112,6 +115,7 @@ apps = [
     {
         'icon': '📊',
         'name': 'Billable Hours Report',
+        'page': '04_📊_Billable_Hours_Report',
         'description': 'Monthly billable hours analysis with capacity tracking',
         'features': [
             'Pulls data directly from BigTime API',
@@ -127,6 +131,7 @@ apps = [
     {
         'icon': '💰',
         'name': 'Bonus Calculator',
+        'page': '05_💰_Bonus_Calculator',
         'description': 'Employee bonus calculations based on utilization',
         'features': [
             'Three-tier bonus structure (1840/1350 hour thresholds)',
@@ -142,6 +147,7 @@ apps = [
     {
         'icon': '⏰',
         'name': 'Time Reviewer',
+        'page': '06_⏰_Time_Reviewer',
         'description': 'Review timesheets for completeness and quality',
         'features': [
             'Checks for zero hours and unsubmitted timesheets',
@@ -157,6 +163,7 @@ apps = [
     {
         'icon': '💳',
         'name': 'Expense Reviewer',
+        'page': '07_💳_Expense_Reviewer',
         'description': 'Review expenses for compliance and quality',
         'features': [
             'Validates contractor fee classification',
@@ -172,6 +179,7 @@ apps = [
     {
         'icon': '💊',
         'name': 'Benefits Calculator',
+        'page': '08_💊_Benefits_Calculator',
         'description': 'Calculate employee benefits costs',
         'features': [
             'Reads current benefit selections from Staff tab',
@@ -187,6 +195,7 @@ apps = [
     {
         'icon': '💵',
         'name': 'Payroll Calculator',
+        'page': '09_💵_Payroll_Calculator',
         'description': 'Calculate total employer payroll costs',
         'features': [
             'Base salary plus bonuses (utilization + other)',
@@ -202,6 +211,7 @@ apps = [
     {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
+        'page': '99_🔑_QuickBooks_Token_Refresh',
         'description': 'Re-authorize QuickBooks API access',
         'features': [
             'Generate QuickBooks authorization URL',
@@ -216,6 +226,7 @@ apps = [
     {
         'icon': '🏥',
         'name': 'Connection Health Checker',
+        'page': '98_🏥_Connection_Health_Checker',
         'description': 'Test all API connections and services',
         'features': [
             'Check BigTime API connection',
@@ -230,10 +241,16 @@ apps = [
     }
 ]
 
-# Display apps in a grid
+# Display apps in a grid with navigation links
 for app in apps:
     with st.expander(f"{app['icon']} **{app['name']}** - {app['status']}"):
         st.markdown(f"_{app['description']}_")
+        
+        # Add "Open App" button if page is specified
+        if 'page' in app:
+            if st.button(f"🚀 Open {app['name']}", key=f"open_{app['page']}", use_container_width=True):
+                st.switch_page(f"pages/{app['page']}.py")
+        
         st.markdown("**Key Features:**")
         for feature in app['features']:
             st.markdown(f"- {feature}")
