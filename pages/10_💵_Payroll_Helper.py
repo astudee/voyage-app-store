@@ -266,6 +266,20 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         hourly_display['Unpaid Leave'] = 0
     
     hourly_display = hourly_display.rename(columns={'Staff_Name': 'Name'})
+    
+    # Format names as "Last, First" and sort
+    def format_name(name):
+        if pd.isna(name) or not name:
+            return name
+        parts = str(name).strip().split()
+        if len(parts) >= 2:
+            # Assume format is "First Last" or "First Middle Last"
+            first = parts[0]
+            last = parts[-1]
+            return f"{last}, {first}"
+        return name
+    
+    hourly_display['Name'] = hourly_display['Name'].apply(format_name)
     hourly_display = hourly_display.sort_values('Name')
     
     # Full-time employees (everyone not hourly/TFT/PTE and not international)
@@ -284,6 +298,20 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         ft_display['Unpaid Leave'] = 0
     
     ft_display = ft_display.rename(columns={'Staff_Name': 'Name'})
+    
+    # Format names as "Last, First" and sort
+    def format_name(name):
+        if pd.isna(name) or not name:
+            return name
+        parts = str(name).strip().split()
+        if len(parts) >= 2:
+            # Assume format is "First Last" or "First Middle Last"
+            first = parts[0]
+            last = parts[-1]
+            return f"{last}, {first}"
+        return name
+    
+    ft_display['Name'] = ft_display['Name'].apply(format_name)
     ft_display = ft_display.sort_values('Name')
     
     # Filter out employees with all zeros (no leave to enter in Gusto)
