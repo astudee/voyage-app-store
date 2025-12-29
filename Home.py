@@ -209,6 +209,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '💵',
+        'name': 'Payroll Helper',
+        'page': '10_💵_Payroll_Helper',
+        'description': 'Prepare payroll data from BigTime for Gusto entry',
+        'features': [
+            'Pulls hours from BigTime for payroll period',
+            'Separates hourly/TFT/PTE vs full-time employees',
+            'Categorizes time: Regular, Paid Leave, Sick Leave, Holiday',
+            'Policy violation checks (16hr holiday/month, 40hr sick/year)',
+            'Ready-to-enter format for Gusto',
+            'Excel export with employee breakdowns'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
