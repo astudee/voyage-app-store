@@ -145,7 +145,25 @@ if st.button("🚀 Generate Forecast", type="primary"):
         # Warn if missing months
         if len(filtered_months) < len(expected_months):
             missing_count = len(expected_months) - len(filtered_months)
-            st.warning(f"⚠️ Note: {missing_count} month(s) in your selected range do not have data columns in the Assignments sheet. Only showing months with data.")
+            st.warning(f"""
+⚠️ **Missing Data Columns**
+
+Your Assignments sheet is missing {missing_count} month column(s) for your selected date range.
+
+**To fix:** Add month columns (format: YYYY-MM) to the Assignments sheet for the missing months.
+
+Currently showing only months that have data columns.
+            """)
+            
+            with st.expander("📋 Details: Which months are missing?"):
+                available = [m['column'] for m in filtered_months]
+                available_dates = set([m['column'] for m in filtered_months])
+                expected_dates = [d.strftime('%Y-%m') for d in expected_months]
+                missing_dates = [d for d in expected_dates if d not in available_dates]
+                
+                st.write(f"**Selected range:** {start_date.strftime('%Y-%m')} to {end_date.strftime('%Y-%m')} ({len(expected_months)} months)")
+                st.write(f"**Available in sheet:** {filtered_months[0]['column']} to {filtered_months[-1]['column']} ({len(filtered_months)} months)")
+                st.write(f"**Missing columns:** {', '.join(missing_dates)}")
         
         # Build forecast data
         forecast_data = []
