@@ -411,9 +411,50 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             )
     
     # Tabs for detailed views
-    tab1, tab2, tab3 = st.tabs(["💰 By Category", "🏢 Revenue by Client", "📋 Full Ledger"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Commission Summary", "💰 By Category", "🏢 Revenue by Client", "📋 Full Ledger"])
     
     with tab1:
+        st.subheader("Commission Summary")
+        
+        # Group by salesperson first
+        for salesperson in final_summary['Salesperson'].unique():
+            sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
+            
+            # Group by Client, Category, and Rate
+            summary = sp_commissions.groupby(
+                ['Client', 'Category', 'Commission_Rate'], 
+                as_index=False
+            ).agg({
+                'Invoice_Amount': 'sum',
+                'Commission_Amount': 'sum'
+            })
+            
+            # Rename columns to match spreadsheet format
+            summary = summary.rename(columns={
+                'Client': 'Client or Resource',
+                'Commission_Rate': 'Factor',
+                'Invoice_Amount': 'Revenue ($)',
+                'Commission_Amount': 'Commission ($)'
+            })
+            
+            # Sort by commission amount descending
+            summary = summary.sort_values('Commission ($)', ascending=False)
+            
+            # Calculate total
+            total_comm = summary['Commission ($)'].sum()
+            
+            with st.expander(f"**{salesperson}** - ${total_comm:,.2f}", expanded=True):
+                st.dataframe(
+                    summary.style.format({
+                        'Factor': '{:.1%}',
+                        'Revenue ($)': '${:,.2f}',
+                        'Commission ($)': '${:,.2f}'
+                    }),
+                    hide_index=True,
+                    use_container_width=True
+                )
+    
+    with tab2:
         st.subheader("Commission Breakdown by Category")
         for salesperson in final_summary['Salesperson'].unique():
             sp_categories = category_summary[category_summary['Salesperson'] == salesperson]
@@ -423,7 +464,7 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                     hide_index=True
                 )
     
-    with tab2:
+    with tab3:
         st.subheader(f"Revenue by Client - {year}")
         st.write(f"**Total Clients:** {len(revenue_by_client)} | **Total Revenue:** ${revenue_by_client['Total_Revenue'].sum():,.2f}")
         st.dataframe(
@@ -431,7 +472,7 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             height=400
         )
     
-    with tab3:
+    with tab4:
         st.subheader("Full Commission Ledger")
         ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
         ledger_display = ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
@@ -483,18 +524,42 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             # Tab 2: Category Breakdown
             category_summary.to_excel(writer, sheet_name='By_Category', index=False)
             
-            # Tab 3: Full Ledger
+            # Tab 3: Commission Summary (grouped by client/category/rate)
+            for salesperson in final_summary['Salesperson'].unique():
+                sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
+                
+                comm_summary = sp_commissions.groupby(
+                    ['Client', 'Category', 'Commission_Rate'], 
+                    as_index=False
+                ).agg({
+                    'Invoice_Amount': 'sum',
+                    'Commission_Amount': 'sum'
+                })
+                
+                comm_summary = comm_summary.rename(columns={
+                    'Client': 'Client or Resource',
+                    'Commission_Rate': 'Factor',
+                    'Invoice_Amount': 'Revenue ($)',
+                    'Commission_Amount': 'Commission ($)'
+                })
+                
+                comm_summary = comm_summary.sort_values('Commission ($)', ascending=False)
+                
+                sheet_name = f"{salesperson.replace(' ', '_')}_Summary"[:31]
+                comm_summary.to_excel(writer, sheet_name=sheet_name, index=False)
+            
+            # Tab 4: Full Ledger
             ledger_sorted = all_commissions.sort_values(['Invoice_Date', 'Client'], ascending=[True, True])
             ledger_export = ledger_sorted[['Salesperson', 'Client', 'Category', 'Invoice_Date', 'Invoice_Amount', 'Commission_Rate', 'Commission_Amount', 'Source']].copy()
             ledger_export = ledger_export.rename(columns={'Client': 'Client or Resource'})
             ledger_export.to_excel(writer, sheet_name='Full_Ledger', index=False)
             
-            # Tab 4: Revenue by Client
+            # Tab 5: Revenue by Client
             revenue_export = revenue_by_client.reset_index()
             revenue_export = revenue_export.rename(columns={'Client_Normalized': 'Client'})
             revenue_export.to_excel(writer, sheet_name='Revenue_by_Client', index=False)
             
-            # Tab 5+: Individual salesperson tabs with category breakdown above ledger
+            # Tab 6+: Individual salesperson tabs with category breakdown above ledger
             for salesperson in final_summary['Salesperson'].unique():
                 sp_commissions = all_commissions[all_commissions['Salesperson'] == salesperson].copy()
                 sp_categories = category_summary[category_summary['Salesperson'] == salesperson].copy()
