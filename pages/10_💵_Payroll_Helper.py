@@ -96,22 +96,13 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         
         debug_log.append(f"✅ Pulled {len(bt_period)} BigTime entries for payroll period")
         debug_log.append(f"✅ Pulled {len(bt_ytd)} BigTime entries YTD")
-        
-        # Debug: Show sample project values
-        if project_id_col and project_id_col in bt_period.columns:
-            sample_projects = bt_period[project_id_col].dropna().unique()[:10]
-            debug_log.append(f"📋 Sample Project IDs: {', '.join([str(x) for x in sample_projects])}")
-        
-        if project_col and project_col in bt_period.columns:
-            sample_projects = bt_period[project_col].dropna().unique()[:10]
-            debug_log.append(f"📋 Sample Project Names: {', '.join([str(x) for x in sample_projects])}")
     
     # ============================================================
     # PHASE 3: PROCESS PAYROLL PERIOD DATA
     # ============================================================
     
     with st.spinner("🔨 Processing payroll data..."):
-        # Find column names
+        # Find column names first
         staff_col = None
         for col in ['Staff Member', 'Staff_Member', 'tmstaffnm']:
             if col in bt_period.columns:
@@ -135,6 +126,15 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             if col in bt_period.columns:
                 hours_col = col
                 break
+        
+        # Debug: Show sample project values
+        if project_id_col and project_id_col in bt_period.columns:
+            sample_projects = bt_period[project_id_col].dropna().unique()[:10]
+            debug_log.append(f"📋 Sample Project IDs: {', '.join([str(x) for x in sample_projects])}")
+        
+        if project_col and project_col in bt_period.columns:
+            sample_projects = bt_period[project_col].dropna().unique()[:10]
+            debug_log.append(f"📋 Sample Project Names: {', '.join([str(x) for x in sample_projects])}")
         
         if not all([staff_col, hours_col]):
             st.error("❌ Could not find required columns in BigTime data")
