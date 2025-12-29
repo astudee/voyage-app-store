@@ -131,6 +131,22 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
     # ============================================================
     
     with st.spinner("🔨 Processing contractor data..."):
+        # Load staff list from config
+        try:
+            CONFIG_SHEET_ID = st.secrets["SHEET_CONFIG_ID"]
+        except:
+            import credentials
+            CONFIG_SHEET_ID = credentials.get("SHEET_CONFIG_ID")
+        
+        import sheets
+        staff_df = sheets.read_config(CONFIG_SHEET_ID, "Staff")
+        
+        if staff_df is None or staff_df.empty:
+            st.warning("⚠️ Could not load Staff list from config")
+            employee_names = []
+        else:
+            employee_names = staff_df['Staff_Name'].tolist()
+        
         # Find column names for time data
         staff_col = None
         for col in ['Staff Member', 'Staff_Member', 'tmstaffnm']:
@@ -144,6 +160,12 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
                 hours_col = col
                 break
         
+        project_col = None
+        for col in ['Project', 'tmprojectnm']:
+            if col in bt_time.columns:
+                project_col = col
+                break
+        
         if not all([staff_col, hours_col]):
             st.error("❌ Could not find required columns in time data")
             st.stop()
@@ -152,20 +174,18 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
         bt_time['Hours'] = pd.to_numeric(bt_time[hours_col], errors='coerce')
         bt_time['Week_Ending'] = bt_time['Date'] + pd.to_timedelta((4 - bt_time['Date'].dt.dayofweek) % 7, unit='D')
         
-        # Identify contractors (those with "Contractor Fee" expenses)
-        if not bt_expenses.empty:
-            contractor_names = bt_expenses['Staff'].unique().tolist() if 'Staff' in bt_expenses.columns else []
-        else:
-            contractor_names = []
+        # Identify contractors: people NOT on the employee staff list
+        contractor_mask = ~bt_time['Staff'].isin(employee_names)
+        contractor_names = bt_time[contractor_mask]['Staff'].unique().tolist()
         
         # Filter time entries to contractors only
-        contractor_time = bt_time[bt_time['Staff'].isin(contractor_names)].copy()
+        contractor_time = bt_time[contractor_mask].copy()
         
         # Aggregate hours by contractor and week
         weekly_hours = contractor_time.groupby(['Staff', 'Week_Ending'])['Hours'].sum().reset_index()
         weekly_hours = weekly_hours.rename(columns={'Hours': 'Total_Hours'})
         
-        debug_log.append(f"✅ Found {len(contractor_names)} contractors with fees")
+        debug_log.append(f"✅ Found {len(contractor_names)} contractors (not on Staff list)")
         debug_log.append(f"✅ Processed {len(weekly_hours)} contractor-weeks")
     
     # ============================================================
