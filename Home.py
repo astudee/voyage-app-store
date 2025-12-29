@@ -239,6 +239,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '📈',
+        'name': 'Forecasted Billable Hours',
+        'page': '12_📈_Forecasted_Billable_Hours',
+        'description': 'Forward-looking billable hours and revenue forecast',
+        'features': [
+            'Based on Assignments tab in Voyage_Global_Config',
+            'Employee and Contractor sections',
+            'Toggle between hours and revenue forecast',
+            'Default range: current month + 12 months',
+            'Forward-looking only (no historical data)',
+            'Excel export with monthly breakdown'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
