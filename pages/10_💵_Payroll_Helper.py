@@ -128,13 +128,15 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 break
         
         # Debug: Show sample project values
+        debug_log.append(f"🔍 Found columns - Staff: {staff_col}, Project: {project_col}, Project ID: {project_id_col}, Hours: {hours_col}")
+        
         if project_id_col and project_id_col in bt_period.columns:
             sample_projects = bt_period[project_id_col].dropna().unique()[:10]
-            debug_log.append(f"📋 Sample Project IDs: {', '.join([str(x) for x in sample_projects])}")
+            debug_log.append(f"📋 Sample Project IDs from '{project_id_col}': {', '.join([str(x) for x in sample_projects])}")
         
         if project_col and project_col in bt_period.columns:
             sample_projects = bt_period[project_col].dropna().unique()[:10]
-            debug_log.append(f"📋 Sample Project Names: {', '.join([str(x) for x in sample_projects])}")
+            debug_log.append(f"📋 Sample Project Names from '{project_col}': {', '.join([str(x)[:50] for x in sample_projects])}")
         
         if not all([staff_col, hours_col]):
             st.error("❌ Could not find required columns in BigTime data")
@@ -169,6 +171,14 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         
         # Aggregate by staff and category
         payroll_summary = bt_period.groupby(['Staff', 'Category'])['Hours'].sum().reset_index()
+        
+        # Debug: Show categorization results
+        debug_log.append(f"📊 Categorization results:")
+        for cat in ['Regular', 'Paid Leave', 'Sick Leave', 'Holiday', 'Unpaid Leave']:
+            count = len(bt_period[bt_period['Category'] == cat])
+            hours = bt_period[bt_period['Category'] == cat]['Hours'].sum()
+            debug_log.append(f"   {cat}: {count} entries, {hours:.1f} hours")
+        
         payroll_pivot = payroll_summary.pivot(index='Staff', columns='Category', values='Hours').fillna(0)
         payroll_pivot = payroll_pivot.reset_index()
         
