@@ -138,6 +138,14 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             sample_projects = bt_period[project_col].dropna().unique()[:10]
             debug_log.append(f"📋 Sample Project Names from '{project_col}': {', '.join([str(x)[:50] for x in sample_projects])}")
         
+        # Debug: Show Internal project ID mappings
+        if project_col and project_id_col:
+            internal_projects = bt_period[bt_period[project_col].str.contains('Internal:', na=False)][[project_col, project_id_col]].drop_duplicates()
+            if not internal_projects.empty:
+                debug_log.append("📋 Internal Project Mappings:")
+                for _, row in internal_projects.head(15).iterrows():
+                    debug_log.append(f"   {row[project_col]} = ID {row[project_id_col]}")
+        
         if not all([staff_col, hours_col]):
             st.error("❌ Could not find required columns in BigTime data")
             st.stop()
