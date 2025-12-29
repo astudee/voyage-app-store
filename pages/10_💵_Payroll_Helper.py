@@ -116,7 +116,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 break
         
         project_id_col = None
-        for col in ['Project ID', 'Project_ID', 'tmprojectsid']:
+        for col in ['tmprojectnm_id', 'Project ID', 'Project_ID', 'tmprojectsid']:
             if col in bt_period.columns:
                 project_id_col = col
                 break
