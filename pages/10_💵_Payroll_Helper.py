@@ -60,24 +60,38 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     
     with st.spinner("📡 Pulling time data from BigTime..."):
         # Get BigTime report for payroll period
-        bt_period = bigtime.get_time_detail_report(
-            start_date.strftime('%Y-%m-%d'),
-            end_date.strftime('%Y-%m-%d')
-        )
+        # Note: get_time_report takes a year parameter, so we'll pull the full year and filter
+        bt_full = bigtime.get_time_report(start_date.year)
         
-        if bt_period is None or bt_period.empty:
-            st.error("❌ No BigTime data for payroll period")
+        if bt_full is None or bt_full.empty:
+            st.error("❌ No BigTime data available")
+            st.stop()
+        
+        # Find date column and filter to payroll period
+        date_col = None
+        for col in ['Date', 'tmdt']:
+            if col in bt_full.columns:
+                date_col = col
+                break
+        
+        if date_col:
+            bt_full['Date'] = pd.to_datetime(bt_full[date_col])
+            bt_period = bt_full[
+                (bt_full['Date'] >= pd.Timestamp(start_date)) & 
+                (bt_full['Date'] <= pd.Timestamp(end_date))
+            ].copy()
+            
+            # Also get YTD data for policy checks
+            year_start = pd.Timestamp(start_date.year, 1, 1)
+            bt_ytd = bt_full[
+                (bt_full['Date'] >= year_start) & 
+                (bt_full['Date'] <= pd.Timestamp(end_date))
+            ].copy()
+        else:
+            st.error("❌ Could not find date column in BigTime data")
             st.stop()
         
         debug_log.append(f"✅ Pulled {len(bt_period)} BigTime entries for payroll period")
-        
-        # Get BigTime report for YTD (for policy checks)
-        year_start = datetime(start_date.year, 1, 1)
-        bt_ytd = bigtime.get_time_detail_report(
-            year_start.strftime('%Y-%m-%d'),
-            end_date.strftime('%Y-%m-%d')
-        )
-        
         debug_log.append(f"✅ Pulled {len(bt_ytd)} BigTime entries YTD")
     
     # ============================================================
@@ -118,6 +132,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         bt_period.loc[bt_period['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
         bt_period.loc[bt_period['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
         bt_period.loc[bt_period['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
+        bt_period.loc[bt_period['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
         
         # Aggregate by staff and category
         payroll_summary = bt_period.groupby(['Staff', 'Category'])['Hours'].sum().reset_index()
@@ -125,7 +140,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         payroll_pivot = payroll_pivot.reset_index()
         
         # Ensure all columns exist
-        for col in ['Regular', 'Paid Leave', 'Sick Leave', 'Holiday']:
+        for col in ['Regular', 'Paid Leave', 'Sick Leave', 'Holiday', 'Unpaid Leave']:
             if col not in payroll_pivot.columns:
                 payroll_pivot[col] = 0
         
@@ -138,7 +153,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         )
         
         # Fill NaN hours with 0
-        for col in ['Regular', 'Paid Leave', 'Sick Leave', 'Holiday']:
+        for col in ['Regular', 'Paid Leave', 'Sick Leave', 'Holiday', 'Unpaid Leave']:
             if col in staff_with_hours.columns:
                 staff_with_hours[col] = staff_with_hours[col].fillna(0)
         
@@ -153,13 +168,14 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     hourly_employees = staff_with_hours[staff_with_hours['Type'].isin(hourly_types)].copy()
     
     if 'Regular' in hourly_employees.columns:
-        hourly_display = hourly_employees[['Staff_Name', 'Type', 'Regular', 'Paid Leave', 'Sick Leave', 'Holiday']].copy()
+        hourly_display = hourly_employees[['Staff_Name', 'Type', 'Regular', 'Paid Leave', 'Sick Leave', 'Holiday', 'Unpaid Leave']].copy()
     else:
         hourly_display = hourly_employees[['Staff_Name', 'Type']].copy()
         hourly_display['Regular'] = 0
         hourly_display['Paid Leave'] = 0
         hourly_display['Sick Leave'] = 0
         hourly_display['Holiday'] = 0
+        hourly_display['Unpaid Leave'] = 0
     
     hourly_display = hourly_display.rename(columns={'Staff_Name': 'Name'})
     hourly_display = hourly_display.sort_values('Name')
@@ -171,12 +187,13 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     ].copy()
     
     if 'Paid Leave' in ft_employees.columns:
-        ft_display = ft_employees[['Staff_Name', 'Type', 'Paid Leave', 'Sick Leave', 'Holiday']].copy()
+        ft_display = ft_employees[['Staff_Name', 'Type', 'Paid Leave', 'Sick Leave', 'Holiday', 'Unpaid Leave']].copy()
     else:
         ft_display = ft_employees[['Staff_Name', 'Type']].copy()
         ft_display['Paid Leave'] = 0
         ft_display['Sick Leave'] = 0
         ft_display['Holiday'] = 0
+        ft_display['Unpaid Leave'] = 0
     
     ft_display = ft_display.rename(columns={'Staff_Name': 'Name'})
     ft_display = ft_display.sort_values('Name')
@@ -192,35 +209,45 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         bt_ytd['Hours'] = pd.to_numeric(bt_ytd[hours_col], errors='coerce')
         bt_ytd['Staff'] = bt_ytd[staff_col]
         bt_ytd['Project'] = bt_ytd[project_col]
+        bt_ytd['Month'] = bt_ytd['Date'].dt.to_period('M')
         
-        # Find date column
-        date_col = None
-        for col in ['Date', 'tmdt']:
-            if col in bt_ytd.columns:
-                date_col = col
-                break
-        
-        if date_col:
-            bt_ytd['Date'] = pd.to_datetime(bt_ytd[date_col])
-            bt_ytd['Month'] = bt_ytd['Date'].dt.to_period('M')
+        # Categorize YTD data
+        bt_ytd['Category'] = 'Regular'
+        bt_ytd.loc[bt_ytd['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
+        bt_ytd.loc[bt_ytd['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
+        bt_ytd.loc[bt_ytd['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
+        bt_ytd.loc[bt_ytd['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
         
         # Check 1: Holiday hours by month (max 16 per month)
-        holiday_data = bt_ytd[bt_ytd['Project'].str.contains('Holiday', case=False, na=False)].copy()
+        holiday_data = bt_ytd[bt_ytd['Category'] == 'Holiday'].copy()
         
-        if not holiday_data.empty and 'Month' in holiday_data.columns:
+        if not holiday_data.empty:
             holiday_by_month = holiday_data.groupby(['Staff', 'Month'])['Hours'].sum().reset_index()
             
             for _, row in holiday_by_month.iterrows():
                 if row['Hours'] > 16:
                     violations.append({
                         'Employee': row['Staff'],
-                        'Policy': 'Holiday Hours',
-                        'Issue': f"{row['Hours']:.1f} hours in {row['Month']} (max 16)",
+                        'Policy': 'Holiday Hours (Monthly)',
+                        'Issue': f"{row['Hours']:.1f} hours in {row['Month']} (max 16/month)",
                         'Severity': '⚠️'
                     })
         
-        # Check 2: YTD sick leave (max 40 per year)
-        sick_data = bt_ytd[bt_ytd['Project'].str.contains('Sick Leave', case=False, na=False)].copy()
+        # Check 2: Holiday hours YTD (max 72 per year = 9 holidays)
+        if not holiday_data.empty:
+            holiday_ytd = holiday_data.groupby('Staff')['Hours'].sum().reset_index()
+            
+            for _, row in holiday_ytd.iterrows():
+                if row['Hours'] > 72:
+                    violations.append({
+                        'Employee': row['Staff'],
+                        'Policy': 'Holiday Hours (Annual)',
+                        'Issue': f"{row['Hours']:.1f} hours YTD (max 72/year)",
+                        'Severity': '⚠️'
+                    })
+        
+        # Check 3: YTD sick leave (max 40 per year)
+        sick_data = bt_ytd[bt_ytd['Category'] == 'Sick Leave'].copy()
         
         if not sick_data.empty:
             sick_ytd = sick_data.groupby('Staff')['Hours'].sum().reset_index()
@@ -230,7 +257,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                     violations.append({
                         'Employee': row['Staff'],
                         'Policy': 'Sick Leave',
-                        'Issue': f"{row['Hours']:.1f} hours YTD (max 40)",
+                        'Issue': f"{row['Hours']:.1f} hours YTD (max 40/year)",
                         'Severity': '⚠️'
                     })
         
@@ -268,7 +295,8 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 'Regular': '{:.1f}',
                 'Paid Leave': '{:.1f}',
                 'Sick Leave': '{:.1f}',
-                'Holiday': '{:.1f}'
+                'Holiday': '{:.1f}',
+                'Unpaid Leave': '{:.1f}'
             }),
             hide_index=True,
             use_container_width=True
@@ -285,7 +313,8 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             ft_display.style.format({
                 'Paid Leave': '{:.1f}',
                 'Sick Leave': '{:.1f}',
-                'Holiday': '{:.1f}'
+                'Holiday': '{:.1f}',
+                'Unpaid Leave': '{:.1f}'
             }),
             hide_index=True,
             use_container_width=True
@@ -355,14 +384,16 @@ else:
         - Time entries from **BigTime**
         
         **Sections:**
-        1. **Hourly/TFT/PTE Employees** - Shows regular hours + leave hours
+        1. **Hourly/TFT/PTE Employees** - Shows regular hours + all leave types
         2. **Full-Time Employees** - Shows leave hours only (Gusto pre-fills 86.67 hours)
         3. **Policy Violations** - Flags issues:
            - More than 16 holiday hours in a single month
-           - More than 40 sick leave hours YTD
+           - More than 72 holiday hours per year (9 holidays)
+           - More than 40 sick leave hours per year
         
         **Leave Categories (BigTime Projects):**
         - Paid Leave: Project 7
         - Sick Leave: Project 10
+        - Unpaid Leave: Project 13
         - Holiday: Project 62
         """)
