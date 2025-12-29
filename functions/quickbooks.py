@@ -119,6 +119,31 @@ def get_consulting_income(year):
     if response.status_code == 200:
         report_data = response.json()
         
+        # DEBUG: Show all account names in the report
+        def extract_account_names(rows, depth=0):
+            """Recursively extract all account names from the report"""
+            names = []
+            for row in rows:
+                if 'Header' in row:
+                    col_data = row['Header'].get('ColData', [])
+                    if col_data:
+                        account_name = col_data[0].get('value', '')
+                        if account_name and account_name.strip():
+                            names.append(f"{'  ' * depth}{account_name}")
+                
+                if 'Rows' in row and 'Row' in row['Rows']:
+                    names.extend(extract_account_names(row['Rows']['Row'], depth + 1))
+            return names
+        
+        rows = report_data.get('Rows', {}).get('Row', [])
+        all_accounts = extract_account_names(rows)
+        
+        print("📋 Available accounts in P&L report:")
+        for account in all_accounts[:20]:  # Show first 20
+            print(f"   {account}")
+        if len(all_accounts) > 20:
+            print(f"   ... and {len(all_accounts) - 20} more")
+        
         def find_consulting_income(rows):
             for row in rows:
                 if 'Header' in row:
@@ -132,7 +157,6 @@ def get_consulting_income(year):
                         return result
             return None
         
-        rows = report_data.get('Rows', {}).get('Row', [])
         consulting_section = find_consulting_income(rows)
         
         if not consulting_section:
