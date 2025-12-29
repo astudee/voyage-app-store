@@ -67,6 +67,9 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             st.error("❌ No BigTime data available")
             st.stop()
         
+        debug_log.append(f"✅ Pulled {len(bt_full)} BigTime entries for full year")
+        debug_log.append(f"📋 BigTime columns: {', '.join(bt_full.columns.tolist())}")
+        
         # Find date column and filter to payroll period
         date_col = None
         for col in ['Date', 'tmdt']:
@@ -93,6 +96,15 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         
         debug_log.append(f"✅ Pulled {len(bt_period)} BigTime entries for payroll period")
         debug_log.append(f"✅ Pulled {len(bt_ytd)} BigTime entries YTD")
+        
+        # Debug: Show sample project values
+        if project_id_col and project_id_col in bt_period.columns:
+            sample_projects = bt_period[project_id_col].dropna().unique()[:10]
+            debug_log.append(f"📋 Sample Project IDs: {', '.join([str(x) for x in sample_projects])}")
+        
+        if project_col and project_col in bt_period.columns:
+            sample_projects = bt_period[project_col].dropna().unique()[:10]
+            debug_log.append(f"📋 Sample Project Names: {', '.join([str(x) for x in sample_projects])}")
     
     # ============================================================
     # PHASE 3: PROCESS PAYROLL PERIOD DATA
