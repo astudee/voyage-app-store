@@ -62,14 +62,48 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
         
         debug_log.append(f"✅ Pulled {len(bt_time)} time entries")
         
-        # Get expense report (for contractor fees)
-        bt_expenses = bigtime.get_expense_report(start_date, end_date)
-        
-        if bt_expenses is None or bt_expenses.empty:
-            st.warning("⚠️ No expense data found for this period")
+        # Get expense report (for contractor fees) - Report 284803
+        try:
+            api_key = st.secrets["BIGTIME_API_KEY"]
+            firm_id = st.secrets["BIGTIME_FIRM_ID"]
+            
+            # Format dates for API
+            start_str = start_date.strftime('%Y-%m-%d')
+            end_str = end_date.strftime('%Y-%m-%d')
+            
+            url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/284803"
+            headers = {
+                "X-Auth-Token": api_key,
+                "X-Auth-Realm": firm_id
+            }
+            
+            payload = {
+                "filters": {
+                    "DATE_RANGE": {
+                        "from": start_str,
+                        "to": end_str
+                    }
+                }
+            }
+            
+            import requests
+            response = requests.post(url, headers=headers, json=payload, timeout=60)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'data' in data and data['data']:
+                    bt_expenses = pd.DataFrame(data['data'])
+                    debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
+                else:
+                    st.warning("⚠️ No expense data found for this period")
+                    bt_expenses = pd.DataFrame()
+            else:
+                st.warning(f"⚠️ Expense report API returned status {response.status_code}")
+                bt_expenses = pd.DataFrame()
+                
+        except Exception as e:
+            st.warning(f"⚠️ Could not fetch expense data: {e}")
             bt_expenses = pd.DataFrame()
-        else:
-            debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
     
     # ============================================================
     # PHASE 2: IDENTIFY CONTRACTORS & PROCESS TIME DATA
