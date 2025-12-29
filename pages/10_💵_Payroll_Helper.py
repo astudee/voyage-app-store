@@ -127,6 +127,13 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 hours_col = col
                 break
         
+        # Debug: Check different hour column values for leave entries
+        leave_sample = bt_period[bt_period[project_col].str.contains('Internal:Paid Leave|Internal:Sick Leave|Internal:Holiday', na=False, regex=True)].head(3)
+        if not leave_sample.empty:
+            debug_log.append("📊 Sample leave entry hours:")
+            for idx, row in leave_sample.iterrows():
+                debug_log.append(f"   {row[project_col]}: tmhrsbill={row.get('tmhrsbill', 'N/A')}, tmhrsin={row.get('tmhrsin', 'N/A')}, tmhrsnc={row.get('tmhrsnc', 'N/A')}")
+        
         # Debug: Show sample project values
         debug_log.append(f"🔍 Found columns - Staff: {staff_col}, Project: {project_col}, Project ID: {project_id_col}, Hours: {hours_col}")
         
