@@ -110,34 +110,46 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
             if response.status_code == 200:
                 report_data = response.json()
                 data_rows = report_data.get('Data', [])
-                field_list = report_data.get('FieldList', [])
+                field_list_raw = report_data.get('FieldList', [])
+                
+                # Extract field names from the metadata structure
+                if isinstance(field_list_raw, list) and len(field_list_raw) > 0:
+                    if isinstance(field_list_raw[0], dict):
+                        # FieldList is a list of dicts like {'FieldNm': 'exsourcenm', 'FieldType': 'varchar', ...}
+                        field_list = [field['FieldNm'] for field in field_list_raw]
+                    else:
+                        # FieldList is already a simple list
+                        field_list = field_list_raw
+                else:
+                    field_list = []
                 
                 if data_rows and field_list:
                     bt_expenses = pd.DataFrame(data_rows, columns=field_list)
                     debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
                     
                     # DEBUG: Show all columns and sample data
-                    debug_log.append(f"📋 Available columns in expense report: {field_list}")
+                    debug_log.append(f"📋 Expense column names: {', '.join(field_list[:10])}... ({len(field_list)} total)")
                     if len(bt_expenses) > 0:
-                        # Show first row with all values
+                        # Show first row with key fields
                         first_row = bt_expenses.iloc[0]
-                        debug_log.append("📋 Sample expense entry (all fields):")
-                        for col in field_list:
-                            debug_log.append(f"   {col} = {first_row[col]}")
+                        debug_log.append("📋 Sample expense (key fields):")
+                        key_fields = ['exsourcenm', 'exdt', 'excatnm', 'excostin', 'excostbill', 'excostnc']
+                        for col in key_fields:
+                            if col in field_list:
+                                debug_log.append(f"   {col} = {first_row[col]}")
                         
                         # Filter to contractor fees and show one
-                        for cat_col in ['Category', 'tmcatname', 'Expense Type']:
-                            if cat_col in bt_expenses.columns:
-                                contractor_fees_test = bt_expenses[
-                                    bt_expenses[cat_col].astype(str).str.contains('Contractor', case=False, na=False)
-                                ]
-                                if len(contractor_fees_test) > 0:
-                                    debug_log.append(f"📋 Found {len(contractor_fees_test)} contractor fees using '{cat_col}' column")
-                                    cf_row = contractor_fees_test.iloc[0]
-                                    debug_log.append("📋 Sample contractor fee entry:")
-                                    for col in field_list:
+                        if 'excatnm' in bt_expenses.columns:
+                            contractor_fees_test = bt_expenses[
+                                bt_expenses['excatnm'].astype(str).str.contains('Contractor', case=False, na=False)
+                            ]
+                            if len(contractor_fees_test) > 0:
+                                debug_log.append(f"📋 Found {len(contractor_fees_test)} contractor fees")
+                                cf_row = contractor_fees_test.iloc[0]
+                                debug_log.append("📋 Contractor fee sample:")
+                                for col in key_fields:
+                                    if col in field_list:
                                         debug_log.append(f"   {col} = {cf_row[col]}")
-                                    break
                 else:
                     st.warning("⚠️ No expense data found for this period")
                     bt_expenses = pd.DataFrame()
@@ -220,27 +232,27 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
         weekly_fees = pd.DataFrame()
         
         if not bt_expenses.empty:
-            # Find expense columns - matching actual BigTime expense report structure
+            # Find expense columns - using actual BigTime API field names
             expense_staff_col = None
-            for col in ['Source', 'Staff', 'Staff Member', 'tmstaffnm']:
+            for col in ['exsourcenm', 'Source', 'Staff', 'Staff Member']:
                 if col in bt_expenses.columns:
                     expense_staff_col = col
                     break
             
             expense_date_col = None
-            for col in ['Date', 'Transaction Date', 'tmdt']:
+            for col in ['exdt', 'Date', 'Transaction Date']:
                 if col in bt_expenses.columns:
                     expense_date_col = col
                     break
             
             expense_amount_col = None
-            for col in ['Input', 'tmamt', 'Amount', 'Total', 'tmamtin']:
+            for col in ['excostin', 'Input', 'Amount', 'Total']:
                 if col in bt_expenses.columns:
                     expense_amount_col = col
                     break
             
             category_col = None
-            for col in ['Category', 'Expense Type', 'tmcatname']:
+            for col in ['excatnm', 'Category', 'Expense Type']:
                 if col in bt_expenses.columns:
                     category_col = col
                     break
