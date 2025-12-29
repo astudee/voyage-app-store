@@ -112,27 +112,48 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 project_col = col
                 break
         
+        project_id_col = None
+        for col in ['Project ID', 'Project_ID', 'tmprojectsid']:
+            if col in bt_period.columns:
+                project_id_col = col
+                break
+        
         hours_col = None
         for col in ['Billable', 'Hours', 'tmhrsbill']:
             if col in bt_period.columns:
                 hours_col = col
                 break
         
-        if not all([staff_col, project_col, hours_col]):
+        if not all([staff_col, hours_col]):
             st.error("❌ Could not find required columns in BigTime data")
             st.stop()
         
         # Convert hours to numeric
         bt_period['Hours'] = pd.to_numeric(bt_period[hours_col], errors='coerce')
         bt_period['Staff'] = bt_period[staff_col]
-        bt_period['Project'] = bt_period[project_col]
         
-        # Categorize time entries
-        bt_period['Category'] = 'Regular'
-        bt_period.loc[bt_period['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
-        bt_period.loc[bt_period['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
-        bt_period.loc[bt_period['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
-        bt_period.loc[bt_period['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
+        # Use project ID if available, otherwise project name
+        if project_id_col:
+            bt_period['Project_ID'] = pd.to_numeric(bt_period[project_id_col], errors='coerce')
+            
+            # Categorize by project ID
+            bt_period['Category'] = 'Regular'
+            bt_period.loc[bt_period['Project_ID'] == 7, 'Category'] = 'Paid Leave'
+            bt_period.loc[bt_period['Project_ID'] == 10, 'Category'] = 'Sick Leave'
+            bt_period.loc[bt_period['Project_ID'] == 13, 'Category'] = 'Unpaid Leave'
+            bt_period.loc[bt_period['Project_ID'] == 62, 'Category'] = 'Holiday'
+        elif project_col:
+            bt_period['Project'] = bt_period[project_col]
+            
+            # Fallback to project name matching
+            bt_period['Category'] = 'Regular'
+            bt_period.loc[bt_period['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
+            bt_period.loc[bt_period['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
+            bt_period.loc[bt_period['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
+            bt_period.loc[bt_period['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
+        else:
+            st.error("❌ Could not find project column in BigTime data")
+            st.stop()
         
         # Aggregate by staff and category
         payroll_summary = bt_period.groupby(['Staff', 'Category'])['Hours'].sum().reset_index()
@@ -208,15 +229,25 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         # Process YTD data
         bt_ytd['Hours'] = pd.to_numeric(bt_ytd[hours_col], errors='coerce')
         bt_ytd['Staff'] = bt_ytd[staff_col]
-        bt_ytd['Project'] = bt_ytd[project_col]
         bt_ytd['Month'] = bt_ytd['Date'].dt.to_period('M')
         
-        # Categorize YTD data
-        bt_ytd['Category'] = 'Regular'
-        bt_ytd.loc[bt_ytd['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
-        bt_ytd.loc[bt_ytd['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
-        bt_ytd.loc[bt_ytd['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
-        bt_ytd.loc[bt_ytd['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
+        # Categorize YTD data using project ID if available
+        if project_id_col:
+            bt_ytd['Project_ID'] = pd.to_numeric(bt_ytd[project_id_col], errors='coerce')
+            
+            bt_ytd['Category'] = 'Regular'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 7, 'Category'] = 'Paid Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 10, 'Category'] = 'Sick Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 13, 'Category'] = 'Unpaid Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 62, 'Category'] = 'Holiday'
+        elif project_col:
+            bt_ytd['Project'] = bt_ytd[project_col]
+            
+            bt_ytd['Category'] = 'Regular'
+            bt_ytd.loc[bt_ytd['Project'].str.contains('Paid Leave', case=False, na=False), 'Category'] = 'Paid Leave'
+            bt_ytd.loc[bt_ytd['Project'].str.contains('Sick Leave', case=False, na=False), 'Category'] = 'Sick Leave'
+            bt_ytd.loc[bt_ytd['Project'].str.contains('Holiday', case=False, na=False), 'Category'] = 'Holiday'
+            bt_ytd.loc[bt_ytd['Project'].str.contains('Unpaid Leave', case=False, na=False), 'Category'] = 'Unpaid Leave'
         
         # Check 1: Holiday hours by month (max 16 per month)
         holiday_data = bt_ytd[bt_ytd['Category'] == 'Holiday'].copy()
