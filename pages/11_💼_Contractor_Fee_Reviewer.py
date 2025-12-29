@@ -19,6 +19,31 @@ st.set_page_config(page_title="Contractor Fee Reviewer", page_icon="💼", layou
 st.title("💼 Contractor Fee Reviewer")
 st.markdown("Review contractor fees and hours for compliance and accuracy")
 
+# Helper function to normalize merge keys for consistent dtypes
+def normalize_merge_keys(df: pd.DataFrame) -> pd.DataFrame:
+    """Ensure Staff and Week_Ending columns have consistent dtypes for merging"""
+    df = df.copy()
+    
+    # Staff -> string
+    if 'Staff' in df.columns:
+        df['Staff'] = df['Staff'].astype(str).str.strip()
+    
+    # Week_Ending -> datetime64[ns] without timezone
+    if 'Week_Ending' in df.columns:
+        df['Week_Ending'] = pd.to_datetime(df['Week_Ending'], errors='coerce')
+        
+        # Remove timezone if present
+        try:
+            if hasattr(df['Week_Ending'].dt, 'tz') and df['Week_Ending'].dt.tz is not None:
+                df['Week_Ending'] = df['Week_Ending'].dt.tz_localize(None)
+        except Exception:
+            pass
+        
+        # Ensure dtype is datetime64[ns]
+        df['Week_Ending'] = df['Week_Ending'].astype('datetime64[ns]')
+    
+    return df
+
 # Date inputs
 st.subheader("Review Period")
 col1, col2 = st.columns(2)
@@ -215,9 +240,13 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
             columns=['Contractor', 'Date', 'Day', 'Amount', 'Issue']
         )
         
-        # Ensure weekly_fees has required columns even if empty
+        # Ensure weekly_fees has required columns with proper dtypes even if empty
         if weekly_fees.empty:
-            weekly_fees = pd.DataFrame(columns=['Staff', 'Week_Ending', 'Total_Fees'])
+            weekly_fees = pd.DataFrame({
+                'Staff': pd.Series(dtype='str'),
+                'Week_Ending': pd.Series(dtype='datetime64[ns]'),
+                'Total_Fees': pd.Series(dtype='float64')
+            })
         
         debug_log.append(f"✅ Found {len(non_friday_df)} non-Friday fees")
     
@@ -226,12 +255,21 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
     # ============================================================
     
     with st.spinner("📊 Analyzing contractor data..."):
+        # Normalize merge keys to ensure dtype consistency
+        weekly_hours = normalize_merge_keys(weekly_hours)
+        weekly_fees = normalize_merge_keys(weekly_fees)
+        
         # Merge hours and fees
         contractor_summary = weekly_hours.merge(
             weekly_fees,
             on=['Staff', 'Week_Ending'],
             how='outer'
-        ).fillna(0)
+        )
+        
+        # Fill only numeric columns (avoid converting Staff to "0")
+        for col in ['Total_Hours', 'Total_Fees']:
+            if col in contractor_summary.columns:
+                contractor_summary[col] = contractor_summary[col].fillna(0)
         
         # Calculate average hourly rate
         contractor_summary['Avg_Hourly_Rate'] = contractor_summary.apply(
