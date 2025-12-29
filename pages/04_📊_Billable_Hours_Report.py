@@ -11,6 +11,9 @@ from io import BytesIO
 import os
 import requests
 
+# Page config
+st.set_page_config(page_title="Billable Hours & Revenue Report", page_icon="📊", layout="wide")
+
 # Authentication check - shared session state from Home page
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
     st.error("🔐 Please log in through the Home page")
@@ -865,8 +868,9 @@ if st.sidebar.button("Generate Report", type="primary"):
                         category_data = pivot.loc[staff_in_category].sort_index()
                         category_data.to_excel(writer, sheet_name=category.replace(' ', '_'))
                 
-                # Write capacity reference
-                capacity_df.to_excel(writer, sheet_name='Capacity_Reference', index=False)
+                # Write capacity reference (only exists for Hours mode)
+                if metric_type == "Billable Hours":
+                    capacity_df.to_excel(writer, sheet_name='Capacity_Reference', index=False)
             
             output.seek(0)
             
