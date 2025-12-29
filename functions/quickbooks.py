@@ -113,7 +113,12 @@ def get_consulting_income(year):
         'minorversion': '65'
     }
     
-    print(f"📡 Pulling P&L Detail Report (Cash Basis) for {year}...")
+    msg = f"📡 Pulling P&L Detail Report (Cash Basis) for {year}..."
+    if IN_STREAMLIT:
+        st.info(msg)
+    else:
+        print(msg)
+    
     response = requests.get(url, headers=headers, params=params)
     
     if response.status_code == 200:
@@ -138,11 +143,19 @@ def get_consulting_income(year):
         rows = report_data.get('Rows', {}).get('Row', [])
         all_accounts = extract_account_names(rows)
         
-        print("📋 Available accounts in P&L report:")
-        for account in all_accounts[:20]:  # Show first 20
-            print(f"   {account}")
-        if len(all_accounts) > 20:
-            print(f"   ... and {len(all_accounts) - 20} more")
+        # Show accounts in UI if in Streamlit
+        if IN_STREAMLIT:
+            with st.expander("🔍 DEBUG: Available accounts in P&L report", expanded=True):
+                for account in all_accounts[:30]:  # Show first 30
+                    st.text(account)
+                if len(all_accounts) > 30:
+                    st.text(f"... and {len(all_accounts) - 30} more")
+        else:
+            print("📋 Available accounts in P&L report:")
+            for account in all_accounts[:20]:
+                print(f"   {account}")
+            if len(all_accounts) > 20:
+                print(f"   ... and {len(all_accounts) - 20} more")
         
         def find_consulting_income(rows):
             for row in rows:
@@ -160,7 +173,11 @@ def get_consulting_income(year):
         consulting_section = find_consulting_income(rows)
         
         if not consulting_section:
-            print("   ⚠️  Could not find 'Consulting Income' account in report")
+            msg = "⚠️  Could not find 'Consulting Income' account in report"
+            if IN_STREAMLIT:
+                st.warning(msg)
+            else:
+                print(f"   {msg}")
             return pd.DataFrame()
         
         detail_rows = consulting_section.get('Rows', {}).get('Row', [])
@@ -186,12 +203,23 @@ def get_consulting_income(year):
             df['TransactionDate'] = pd.to_datetime(df['TransactionDate'])
             total = df['TotalAmount'].sum()
             
-            print(f"✅ QuickBooks: Found {len(df)} consulting income transactions")
-            print(f"   Total consulting income: ${total:,.2f}")
+            msg = f"✅ QuickBooks: Found {len(df)} consulting income transactions (Total: ${total:,.2f})"
+            if IN_STREAMLIT:
+                st.success(msg)
+            else:
+                print(msg)
             return df
         else:
-            print("   ⚠️  No transactions found for Consulting Income")
+            msg = "⚠️  No transactions found for Consulting Income"
+            if IN_STREAMLIT:
+                st.warning(msg)
+            else:
+                print(f"   {msg}")
             return pd.DataFrame()
     
-    print(f"❌ QB Report Error: {response.status_code}")
+    msg = f"❌ QB Report Error: {response.status_code}"
+    if IN_STREAMLIT:
+        st.error(msg)
+    else:
+        print(msg)
     return pd.DataFrame()
