@@ -115,12 +115,6 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
                 if data_rows and field_list:
                     bt_expenses = pd.DataFrame(data_rows, columns=field_list)
                     debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
-                    debug_log.append(f"📋 Expense columns: {', '.join(bt_expenses.columns.tolist())}")
-                    
-                    # Show sample expense data
-                    if len(bt_expenses) > 0:
-                        sample = bt_expenses.head(1).to_dict('records')[0]
-                        debug_log.append(f"📋 Sample expense: {sample}")
                 else:
                     st.warning("⚠️ No expense data found for this period")
                     bt_expenses = pd.DataFrame()
@@ -203,9 +197,9 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
         weekly_fees = pd.DataFrame()
         
         if not bt_expenses.empty:
-            # Find expense columns
+            # Find expense columns - matching actual BigTime expense report structure
             expense_staff_col = None
-            for col in ['Staff', 'Staff Member', 'tmstaffnm']:
+            for col in ['Source', 'Staff', 'Staff Member', 'tmstaffnm']:
                 if col in bt_expenses.columns:
                     expense_staff_col = col
                     break
@@ -217,7 +211,7 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
                     break
             
             expense_amount_col = None
-            for col in ['tmamt', 'Amount', 'Total', 'Input Amount', 'tmamtin']:
+            for col in ['Input', 'tmamt', 'Amount', 'Total', 'tmamtin']:
                 if col in bt_expenses.columns:
                     expense_amount_col = col
                     break
