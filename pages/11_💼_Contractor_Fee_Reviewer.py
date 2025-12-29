@@ -115,6 +115,29 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
                 if data_rows and field_list:
                     bt_expenses = pd.DataFrame(data_rows, columns=field_list)
                     debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
+                    
+                    # DEBUG: Show all columns and sample data
+                    debug_log.append(f"📋 Available columns in expense report: {field_list}")
+                    if len(bt_expenses) > 0:
+                        # Show first row with all values
+                        first_row = bt_expenses.iloc[0]
+                        debug_log.append("📋 Sample expense entry (all fields):")
+                        for col in field_list:
+                            debug_log.append(f"   {col} = {first_row[col]}")
+                        
+                        # Filter to contractor fees and show one
+                        for cat_col in ['Category', 'tmcatname', 'Expense Type']:
+                            if cat_col in bt_expenses.columns:
+                                contractor_fees_test = bt_expenses[
+                                    bt_expenses[cat_col].astype(str).str.contains('Contractor', case=False, na=False)
+                                ]
+                                if len(contractor_fees_test) > 0:
+                                    debug_log.append(f"📋 Found {len(contractor_fees_test)} contractor fees using '{cat_col}' column")
+                                    cf_row = contractor_fees_test.iloc[0]
+                                    debug_log.append("📋 Sample contractor fee entry:")
+                                    for col in field_list:
+                                        debug_log.append(f"   {col} = {cf_row[col]}")
+                                    break
                 else:
                     st.warning("⚠️ No expense data found for this period")
                     bt_expenses = pd.DataFrame()
