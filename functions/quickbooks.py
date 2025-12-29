@@ -114,17 +114,14 @@ def get_consulting_income(year):
     }
     
     msg = f"📡 Pulling P&L Detail Report (Cash Basis) for {year}..."
-    if IN_STREAMLIT:
-        st.info(msg)
-    else:
-        print(msg)
+    print(msg)  # Only print to logs, not Streamlit UI
     
     response = requests.get(url, headers=headers, params=params)
     
     if response.status_code == 200:
         report_data = response.json()
         
-        # DEBUG: Show all account names in the report
+        # DEBUG: Show all account names in the report (only in logs)
         def extract_account_names(rows, depth=0):
             """Recursively extract all account names from the report"""
             names = []
@@ -143,19 +140,12 @@ def get_consulting_income(year):
         rows = report_data.get('Rows', {}).get('Row', [])
         all_accounts = extract_account_names(rows)
         
-        # Show accounts in UI if in Streamlit
-        if IN_STREAMLIT:
-            with st.expander("🔍 DEBUG: Available accounts in P&L report", expanded=True):
-                for account in all_accounts[:30]:  # Show first 30
-                    st.text(account)
-                if len(all_accounts) > 30:
-                    st.text(f"... and {len(all_accounts) - 30} more")
-        else:
-            print("📋 Available accounts in P&L report:")
-            for account in all_accounts[:20]:
-                print(f"   {account}")
-            if len(all_accounts) > 20:
-                print(f"   ... and {len(all_accounts) - 20} more")
+        # Only print to logs (not Streamlit UI)
+        print("📋 Available accounts in P&L report:")
+        for account in all_accounts[:30]:
+            print(f"   {account}")
+        if len(all_accounts) > 30:
+            print(f"   ... and {len(all_accounts) - 30} more")
         
         def find_consulting_income(rows):
             for row in rows:
@@ -174,10 +164,7 @@ def get_consulting_income(year):
         
         if not consulting_section:
             msg = "⚠️  Could not find 'Consulting Income' account in report"
-            if IN_STREAMLIT:
-                st.warning(msg)
-            else:
-                print(f"   {msg}")
+            print(f"   {msg}")
             return pd.DataFrame()
         
         detail_rows = consulting_section.get('Rows', {}).get('Row', [])
@@ -204,22 +191,13 @@ def get_consulting_income(year):
             total = df['TotalAmount'].sum()
             
             msg = f"✅ QuickBooks: Found {len(df)} consulting income transactions (Total: ${total:,.2f})"
-            if IN_STREAMLIT:
-                st.success(msg)
-            else:
-                print(msg)
+            print(msg)
             return df
         else:
             msg = "⚠️  No transactions found for Consulting Income"
-            if IN_STREAMLIT:
-                st.warning(msg)
-            else:
-                print(f"   {msg}")
+            print(f"   {msg}")
             return pd.DataFrame()
     
     msg = f"❌ QB Report Error: {response.status_code}"
-    if IN_STREAMLIT:
-        st.error(msg)
-    else:
-        print(msg)
+    print(msg)
     return pd.DataFrame()
