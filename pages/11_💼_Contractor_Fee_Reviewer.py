@@ -67,32 +67,28 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
             api_key = st.secrets["BIGTIME_API_KEY"]
             firm_id = st.secrets["BIGTIME_FIRM_ID"]
             
-            # Format dates for API
-            start_str = start_date.strftime('%Y-%m-%d')
-            end_str = end_date.strftime('%Y-%m-%d')
-            
             url = f"https://iq.bigtime.net/BigtimeData/api/v2/report/data/284803"
             headers = {
-                "X-Auth-Token": api_key,
-                "X-Auth-Realm": firm_id
+                "X-Auth-ApiToken": api_key,
+                "X-Auth-Realm": firm_id,
+                "Accept": "application/json"
             }
             
             payload = {
-                "filters": {
-                    "DATE_RANGE": {
-                        "from": start_str,
-                        "to": end_str
-                    }
-                }
+                "DT_BEGIN": start_date.strftime("%Y-%m-%d"),
+                "DT_END": end_date.strftime("%Y-%m-%d")
             }
             
             import requests
             response = requests.post(url, headers=headers, json=payload, timeout=60)
             
             if response.status_code == 200:
-                data = response.json()
-                if 'data' in data and data['data']:
-                    bt_expenses = pd.DataFrame(data['data'])
+                report_data = response.json()
+                data_rows = report_data.get('Data', [])
+                field_list = report_data.get('FieldList', [])
+                
+                if data_rows and field_list:
+                    bt_expenses = pd.DataFrame(data_rows, columns=field_list)
                     debug_log.append(f"✅ Pulled {len(bt_expenses)} expense entries")
                 else:
                     st.warning("⚠️ No expense data found for this period")
@@ -218,6 +214,10 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
         non_friday_df = pd.DataFrame(non_friday_fees) if non_friday_fees else pd.DataFrame(
             columns=['Contractor', 'Date', 'Day', 'Amount', 'Issue']
         )
+        
+        # Ensure weekly_fees has required columns even if empty
+        if weekly_fees.empty:
+            weekly_fees = pd.DataFrame(columns=['Staff', 'Week_Ending', 'Total_Fees'])
         
         debug_log.append(f"✅ Found {len(non_friday_df)} non-Friday fees")
     
