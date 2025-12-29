@@ -224,6 +224,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '💼',
+        'name': 'Contractor Fee Reviewer',
+        'page': '11_💼_Contractor_Fee_Reviewer',
+        'description': 'Review contractor fees and hours for compliance',
+        'features': [
+            'Flags fees charged on non-Friday dates',
+            'Identifies contractors with hours but no invoice',
+            'Calculates average hourly billing rates',
+            'Weekly analysis grouped by Friday week-ending',
+            'Compares time entries to expense submissions',
+            'Excel export with detailed breakdowns'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
