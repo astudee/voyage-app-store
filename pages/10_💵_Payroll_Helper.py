@@ -158,12 +158,12 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         if project_id_col:
             bt_period['Project_ID'] = pd.to_numeric(bt_period[project_id_col], errors='coerce')
             
-            # Categorize by project ID
+            # Categorize by project ID (actual BigTime IDs from Voyage)
             bt_period['Category'] = 'Regular'
-            bt_period.loc[bt_period['Project_ID'] == 7, 'Category'] = 'Paid Leave'
-            bt_period.loc[bt_period['Project_ID'] == 10, 'Category'] = 'Sick Leave'
-            bt_period.loc[bt_period['Project_ID'] == 13, 'Category'] = 'Unpaid Leave'
-            bt_period.loc[bt_period['Project_ID'] == 62, 'Category'] = 'Holiday'
+            bt_period.loc[bt_period['Project_ID'] == 9516373, 'Category'] = 'Paid Leave'
+            bt_period.loc[bt_period['Project_ID'] == 9516376, 'Category'] = 'Sick Leave'
+            bt_period.loc[bt_period['Project_ID'] == 9516379, 'Category'] = 'Unpaid Leave'
+            bt_period.loc[bt_period['Project_ID'] == 9741132, 'Category'] = 'Holiday'
         elif project_col:
             bt_period['Project'] = bt_period[project_col]
             
@@ -266,10 +266,10 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             bt_ytd['Project_ID'] = pd.to_numeric(bt_ytd[project_id_col], errors='coerce')
             
             bt_ytd['Category'] = 'Regular'
-            bt_ytd.loc[bt_ytd['Project_ID'] == 7, 'Category'] = 'Paid Leave'
-            bt_ytd.loc[bt_ytd['Project_ID'] == 10, 'Category'] = 'Sick Leave'
-            bt_ytd.loc[bt_ytd['Project_ID'] == 13, 'Category'] = 'Unpaid Leave'
-            bt_ytd.loc[bt_ytd['Project_ID'] == 62, 'Category'] = 'Holiday'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 9516373, 'Category'] = 'Paid Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 9516376, 'Category'] = 'Sick Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 9516379, 'Category'] = 'Unpaid Leave'
+            bt_ytd.loc[bt_ytd['Project_ID'] == 9741132, 'Category'] = 'Holiday'
         elif project_col:
             bt_ytd['Project'] = bt_ytd[project_col]
             
@@ -452,9 +452,9 @@ else:
            - More than 72 holiday hours per year (9 holidays)
            - More than 40 sick leave hours per year
         
-        **Leave Categories (BigTime Projects):**
-        - Paid Leave: Project 7
-        - Sick Leave: Project 10
-        - Unpaid Leave: Project 13
-        - Holiday: Project 62
+        **Leave Categories (BigTime Internal Projects):**
+        - Paid Leave: Internal:Paid Leave
+        - Sick Leave: Internal:Sick Leave
+        - Unpaid Leave: Internal:Unpaid Leave
+        - Holiday: Internal:Holiday
         """)
