@@ -133,6 +133,20 @@ if st.button("🚀 Generate Forecast", type="primary"):
             st.error("❌ No data found for selected date range")
             st.stop()
         
+        # Calculate expected months in range
+        from dateutil.relativedelta import relativedelta
+        expected_months = []
+        current = date(start_date.year, start_date.month, 1)
+        end_month = date(end_date.year, end_date.month, 1)
+        while current <= end_month:
+            expected_months.append(current)
+            current = current + relativedelta(months=1)
+        
+        # Warn if missing months
+        if len(filtered_months) < len(expected_months):
+            missing_count = len(expected_months) - len(filtered_months)
+            st.warning(f"⚠️ Note: {missing_count} month(s) in your selected range do not have data columns in the Assignments sheet. Only showing months with data.")
+        
         # Build forecast data
         forecast_data = []
         
@@ -207,7 +221,7 @@ if st.button("🚀 Generate Forecast", type="primary"):
     # ============================================================
     
     st.header("📊 Forecast Results")
-    st.caption(f"Period: {start_date.strftime('%B %Y')} - {end_date.strftime('%B %Y')}")
+    st.caption(f"Period: {start_date.strftime('%Y-%m')} to {end_date.strftime('%Y-%m')}")
     
     # Section 1: Active Employees
     st.subheader("1️⃣ Active Employees")
@@ -261,6 +275,40 @@ if st.button("🚀 Generate Forecast", type="primary"):
     else:
         st.info("No contractor forecast data for this period")
     
+    st.divider()
+    
+    # Section 3: Monthly Totals
+    st.subheader("3️⃣ Monthly Totals")
+    st.caption(f"Total {metric_type.lower()} by month across all staff")
+    
+    # Calculate totals by month
+    monthly_totals = {}
+    for month_col in [m['column'] for m in filtered_months]:
+        if month_col in pivot.columns:
+            monthly_totals[month_col] = pivot[month_col].sum()
+    
+    # Add grand total
+    if 'Total' in pivot.columns:
+        monthly_totals['Total'] = pivot['Total'].sum()
+    
+    # Create display dataframe
+    monthly_totals_df = pd.DataFrame([monthly_totals])
+    monthly_totals_df.insert(0, 'Metric', metric_type)
+    
+    # Format based on metric
+    if metric_type == "Billable Hours":
+        st.dataframe(
+            monthly_totals_df.style.format({col: '{:.1f}' for col in monthly_totals.keys()}),
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.dataframe(
+            monthly_totals_df.style.format({col: '${:,.0f}' for col in monthly_totals.keys()}),
+            hide_index=True,
+            use_container_width=True
+        )
+    
     # ============================================================
     # EXCEL EXPORT
     # ============================================================
@@ -281,6 +329,9 @@ if st.button("🚀 Generate Forecast", type="primary"):
             if not contractor_data.empty:
                 contractor_export = contractor_data.reset_index()
                 contractor_export.to_excel(writer, sheet_name='Contractors', index=False)
+            
+            # Monthly Totals sheet
+            monthly_totals_df.to_excel(writer, sheet_name='Monthly_Totals', index=False)
             
             # Combined sheet
             pivot_export = pivot.reset_index()
