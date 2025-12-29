@@ -27,13 +27,41 @@ except:
     import credentials
     CONFIG_SHEET_ID = credentials.get("SHEET_CONFIG_ID")
 
+# Calculate default payroll period based on current date
+# Payroll is run in ARREARS for the period that just ended
+today = datetime.now()
+current_day = today.day
+
+# Determine which payroll period just ended (what we're preparing payroll for)
+if current_day >= 26:
+    # We're past the 25th, so the 11th-25th period just ended
+    start_date = datetime(today.year, today.month, 11)
+    end_date = datetime(today.year, today.month, 25)
+elif current_day >= 10:
+    # We're past the 9th, so the 26th-9th period just ended
+    # Start date is 26th of last month
+    if today.month == 1:
+        start_date = datetime(today.year - 1, 12, 26)
+    else:
+        start_date = datetime(today.year, today.month - 1, 26)
+    # End date is 9th of this month
+    end_date = datetime(today.year, today.month, 9)
+else:
+    # We're in the first 9 days, so the 11th-25th of LAST month just ended
+    if today.month == 1:
+        start_date = datetime(today.year - 1, 12, 11)
+        end_date = datetime(today.year - 1, 12, 25)
+    else:
+        start_date = datetime(today.year, today.month - 1, 11)
+        end_date = datetime(today.year, today.month - 1, 25)
+
 # Date inputs
 st.subheader("Payroll Period")
 col1, col2 = st.columns(2)
 with col1:
-    start_date = st.date_input("Start Date", value=datetime(2024, 12, 11))
+    start_date = st.date_input("Start Date", value=start_date)
 with col2:
-    end_date = st.date_input("End Date", value=datetime(2024, 12, 24))
+    end_date = st.date_input("End Date", value=end_date)
 
 if st.button("🚀 Generate Payroll Report", type="primary"):
     
@@ -122,7 +150,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 break
         
         hours_col = None
-        for col in ['Billable', 'Hours', 'tmhrsbill']:
+        for col in ['tmhrsin', 'Hours', 'Billable']:
             if col in bt_period.columns:
                 hours_col = col
                 break
