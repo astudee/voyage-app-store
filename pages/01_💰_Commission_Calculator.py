@@ -39,6 +39,9 @@ except:
 
 if st.button("🚀 Calculate Commissions", type="primary"):
     
+    # Collect debug messages
+    debug_log = []
+    
     # ============================================================
     # PHASE 1: LOAD CONFIGURATION
     # ============================================================
@@ -59,7 +62,7 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             mapping_df[mapping_df['Source_System'] == 'QuickBooks']['After_Name']
         ))
         
-        st.success(f"✅ Loaded {len(rules_df)} rules, {len(offsets_df)} offsets, {len(client_name_map)} mappings")
+        debug_log.append(f"✅ Loaded {len(rules_df)} rules, {len(offsets_df)} offsets, {len(client_name_map)} mappings")
     
     # ============================================================
     # PHASE 2: PULL API DATA
@@ -69,27 +72,30 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         df_qb_raw = quickbooks.get_consulting_income(year)
         df_bt_raw = bigtime.get_time_report(year)
         
-        # Debug: Show what we got
+        # Collect QB debug info
         if df_qb_raw is None:
-            st.error("❌ QuickBooks API returned None")
+            debug_log.append("❌ QuickBooks API returned None")
         elif df_qb_raw.empty:
-            st.error("❌ QuickBooks API returned empty DataFrame")
+            debug_log.append("❌ QuickBooks API returned empty DataFrame")
+            debug_log.append("💡 QuickBooks tokens expire every ~100 days. You may need to re-authenticate.")
+            debug_log.append("⚠️ This could mean: No transactions found, wrong date range, or connection issue")
         else:
-            st.success(f"✅ QB: {len(df_qb_raw)} transactions")
+            debug_log.append(f"✅ QB: {len(df_qb_raw)} transactions")
         
+        # Collect BT debug info
         if df_bt_raw is None:
-            st.error("❌ BigTime API returned None")
+            debug_log.append("❌ BigTime API returned None")
         elif df_bt_raw.empty:
-            st.error("❌ BigTime API returned empty DataFrame")
+            debug_log.append("❌ BigTime API returned empty DataFrame")
         else:
-            st.success(f"✅ BT: {len(df_bt_raw)} entries")
+            debug_log.append(f"✅ BT: {len(df_bt_raw)} entries")
         
         if df_qb_raw.empty or df_bt_raw.empty:
             st.error("❌ Error: No data returned from APIs")
             st.info("💡 Check your date range and API credentials")
             st.stop()
         
-        st.success(f"✅ Total - QB: ${df_qb_raw['TotalAmount'].astype(float).sum():,.2f} | BT: {len(df_bt_raw)} entries")
+        debug_log.append(f"✅ Total - QB: ${df_qb_raw['TotalAmount'].astype(float).sum():,.2f} | BT: {len(df_bt_raw)} entries")
     
     # ============================================================
     # PHASE 3: PROCESS QUICKBOOKS DATA (CLIENT COMMISSIONS)
@@ -141,9 +147,9 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         client_commissions = pd.DataFrame(commission_records)
         
         if not client_commissions.empty:
-            st.success(f"✅ {len(client_commissions)} client commission entries: ${client_commissions['Commission_Amount'].sum():,.2f}")
+            debug_log.append(f"✅ {len(client_commissions)} client commission entries: ${client_commissions['Commission_Amount'].sum():,.2f}")
         else:
-            st.warning("⚠️ No client commissions calculated")
+            debug_log.append("⚠️ No client commissions calculated")
     
     # ============================================================
     # PHASE 4: PROCESS BIGTIME DATA (DELIVERY & REFERRAL)
@@ -223,9 +229,6 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                 bt_rules_df = pd.DataFrame(bt_with_rules)
                 
                 # Aggregate by month
-                # For Referral Commission: group by Salesperson, Resource, Category, Year_Month
-                # For Delivery Commission: group by Salesperson, Resource, Client, Category, Year_Month
-                
                 referral_df = bt_rules_df[bt_rules_df['Category'] == 'Referral Commission']
                 delivery_df = bt_rules_df[bt_rules_df['Category'] == 'Delivery Commission']
                 
@@ -237,10 +240,9 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                     ).agg({
                         'Revenue': 'sum',
                         'Commission': 'sum',
-                        'Rate': 'first'  # Rate should be same for all entries in month
+                        'Rate': 'first'
                     })
                     
-                    # Set date to last day of month
                     referral_monthly['Invoice_Date'] = referral_monthly['Year_Month'].dt.to_timestamp('M')
                     
                     for _, row in referral_monthly.iterrows():
@@ -266,11 +268,9 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                         'Rate': 'first'
                     })
                     
-                    # Set date to last day of month
                     delivery_monthly['Invoice_Date'] = delivery_monthly['Year_Month'].dt.to_timestamp('M')
                     
                     for _, row in delivery_monthly.iterrows():
-                        # For delivery, show "Resource @ Client" in the Client field
                         client_display = f"{row['Resource']} @ {row['Client']}" if row['Client'] else row['Resource']
                         
                         resource_records.append({
@@ -287,9 +287,9 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         resource_commissions = pd.DataFrame(resource_records)
         
         if not resource_commissions.empty:
-            st.success(f"✅ {len(resource_commissions)} resource commission entries (monthly aggregated): ${resource_commissions['Commission_Amount'].sum():,.2f}")
+            debug_log.append(f"✅ {len(resource_commissions)} resource commission entries (monthly aggregated): ${resource_commissions['Commission_Amount'].sum():,.2f}")
         else:
-            st.warning("⚠️ No resource commissions calculated")
+            debug_log.append("⚠️ No resource commissions calculated")
     
     # ============================================================
     # PHASE 5: COMBINE & APPLY OFFSETS
@@ -330,7 +330,7 @@ if st.button("🚀 Calculate Commissions", type="primary"):
                 }])
                 all_commissions = pd.concat([all_commissions, offset_record], ignore_index=True)
             
-            st.success(f"✅ Applied {len(offsets_year)} offsets: ${offsets_year['Amount'].sum():,.2f}")
+            debug_log.append(f"✅ Applied {len(offsets_year)} offsets: ${offsets_year['Amount'].sum():,.2f}")
     
     # ============================================================
     # PHASE 6: CALCULATE SUMMARIES
@@ -363,11 +363,28 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         'revenue_by_client': revenue_by_client
     }
     
+    debug_log.append("✅ Calculations complete!")
+    
     # ============================================================
-    # PHASE 7: DISPLAY RESULTS
+    # PHASE 7: DISPLAY DEBUG LOG IN EXPANDER
     # ============================================================
     
-    st.success("✅ Calculations complete!")
+    with st.expander("🔍 Debug Log", expanded=False):
+        for msg in debug_log:
+            if msg.startswith("✅"):
+                st.success(msg)
+            elif msg.startswith("⚠️"):
+                st.warning(msg)
+            elif msg.startswith("💡") or msg.startswith("📧"):
+                st.info(msg)
+            elif msg.startswith("❌"):
+                st.error(msg)
+            else:
+                st.write(msg)
+    
+    # ============================================================
+    # PHASE 8: DISPLAY RESULTS
+    # ============================================================
     
     st.header("📊 Results Summary")
     
@@ -431,7 +448,7 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         )
     
     # ============================================================
-    # PHASE 8: EXPORT TO EXCEL
+    # PHASE 9: EXPORT TO EXCEL
     # ============================================================
     
     st.divider()
@@ -539,8 +556,6 @@ if st.button("🚀 Calculate Commissions", type="primary"):
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             use_container_width=True
         )
-        
-        st.info("📧 To email this report, use the 'Email Report' section in the sidebar →")
         
     except Exception as e:
         st.error(f"❌ Export failed: {e}")
