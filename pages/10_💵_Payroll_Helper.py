@@ -29,13 +29,15 @@ except:
 
 # Calculate default payroll period based on current date
 # Payroll is run in ARREARS for the period that just ended
+# Period 1: 10th-25th (paid on last day of month)
+# Period 2: 26th-9th (paid on 15th)
 today = datetime.now()
 current_day = today.day
 
 # Determine which payroll period just ended (what we're preparing payroll for)
 if current_day >= 26:
-    # We're past the 25th, so the 11th-25th period just ended
-    start_date = datetime(today.year, today.month, 11)
+    # We're past the 25th, so the 10th-25th period just ended
+    start_date = datetime(today.year, today.month, 10)
     end_date = datetime(today.year, today.month, 25)
 elif current_day >= 10:
     # We're past the 9th, so the 26th-9th period just ended
@@ -47,12 +49,12 @@ elif current_day >= 10:
     # End date is 9th of this month
     end_date = datetime(today.year, today.month, 9)
 else:
-    # We're in the first 9 days, so the 11th-25th of LAST month just ended
+    # We're in the first 9 days, so the 10th-25th of LAST month just ended
     if today.month == 1:
-        start_date = datetime(today.year - 1, 12, 11)
+        start_date = datetime(today.year - 1, 12, 10)
         end_date = datetime(today.year - 1, 12, 25)
     else:
-        start_date = datetime(today.year, today.month - 1, 11)
+        start_date = datetime(today.year, today.month - 1, 10)
         end_date = datetime(today.year, today.month - 1, 25)
 
 # Date inputs
@@ -283,6 +285,11 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     
     ft_display = ft_display.rename(columns={'Staff_Name': 'Name'})
     ft_display = ft_display.sort_values('Name')
+    
+    # Filter out employees with all zeros (no leave to enter in Gusto)
+    ft_display['Total_Leave'] = ft_display['Paid Leave'] + ft_display['Sick Leave'] + ft_display['Holiday'] + ft_display['Unpaid Leave']
+    ft_display = ft_display[ft_display['Total_Leave'] > 0].copy()
+    ft_display = ft_display.drop(columns=['Total_Leave'])
     
     # ============================================================
     # PHASE 5: POLICY VIOLATION CHECKS
