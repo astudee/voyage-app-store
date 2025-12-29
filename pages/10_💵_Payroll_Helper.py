@@ -320,7 +320,52 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     ft_display = ft_display.drop(columns=['Total_Leave'])
     
     # ============================================================
-    # PHASE 5: POLICY VIOLATION CHECKS
+    # PHASE 5: CHECK FOR POTENTIALLY UNDERREPORTED HOURS
+    # ============================================================
+    
+    with st.spinner("🔍 Checking for potentially underreported hours..."):
+        underreported = []
+        
+        # Get all weekdays in the payroll period
+        current_date = pd.Timestamp(start_date)
+        end_ts = pd.Timestamp(end_date)
+        weekdays = []
+        
+        while current_date <= end_ts:
+            # Monday = 0, Sunday = 6
+            if current_date.dayofweek < 5:  # Weekday
+                weekdays.append(current_date)
+            current_date += pd.Timedelta(days=1)
+        
+        # For each employee (exclude International)
+        for _, employee in staff_df.iterrows():
+            if employee['Type'] == 'International':
+                continue
+                
+            emp_name = employee['Staff_Name']
+            
+            # Check each weekday
+            for weekday in weekdays:
+                # Get hours for this employee on this day
+                day_hours = bt_period[
+                    (bt_period['Staff'] == emp_name) & 
+                    (bt_period['Date'] == weekday)
+                ]['Hours'].sum()
+                
+                if day_hours == 0:
+                    underreported.append({
+                        'Employee': emp_name,
+                        'Date': weekday.strftime('%Y-%m-%d'),
+                        'Day': weekday.strftime('%A'),
+                        'Issue': 'No hours entered'
+                    })
+        
+        underreported_df = pd.DataFrame(underreported) if underreported else pd.DataFrame(columns=['Employee', 'Date', 'Day', 'Issue'])
+        
+        debug_log.append(f"✅ Found {len(underreported)} potentially underreported days")
+    
+    # ============================================================
+    # PHASE 6: POLICY VIOLATION CHECKS
     # ============================================================
     
     with st.spinner("🔍 Checking policy violations..."):
@@ -397,7 +442,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         debug_log.append(f"✅ Found {len(violations)} policy violations")
     
     # ============================================================
-    # PHASE 6: DISPLAY DEBUG LOG
+    # PHASE 7: DISPLAY DEBUG LOG
     # ============================================================
     
     with st.expander("🔍 Debug Log", expanded=False):
@@ -412,7 +457,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
                 st.info(msg)
     
     # ============================================================
-    # PHASE 7: DISPLAY RESULTS
+    # PHASE 8: DISPLAY RESULTS
     # ============================================================
     
     st.header("📊 Payroll Summary")
@@ -455,8 +500,37 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     
     st.divider()
     
-    # Section 3: Policy Violations
-    st.subheader("3️⃣ Policy Violations")
+    # Section 3: Potentially Underreported Hours
+    st.subheader("3️⃣ Potentially Underreported Hours")
+    st.caption("Employees with no hours on weekdays in the payroll period")
+    if not underreported_df.empty:
+        st.warning(f"Found {len(underreported_df)} day(s) with no hours entered")
+        
+        # Format names as Last, First
+        def format_name(name):
+            if pd.isna(name) or not name:
+                return name
+            parts = str(name).strip().split()
+            if len(parts) >= 2:
+                first = parts[0]
+                last = parts[-1]
+                return f"{last}, {first}"
+            return name
+        
+        underreported_df['Employee'] = underreported_df['Employee'].apply(format_name)
+        
+        st.dataframe(
+            underreported_df.sort_values(['Employee', 'Date']),
+            hide_index=True,
+            use_container_width=True
+        )
+    else:
+        st.success("✅ No underreported hours detected")
+    
+    st.divider()
+    
+    # Section 4: Policy Violations
+    st.subheader("4️⃣ Policy Violations")
     if not violations_df.empty:
         st.warning(f"Found {len(violations_df)} policy violation(s)")
         st.dataframe(
@@ -468,7 +542,7 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         st.success("✅ No policy violations detected")
     
     # ============================================================
-    # PHASE 8: EXCEL EXPORT
+    # PHASE 9: EXCEL EXPORT
     # ============================================================
     
     st.divider()
@@ -484,7 +558,10 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             # Tab 2: Full-Time
             ft_display.to_excel(writer, sheet_name='Full_Time', index=False)
             
-            # Tab 3: Policy Violations
+            # Tab 3: Underreported Hours
+            underreported_df.to_excel(writer, sheet_name='Underreported_Hours', index=False)
+            
+            # Tab 4: Policy Violations
             violations_df.to_excel(writer, sheet_name='Policy_Violations', index=False)
         
         excel_data = output.getvalue()
