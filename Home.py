@@ -284,6 +284,19 @@ apps = [
         'status': '🔧 Utility'
     },
     {
+        'icon': '🔍',
+        'name': 'BigTime Client Lookup',
+        'page': '97_🔍_BigTime_Client_Lookup',
+        'description': 'Find BigTime Client IDs for Pipedrive',
+        'features': [
+            'Lists all clients from BigTime',
+            'Shows Client Name and numeric Client ID',
+            'Export to CSV',
+            'Use IDs to populate Pipedrive custom fields'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🏥',
         'name': 'Connection Health Checker',
         'page': '98_🏥_Connection_Health_Checker',
