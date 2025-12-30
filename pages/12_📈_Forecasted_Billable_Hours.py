@@ -41,21 +41,45 @@ today = date.today()
 default_start = date(today.year, today.month, 1)  # First day of current month
 default_end = default_start + relativedelta(months=12)
 
+# Generate list of months for next 24 months
+month_options = []
+current_month = date(today.year, today.month, 1)
+for i in range(36):  # 3 years of options
+    month_options.append({
+        'label': current_month.strftime('%Y-%m'),
+        'value': current_month
+    })
+    current_month = current_month + relativedelta(months=1)
+
+# Find default indices
+default_start_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_start), 0)
+default_end_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_end), 12)
+
 col1, col2 = st.columns(2)
 with col1:
-    start_date = st.date_input(
+    start_month = st.selectbox(
         "Start Month",
-        value=default_start,
-        min_value=default_start,  # Cannot select past months
-        help="Forecast starts from current month or later"
+        options=range(len(month_options)),
+        format_func=lambda i: month_options[i]['label'],
+        index=default_start_idx,
+        help="First month to include in forecast"
     )
+    start_date = month_options[start_month]['value']
+    
 with col2:
-    end_date = st.date_input(
-        "End Month", 
-        value=default_end,
-        min_value=default_start,
+    end_month = st.selectbox(
+        "End Month",
+        options=range(len(month_options)),
+        format_func=lambda i: month_options[i]['label'],
+        index=default_end_idx,
         help="Last month to include in forecast"
     )
+    end_date = month_options[end_month]['value']
+
+# Validate range
+if end_date < start_date:
+    st.error("⚠️ End month must be after start month")
+    st.stop()
 
 # Metric toggle
 metric_type = st.radio(
