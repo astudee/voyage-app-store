@@ -254,6 +254,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '📊',
+        'name': 'Bookings Tracker',
+        'page': '13_📊_Bookings_Tracker',
+        'description': 'Track won deals and bookings from Pipedrive',
+        'features': [
+            'Shows only won deals from Pipedrive CRM',
+            'Filter by close date range',
+            'View by Month, Quarter, or Year',
+            'Includes custom fields (BigTime IDs, duration, bill rate)',
+            'Summary metrics (total bookings, value, avg deal size)',
+            'Excel export with summary and detailed tabs'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
