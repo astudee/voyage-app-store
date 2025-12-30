@@ -495,6 +495,83 @@ def check_gemini_api():
             'details': str(e)
         }
 
+def check_pipedrive():
+    """Test Pipedrive API connection"""
+    try:
+        api_token = st.secrets.get("PIPEDRIVE_API_TOKEN")
+        if not api_token:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'PIPEDRIVE_API_TOKEN not found in secrets',
+                'details': 'Missing API token configuration'
+            }
+        
+        # Pipedrive API base URL
+        base_url = "https://api.pipedrive.com/v1"
+        
+        # Test with a simple user info request
+        url = f"{base_url}/users/me"
+        params = {'api_token': api_token}
+        
+        response = requests.get(url, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                user_info = data.get('data', {})
+                user_name = user_info.get('name', 'Unknown')
+                company_name = user_info.get('company_name', 'Unknown')
+                
+                return {
+                    'status': 'success',
+                    'icon': '✅',
+                    'message': 'Connected successfully',
+                    'details': f'Authenticated as {user_name} from {company_name}'
+                }
+            else:
+                return {
+                    'status': 'error',
+                    'icon': '❌',
+                    'message': 'API returned success=false',
+                    'details': data.get('error', 'Unknown error')
+                }
+        elif response.status_code == 401:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'Authentication failed',
+                'details': 'Invalid API token - check PIPEDRIVE_API_TOKEN in secrets'
+            }
+        else:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': f'HTTP {response.status_code}',
+                'details': response.text[:200]
+            }
+    except requests.exceptions.Timeout:
+        return {
+            'status': 'error',
+            'icon': '❌',
+            'message': 'Connection timeout',
+            'details': 'Request to Pipedrive API timed out after 10 seconds'
+        }
+    except requests.exceptions.RequestException as e:
+        return {
+            'status': 'error',
+            'icon': '❌',
+            'message': f'Connection failed: {type(e).__name__}',
+            'details': str(e)
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'icon': '❌',
+            'message': f'Unexpected error: {type(e).__name__}',
+            'details': str(e)
+        }
+
 # Run all checks
 if st.button("🔍 Run Health Check", type="primary"):
     st.session_state.health_results = {}
@@ -521,6 +598,9 @@ if st.button("🔍 Run Health Check", type="primary"):
     
     with st.spinner("Checking Gemini API..."):
         st.session_state.health_results['Gemini API'] = check_gemini_api()
+    
+    with st.spinner("Checking Pipedrive API..."):
+        st.session_state.health_results['Pipedrive'] = check_pipedrive()
     
     st.rerun()
 
@@ -592,6 +672,14 @@ if st.session_state.health_results:
                     2. Check service account has Gmail API enabled
                     3. Confirm delegation for gmail.send scope
                     """)
+                elif service_name == 'Pipedrive':
+                    st.markdown("""
+                    **Fix:**
+                    1. Check `PIPEDRIVE_API_TOKEN` in Streamlit secrets
+                    2. Get your API token from: Pipedrive → Settings → Personal preferences → API
+                    3. Copy the "API token" value and add to secrets
+                    4. Verify the token hasn't been revoked
+                    """)
     
     st.divider()
     
@@ -623,6 +711,6 @@ else:
     - ✅ Claude API - Primary AI for analysis
     - ✅ Gemini API - Primary AI for vault processing (cheaper)
     
-    **Coming Soon:**
-    - 🔜 Pipedrive - CRM integration
+    **CRM:**
+    - ✅ Pipedrive - Deal pipeline and lead tracking
     """)
