@@ -154,6 +154,17 @@ if st.button("🎯 Run Resource Check", type="primary"):
         bt_time['Hours'] = pd.to_numeric(bt_time[hours_col], errors='coerce').fillna(0)
         bt_time['Month'] = bt_time['Date'].dt.to_period('M')
         
+        # Also extract project and client names for unassigned work detection
+        for col in ['Project', 'tmprojectnm', 'exprojectnm']:
+            if col in bt_time.columns:
+                bt_time['Project'] = bt_time[col]
+                break
+        
+        for col in ['Client', 'tmclientnm', 'exclientnm']:
+            if col in bt_time.columns:
+                bt_time['Client'] = bt_time[col]
+                break
+        
         st.success(f"✅ Loaded {len(bt_time)} BigTime entries")
     
     # ============================================================
@@ -203,6 +214,10 @@ if st.button("🎯 Run Resource Check", type="primary"):
             total_assigned = pd.to_numeric(row.get('Total', 0), errors='coerce')
             
             if pd.isna(staff) or not staff or pd.isna(total_assigned):
+                continue
+            
+            # Skip Internal projects (admin, travel, team meetings, etc.)
+            if isinstance(project_name, str) and project_name.lower().startswith('internal:'):
                 continue
             
             # Get planned hours by month
@@ -348,6 +363,7 @@ if st.button("🎯 Run Resource Check", type="primary"):
             })
         
         # Also check for unassigned work (actuals with no assignment)
+        unassigned_work = []
         for _, actual in actuals_total.iterrows():
             staff = actual['Staff_Member']
             project_id = actual['Project_ID']
@@ -363,10 +379,14 @@ if st.button("🎯 Run Resource Check", type="primary"):
                 # Unassigned work
                 util_status = get_utilization_status(999)
                 
-                results.append({
+                # Try to get project name from BigTime data
+                bt_project_name = bt_time[bt_time['Project_ID'] == project_id]['Project'].iloc[0] if 'Project' in bt_time.columns else 'Unknown'
+                bt_client_name = bt_time[bt_time['Project_ID'] == project_id]['Client'].iloc[0] if 'Client' in bt_time.columns else 'Unknown'
+                
+                unassigned_work.append({
                     'Staff_Member': staff,
-                    'Client': 'Unknown',
-                    'Project_Name': 'Unknown',
+                    'Client': bt_client_name,
+                    'Project_Name': bt_project_name,
                     'Project_ID': project_id,
                     'Total_Assigned': 0,
                     'Total_Actual': total_actual,
@@ -383,6 +403,14 @@ if st.button("🎯 Run Resource Check", type="primary"):
                     'Last_Month': None,
                     'Monthly_Plan': {}
                 })
+                
+                results.append(unassigned_work[-1])
+        
+        if unassigned_work:
+            st.warning(f"⚠️ Found {len(unassigned_work)} project(s) with actuals but no assignment in sheet")
+            with st.expander("🔍 Debug: Unassigned Work Details"):
+                for uw in unassigned_work:
+                    st.write(f"- **{uw['Staff_Member']}** worked {uw['Total_Actual']:.1f} hrs on Project ID **{uw['Project_ID']}** ({uw['Project_Name']}) but has no assignment in Google Sheet")
         
         results_df = pd.DataFrame(results)
         
@@ -485,7 +513,7 @@ if st.button("🎯 Run Resource Check", type="primary"):
     display_df['Pace'] = display_df['Pace_Ratio'].apply(lambda x: f"{x:.2f}×" if x > 0 else 'N/A')
     
     display_columns = [
-        'Flags', 'Staff_Member', 'Client', 'Project_Name',
+        'Flags', 'Staff_Member', 'Client', 'Project_Name', 'Project_ID',
         'Total_Assigned', 'Total_Actual', 'Percent_Used',
         'Status', 'Schedule_Status', 'Pace', 'Delta'
     ]
@@ -493,6 +521,7 @@ if st.button("🎯 Run Resource Check", type="primary"):
     display_final = display_df[display_columns].rename(columns={
         'Staff_Member': 'Resource',
         'Project_Name': 'Project',
+        'Project_ID': 'Project ID',
         'Total_Assigned': 'Assigned (hrs)',
         'Total_Actual': 'Actual (hrs)',
         'Percent_Used': 'Used %',
