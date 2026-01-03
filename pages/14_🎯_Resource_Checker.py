@@ -113,6 +113,17 @@ if st.button("🎯 Run Resource Check", type="primary"):
         
         bt_time = pd.concat(bt_time_list, ignore_index=True)
         
+        # Filter out Internal projects (BigTime Client ID = 5556066)
+        client_id_col = None
+        for col in ['tmclientnm_id', 'Client_ID', 'exclientnm_id']:
+            if col in bt_time.columns:
+                client_id_col = col
+                break
+        
+        if client_id_col:
+            bt_time = bt_time[bt_time[client_id_col] != 5556066].copy()
+            st.info(f"🔍 Filtered out Internal projects (Client ID 5556066)")
+        
         # Find columns
         date_col = None
         for col in ['Date', 'tmdt']:
@@ -413,6 +424,12 @@ if st.button("🎯 Run Resource Check", type="primary"):
                     st.write(f"- **{uw['Staff_Member']}** worked {uw['Total_Actual']:.1f} hrs on Project ID **{uw['Project_ID']}** ({uw['Project_Name']}) but has no assignment in Google Sheet")
         
         results_df = pd.DataFrame(results)
+        
+        # Filter out records where both assigned and actual are 0
+        # These are placeholders with no work and no plan
+        results_df = results_df[
+            (results_df['Total_Assigned'] > 0) | (results_df['Total_Actual'] > 0)
+        ]
         
         # Sort: worst problems first
         results_df = results_df.sort_values(['Sort_Order', 'Pace_Ratio'])
