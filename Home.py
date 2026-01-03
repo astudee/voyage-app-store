@@ -269,6 +269,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '🎯',
+        'name': 'Resource Checker',
+        'page': '14_🎯_Resource_Checker',
+        'description': 'Monitor utilization, underruns, and schedule adherence',
+        'features': [
+            'Tracks authorized hours vs actuals by resource and project',
+            'Utilization bands: Overrun, On Target, At Risk, Under, Severely Under',
+            'Schedule pace monitoring (ahead/on-time/late)',
+            'Detects unassigned work (actuals with no plan)',
+            'Month-by-month breakdown with actual vs plan indicators',
+            'Multi-dimensional filtering and Excel export'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
