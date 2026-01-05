@@ -19,19 +19,51 @@ import bigtime
 st.set_page_config(page_title="BigTime Client Lookup", page_icon="🔍", layout="wide")
 
 st.title("🔍 BigTime Client ID Lookup")
-st.markdown("Find BigTime Client IDs to add to Pipedrive")
+st.markdown("Find BigTime Client IDs and Project IDs to add to Pipedrive")
+
+# Options
+col1, col2 = st.columns(2)
+with col1:
+    include_inactive = st.checkbox(
+        "Include inactive clients/projects",
+        value=False,
+        help="By default, only shows clients/projects with activity in the current year. Check this to include historical data."
+    )
+with col2:
+    if include_inactive:
+        years_back = st.slider(
+            "Years of history",
+            min_value=1,
+            max_value=5,
+            value=3,
+            help="How many years back to search for inactive clients/projects"
+        )
+    else:
+        years_back = 0
 
 if st.button("📡 Fetch Client & Project List", type="primary"):
     with st.spinner("Fetching data from BigTime..."):
-        # Get time report for current year (contains client and project info)
+        # Determine which years to pull
         current_year = datetime.now().year
-        df = bigtime.get_time_report(current_year)
+        if include_inactive and years_back > 0:
+            years_to_fetch = list(range(current_year - years_back, current_year + 1))
+        else:
+            years_to_fetch = [current_year]
         
-        if df is None or df.empty:
+        # Fetch data for all years
+        df_list = []
+        for year in years_to_fetch:
+            df_year = bigtime.get_time_report(year)
+            if df_year is not None and not df_year.empty:
+                df_list.append(df_year)
+        
+        if not df_list:
             st.error("❌ Could not fetch BigTime data")
             st.stop()
         
-        st.success(f"✅ Fetched {len(df)} time entries from BigTime")
+        df = pd.concat(df_list, ignore_index=True)
+        
+        st.success(f"✅ Fetched {len(df)} time entries from {len(years_to_fetch)} year(s): {years_to_fetch}")
         
         # Find client columns
         client_col = None
@@ -158,12 +190,21 @@ else:
     - **BigTime Project ID** - Numeric ID to use in Pipedrive
     - **Search** - Filter by client or project name
     
+    ### Options:
+    
+    **Include inactive clients/projects:**
+    - **Unchecked (default):** Only shows clients/projects with time entries in the current year
+    - **Checked:** Pulls historical data (1-5 years back) to include inactive clients/projects
+    
+    This is useful when you need to find IDs for old clients or completed projects.
+    
     ### How to Use:
     
-    1. Click "Fetch Client & Project List"
-    2. Find your client/project in the tables
-    3. Copy the BigTime Client ID or Project ID
-    4. Paste it into the corresponding Pipedrive custom field
+    1. Choose whether to include inactive items
+    2. Click "Fetch Client & Project List"
+    3. Find your client/project in the tables
+    4. Copy the BigTime Client ID or Project ID
+    5. Paste it into the corresponding Pipedrive custom field
     
     ### Note:
     
