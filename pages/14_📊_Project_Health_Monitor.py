@@ -540,18 +540,16 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     
     display_df = results_df[[
         'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 
-        'Plan_Match_Status', 'Plan_Match_Pct', 'Fees_to_Date', 
-        'Fees_Booked_Pct', 'Duration_Pct'
+        'Fees_to_Date', 'Plan_Match_Pct', 'Fees_Booked_Pct', 'Duration_Pct'
     ]].copy()
     
-    display_df['Plan Match'] = display_df['Plan_Match_Status']
     display_df['Plan/Booked'] = display_df['Plan_Match_Pct'].apply(lambda x: f"{x:.0f}%")
     display_df['Fees/Booked'] = display_df['Fees_Booked_Pct'].apply(lambda x: f"{x:.0f}%")
     display_df['% Duration'] = display_df['Duration_Pct'].apply(lambda x: f"{x:.0f}%")
     
     display_final = display_df[[
         'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue',
-        'Plan Match', 'Plan/Booked', 'Fees_to_Date', 'Fees/Booked', '% Duration'
+        'Fees_to_Date', 'Plan/Booked', 'Fees/Booked', '% Duration'
     ]].rename(columns={
         'Project_Name': 'Project',
         'Planned_Revenue': 'Plan',
