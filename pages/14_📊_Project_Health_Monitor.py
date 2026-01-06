@@ -405,17 +405,22 @@ if st.button("📊 Generate Project Health Report", type="primary"):
                     if 'project_duration' in custom_fields:
                         projects[bt_project_id]['PD_Duration'] = deal.get(custom_fields['project_duration'])
         
-        # Calculate actuals from BigTime
+        # Calculate actuals from BigTime and get earliest date per project
         actuals_by_project = bt_time.groupby('Project_ID').agg({
-            'Hours': 'sum'
+            'Hours': 'sum',
+            'Date': 'min'  # Earliest date worked
         }).reset_index()
-        actuals_by_project = actuals_by_project.rename(columns={'Hours': 'Total_Actual_Hours'})
+        actuals_by_project = actuals_by_project.rename(columns={
+            'Hours': 'Total_Actual_Hours',
+            'Date': 'Earliest_Actual_Date'
+        })
         
-        # Merge actuals
+        # Merge actuals and earliest dates
         for _, actual in actuals_by_project.iterrows():
             project_id = actual['Project_ID']
             if project_id in projects:
                 projects[project_id]['Total_Actual_Hours'] = actual['Total_Actual_Hours']
+                projects[project_id]['Earliest_Actual_Date'] = actual['Earliest_Actual_Date']
         
         # Build results
         results = []
@@ -427,10 +432,27 @@ if st.button("📊 Generate Project Health Report", type="primary"):
                 continue
             
             # Determine timeline
-            if proj['First_Month'] and proj['Last_Month']:
+            # Start date = earliest BigTime actual date (when work actually started)
+            # End date = last month in Assignments (when work is planned to end)
+            
+            start_date = None
+            end_date = None
+            
+            # Start: Use earliest BigTime date if available
+            if 'Earliest_Actual_Date' in proj:
+                start_date = pd.Timestamp(proj['Earliest_Actual_Date'])
+            
+            # If no actuals yet, use first month from Assignments
+            if start_date is None and proj['First_Month']:
                 start_date = proj['First_Month'].to_timestamp()
+            
+            # End: Use last month from Assignments
+            if proj['Last_Month']:
+                # Last day of the last month
                 end_date = proj['Last_Month'].to_timestamp() + relativedelta(months=1) - relativedelta(days=1)
-            else:
+            
+            # Skip if we can't determine timeline
+            if not start_date or not end_date:
                 continue
             
             # Calculate metrics
