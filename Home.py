@@ -271,7 +271,7 @@ apps = [
     {
         'icon': '🎯',
         'name': 'Resource Checker',
-        'page': '14_🎯_Resource_Checker',
+        'page': '15_🎯_Resource_Checker',
         'description': 'Monitor utilization, underruns, and schedule adherence',
         'features': [
             'Tracks authorized hours vs actuals by resource and project',
@@ -280,6 +280,21 @@ apps = [
             'Detects unassigned work (actuals with no plan)',
             'Month-by-month breakdown with actual vs plan indicators',
             'Multi-dimensional filtering and Excel export'
+        ],
+        'status': '✅ Available'
+    },
+    {
+        'icon': '📊',
+        'name': 'Project Health Monitor',
+        'page': '14_📊_Project_Health_Monitor',
+        'description': 'Track project health across bookings, plan, and delivery',
+        'features': [
+            '3-way reconciliation: Pipedrive bookings vs Assignments plan vs BigTime delivery',
+            'Plan Match: Did we scope correctly? (planned revenue vs deal value)',
+            'Progress tracking: Time-based (plan) vs consumption-based (actual)',
+            'Variance detection: Running hot (+) or cold (-) compared to timeline',
+            'Revenue status: Over/under-billing alerts',
+            'Filter by Active, Completed, or All projects'
         ],
         'status': '✅ Available'
     },
