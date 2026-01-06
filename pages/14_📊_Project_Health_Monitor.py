@@ -471,6 +471,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
                 'Project_ID': project_id,
                 'Timeline': f"{start_date.strftime('%b')}-{end_date.strftime('%b')}({int(total_months)})",
                 'Booking': deal_value,
+                'Planned_Revenue': planned_revenue,
                 'Plan_Match_Pct': plan_match_pct,
                 'Plan_Match_Status': get_plan_match_status(plan_match_pct),
                 'Billed_to_Date': billed_to_date,
@@ -539,7 +540,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     st.subheader("📋 Project Details")
     
     display_df = results_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Plan_Match_Status', 
+        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match_Status', 
         'Billed_to_Date', 'Progress_Plan_Pct', 'Progress_Actual_Pct', 
         'Variance_Pct', 'Variance_Status', 'Revenue_Variance_Pct', 
         'Revenue_Status', 'Bill_Rate', 'Pace'
@@ -552,11 +553,12 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     display_df['Prog Actual'] = display_df['Progress_Actual_Pct'].apply(lambda x: f"{x:.0f}%")
     
     display_final = display_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Plan_Match',
+        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match',
         'Billed_to_Date', 'Prog Plan', 'Prog Actual', 'Variance', 
         'Revenue', 'Bill_Rate', 'Pace'
     ]].rename(columns={
         'Project_Name': 'Project',
+        'Planned_Revenue': 'Plan',
         'Billed_to_Date': 'Billed to Date',
         'Bill_Rate': 'Rate'
     })
@@ -564,6 +566,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     st.dataframe(
         display_final.style.format({
             'Booking': '${:,.0f}',
+            'Plan': '${:,.0f}',
             'Billed to Date': '${:,.0f}',
             'Rate': '${:.0f}'
         }),
