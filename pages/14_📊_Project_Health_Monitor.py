@@ -311,7 +311,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
         
         month_cols = sorted(month_cols, key=lambda x: x['date'])
         
-        # Build project-level data
+        # Build project-level data (aggregate all resources)
         projects = {}
         
         for _, row in assignments_df.iterrows():
@@ -319,60 +319,65 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             if not project_id:
                 continue
             
+            # Initialize project if first time seeing it
             if project_id not in projects:
                 projects[project_id] = {
                     'Project_ID': project_id,
                     'Client': row.get('Client'),
                     'Project_Name': row.get('Project Name'),
-                    'Resources': [],
                     'Total_Planned_Hours': 0,
-                    'Bill_Rates': [],
+                    'Weighted_Hours_Rates': [],  # For calculating weighted avg rate
                     'Monthly_Plan': {},
                     'First_Month': None,
                     'Last_Month': None
                 }
             
-            # Aggregate hours and rates
-            staff = row.get('Staff Member')
+            # Aggregate hours and rates across all resources
             total_hours = pd.to_numeric(row.get('Total', 0), errors='coerce')
             bill_rate = pd.to_numeric(row.get('Bill Rate', 0), errors='coerce')
             
-            if not pd.isna(staff) and total_hours > 0:
-                projects[project_id]['Resources'].append(staff)
-                projects[project_id]['Total_Planned_Hours'] += total_hours
+            if pd.isna(total_hours):
+                total_hours = 0
+            if pd.isna(bill_rate):
+                bill_rate = 0
+            
+            # Add to project totals
+            projects[project_id]['Total_Planned_Hours'] += total_hours
+            
+            if bill_rate > 0 and total_hours > 0:
+                projects[project_id]['Weighted_Hours_Rates'].append({
+                    'rate': bill_rate,
+                    'hours': total_hours
+                })
+            
+            # Track monthly distribution
+            for m in month_cols:
+                hours = pd.to_numeric(row.get(m['column'], 0), errors='coerce')
+                if pd.isna(hours):
+                    hours = 0
                 
-                if not pd.isna(bill_rate) and bill_rate > 0:
-                    projects[project_id]['Bill_Rates'].append({
-                        'rate': bill_rate,
-                        'hours': total_hours
-                    })
-                
-                # Track monthly distribution
-                for m in month_cols:
-                    hours = pd.to_numeric(row.get(m['column'], 0), errors='coerce')
-                    if pd.isna(hours):
-                        hours = 0
+                if hours > 0:
+                    period = m['period']
+                    if period not in projects[project_id]['Monthly_Plan']:
+                        projects[project_id]['Monthly_Plan'][period] = 0
+                    projects[project_id]['Monthly_Plan'][period] += hours
                     
-                    if hours > 0:
-                        period = m['period']
-                        if period not in projects[project_id]['Monthly_Plan']:
-                            projects[project_id]['Monthly_Plan'][period] = 0
-                        projects[project_id]['Monthly_Plan'][period] += hours
-                        
-                        if projects[project_id]['First_Month'] is None:
-                            projects[project_id]['First_Month'] = period
+                    # Track first and last month with any hours
+                    if projects[project_id]['First_Month'] is None or period < projects[project_id]['First_Month']:
+                        projects[project_id]['First_Month'] = period
+                    if projects[project_id]['Last_Month'] is None or period > projects[project_id]['Last_Month']:
                         projects[project_id]['Last_Month'] = period
         
         # Calculate weighted average bill rate per project
         for project_id, proj in projects.items():
-            if proj['Bill_Rates']:
-                total_weighted = sum(br['rate'] * br['hours'] for br in proj['Bill_Rates'])
-                total_hours = sum(br['hours'] for br in proj['Bill_Rates'])
+            if proj['Weighted_Hours_Rates']:
+                total_weighted = sum(br['rate'] * br['hours'] for br in proj['Weighted_Hours_Rates'])
+                total_hours = sum(br['hours'] for br in proj['Weighted_Hours_Rates'])
                 proj['Weighted_Bill_Rate'] = total_weighted / total_hours if total_hours > 0 else 0
             else:
                 proj['Weighted_Bill_Rate'] = 0
         
-        # Match with Pipedrive deals
+        # Match with Pipedrive deals - handle multiple deals per project
         for deal in pipedrive_deals:
             # Get BigTime Project ID from custom field
             bt_project_id = None
@@ -382,15 +387,23 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             bt_project_id = normalize_project_id(bt_project_id)
             
             if bt_project_id and bt_project_id in projects:
-                projects[bt_project_id]['Deal_Value'] = deal.get('value', 0)
-                projects[bt_project_id]['Deal_Title'] = deal.get('title')
-                projects[bt_project_id]['Won_Date'] = deal.get('won_time')
+                # Sum multiple deals for same project
+                if 'Deal_Value' not in projects[bt_project_id]:
+                    projects[bt_project_id]['Deal_Value'] = 0
+                    projects[bt_project_id]['Deal_Titles'] = []
                 
-                # Get custom fields
-                if 'project_start_date' in custom_fields:
-                    projects[bt_project_id]['PD_Start_Date'] = deal.get(custom_fields['project_start_date'])
-                if 'project_duration' in custom_fields:
-                    projects[bt_project_id]['PD_Duration'] = deal.get(custom_fields['project_duration'])
+                projects[bt_project_id]['Deal_Value'] += deal.get('value', 0)
+                projects[bt_project_id]['Deal_Titles'].append(deal.get('title'))
+                
+                # Store first deal's dates
+                if 'Won_Date' not in projects[bt_project_id]:
+                    projects[bt_project_id]['Won_Date'] = deal.get('won_time')
+                    
+                    # Get custom fields from first deal
+                    if 'project_start_date' in custom_fields:
+                        projects[bt_project_id]['PD_Start_Date'] = deal.get(custom_fields['project_start_date'])
+                    if 'project_duration' in custom_fields:
+                        projects[bt_project_id]['PD_Duration'] = deal.get(custom_fields['project_duration'])
         
         # Calculate actuals from BigTime
         actuals_by_project = bt_time.groupby('Project_ID').agg({
@@ -543,7 +556,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
         'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match_Status', 
         'Billed_to_Date', 'Progress_Plan_Pct', 'Progress_Actual_Pct', 
         'Variance_Pct', 'Variance_Status', 'Revenue_Variance_Pct', 
-        'Revenue_Status', 'Bill_Rate', 'Pace'
+        'Revenue_Status', 'Pace'
     ]].copy()
     
     display_df['Plan_Match'] = display_df['Plan_Match_Status']
@@ -555,20 +568,18 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     display_final = display_df[[
         'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match',
         'Billed_to_Date', 'Prog Plan', 'Prog Actual', 'Variance', 
-        'Revenue', 'Bill_Rate', 'Pace'
+        'Revenue', 'Pace'
     ]].rename(columns={
         'Project_Name': 'Project',
         'Planned_Revenue': 'Plan',
-        'Billed_to_Date': 'Billed to Date',
-        'Bill_Rate': 'Rate'
+        'Billed_to_Date': 'Billed to Date'
     })
     
     st.dataframe(
         display_final.style.format({
             'Booking': '${:,.0f}',
             'Plan': '${:,.0f}',
-            'Billed to Date': '${:,.0f}',
-            'Rate': '${:.0f}'
+            'Billed to Date': '${:,.0f}'
         }),
         hide_index=True,
         use_container_width=True,
