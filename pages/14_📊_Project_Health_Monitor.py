@@ -439,63 +439,47 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             bill_rate = proj['Weighted_Bill_Rate']
             deal_value = proj['Deal_Value']
             
-            # Plan Match
+            # Fees to date (real-time calculation from hours × rate)
+            fees_to_date = total_actual_hours * bill_rate
+            
+            # Planned revenue
             planned_revenue = total_planned_hours * bill_rate
-            plan_match_pct = (planned_revenue / deal_value * 100) if deal_value > 0 else 0
             
-            # Progress calculations
-            total_months = calculate_months_elapsed(start_date, end_date + relativedelta(days=1))
-            months_elapsed = calculate_months_elapsed(start_date, today_dt)
+            # Plan / Booked %
+            plan_booked_pct = (planned_revenue / deal_value * 100) if deal_value > 0 else 0
             
-            progress_plan_pct = (months_elapsed / total_months * 100) if total_months > 0 else 0
-            progress_actual_pct = (total_actual_hours / total_planned_hours * 100) if total_planned_hours > 0 else 0
+            # Fees / Booked %
+            fees_booked_pct = (fees_to_date / deal_value * 100) if deal_value > 0 else 0
             
-            # Variance
-            variance_pct = progress_actual_pct - progress_plan_pct
+            # % of Duration (days-based)
+            total_days = (end_date - start_date).days
+            elapsed_days = (today_dt - start_date).days
+            duration_pct = (elapsed_days / total_days * 100) if total_days > 0 else 0
             
-            # Revenue metrics
-            billed_to_date = total_actual_hours * bill_rate
-            expected_revenue = deal_value * (progress_plan_pct / 100)
-            revenue_variance_pct = ((billed_to_date - expected_revenue) / expected_revenue * 100) if expected_revenue > 0 else 0
+            # Cap at 100% if project is completed
+            if today_dt > end_date:
+                duration_pct = 100
+            elif today_dt < start_date:
+                duration_pct = 0
             
             # Status
             project_status = get_project_status(start_date, end_date, today_dt)
             
-            # Pace
-            if variance_pct >= 10:
-                pace = 'Fast'
-            elif variance_pct >= 5:
-                pace = 'Warm'
-            elif variance_pct >= -5:
-                pace = 'Good'
-            elif variance_pct >= -10:
-                pace = 'Cool'
-            else:
-                pace = 'Slow'
-            
-            if project_status == 'Not Started':
-                pace = 'N/S'
-            elif project_status == 'Completed':
-                pace = 'Done'
+            # Plan Match Status
+            plan_match_status = get_plan_match_status(plan_booked_pct)
             
             results.append({
                 'Client': proj['Client'],
                 'Project_Name': proj['Project_Name'],
                 'Project_ID': project_id,
-                'Timeline': f"{start_date.strftime('%b')}-{end_date.strftime('%b')}({int(total_months)})",
+                'Timeline': f"{start_date.strftime('%b')}-{end_date.strftime('%b')}({int((end_date - start_date).days / 30)})",
                 'Booking': deal_value,
                 'Planned_Revenue': planned_revenue,
-                'Plan_Match_Pct': plan_match_pct,
-                'Plan_Match_Status': get_plan_match_status(plan_match_pct),
-                'Billed_to_Date': billed_to_date,
-                'Progress_Plan_Pct': progress_plan_pct,
-                'Progress_Actual_Pct': progress_actual_pct,
-                'Variance_Pct': variance_pct,
-                'Variance_Status': get_status_color(variance_pct, False),
-                'Revenue_Variance_Pct': revenue_variance_pct,
-                'Revenue_Status': get_status_color(revenue_variance_pct, True),
-                'Bill_Rate': bill_rate,
-                'Pace': pace,
+                'Plan_Match_Pct': plan_booked_pct,
+                'Plan_Match_Status': plan_match_status,
+                'Fees_to_Date': fees_to_date,
+                'Fees_Booked_Pct': fees_booked_pct,
+                'Duration_Pct': duration_pct,
                 'Project_Status': project_status,
                 'Start_Date': start_date,
                 'End_Date': end_date,
@@ -533,16 +517,18 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        overruns = len(results_df[results_df['Variance_Pct'] >= 10])
-        st.metric("🔴 Running Hot", overruns)
-    with col2:
-        underruns = len(results_df[results_df['Variance_Pct'] <= -10])
-        st.metric("🔵 Running Cold", underruns)
-    with col3:
         scoping_errors = len(results_df[
             (results_df['Plan_Match_Pct'] < 85) | (results_df['Plan_Match_Pct'] > 120)
         ])
         st.metric("🔴 Scoping Errors", scoping_errors)
+    with col2:
+        over_billing = len(results_df[results_df['Fees_Booked_Pct'] > 100])
+        st.metric("⚠️ Over-Billed", over_billing)
+    with col3:
+        under_billing = len(results_df[
+            (results_df['Duration_Pct'] > 50) & (results_df['Fees_Booked_Pct'] < 50)
+        ])
+        st.metric("🔵 Under-Billed", under_billing)
     with col4:
         total_booking = results_df['Booking'].sum()
         st.metric("💰 Total Bookings", f"${total_booking:,.0f}")
@@ -553,33 +539,30 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     st.subheader("📋 Project Details")
     
     display_df = results_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match_Status', 
-        'Billed_to_Date', 'Progress_Plan_Pct', 'Progress_Actual_Pct', 
-        'Variance_Pct', 'Variance_Status', 'Revenue_Variance_Pct', 
-        'Revenue_Status', 'Pace'
+        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 
+        'Plan_Match_Status', 'Plan_Match_Pct', 'Fees_to_Date', 
+        'Fees_Booked_Pct', 'Duration_Pct'
     ]].copy()
     
-    display_df['Plan_Match'] = display_df['Plan_Match_Status']
-    display_df['Variance'] = display_df['Variance_Status'] + ' ' + display_df['Variance_Pct'].apply(lambda x: f"{x:+.0f}%")
-    display_df['Revenue'] = display_df['Revenue_Status'] + ' ' + display_df['Revenue_Variance_Pct'].apply(lambda x: f"{x:+.0f}%")
-    display_df['Prog Plan'] = display_df['Progress_Plan_Pct'].apply(lambda x: f"{x:.0f}%")
-    display_df['Prog Actual'] = display_df['Progress_Actual_Pct'].apply(lambda x: f"{x:.0f}%")
+    display_df['Plan Match'] = display_df['Plan_Match_Status']
+    display_df['Plan/Booked'] = display_df['Plan_Match_Pct'].apply(lambda x: f"{x:.0f}%")
+    display_df['Fees/Booked'] = display_df['Fees_Booked_Pct'].apply(lambda x: f"{x:.0f}%")
+    display_df['% Duration'] = display_df['Duration_Pct'].apply(lambda x: f"{x:.0f}%")
     
     display_final = display_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 'Plan_Match',
-        'Billed_to_Date', 'Prog Plan', 'Prog Actual', 'Variance', 
-        'Revenue', 'Pace'
+        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue',
+        'Plan Match', 'Plan/Booked', 'Fees_to_Date', 'Fees/Booked', '% Duration'
     ]].rename(columns={
         'Project_Name': 'Project',
         'Planned_Revenue': 'Plan',
-        'Billed_to_Date': 'Billed to Date'
+        'Fees_to_Date': 'Fees to Date'
     })
     
     st.dataframe(
         display_final.style.format({
             'Booking': '${:,.0f}',
             'Plan': '${:,.0f}',
-            'Billed to Date': '${:,.0f}'
+            'Fees to Date': '${:,.0f}'
         }),
         hide_index=True,
         use_container_width=True,
