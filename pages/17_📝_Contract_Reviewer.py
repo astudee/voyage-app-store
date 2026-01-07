@@ -110,98 +110,104 @@ def fetch_google_doc_content(doc_id):
         return None
 
 def extract_text_from_pdf(pdf_file):
-    """Extract text from uploaded PDF"""
+    """Extract text from uploaded PDF using PyPDF2"""
     try:
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp:
-            tmp.write(pdf_file.read())
-            tmp_path = tmp.name
+        import PyPDF2
         
-        # Use pdftotext
-        result = subprocess.run(
-            ['pdftotext', '-layout', tmp_path, '-'],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
         
-        os.unlink(tmp_path)
+        text_parts = []
+        for page_num, page in enumerate(pdf_reader.pages):
+            page_text = page.extract_text()
+            if page_text:
+                text_parts.append(f"--- Page {page_num + 1} ---\n{page_text}")
         
-        if result.returncode == 0:
-            return result.stdout
+        if text_parts:
+            return "\n\n".join(text_parts)
         else:
-            st.error(f"PDF extraction error: {result.stderr}")
+            st.error("Could not extract text from PDF (may be scanned/image-based)")
             return None
+            
+    except ImportError:
+        st.error("PyPDF2 not installed. Please add 'PyPDF2' to requirements.txt")
+        return None
     except Exception as e:
         st.error(f"Error extracting PDF text: {e}")
         return None
 
 def extract_text_from_docx(docx_file):
-    """Extract text from uploaded DOCX using pandoc"""
+    """Extract text from uploaded DOCX using python-docx"""
     try:
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.docx') as tmp:
-            tmp.write(docx_file.read())
-            tmp_path = tmp.name
+        from docx import Document
         
-        # Use pandoc to convert to plain text
-        result = subprocess.run(
-            ['pandoc', tmp_path, '-t', 'plain', '--wrap=none'],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
+        doc = Document(docx_file)
         
-        os.unlink(tmp_path)
+        text_parts = []
+        for para in doc.paragraphs:
+            if para.text.strip():
+                text_parts.append(para.text)
         
-        if result.returncode == 0:
-            return result.stdout
+        # Also extract from tables
+        for table in doc.tables:
+            for row in table.rows:
+                row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+                if row_text:
+                    text_parts.append(" | ".join(row_text))
+        
+        if text_parts:
+            return "\n\n".join(text_parts)
         else:
-            st.error(f"DOCX extraction error: {result.stderr}")
+            st.error("Could not extract text from DOCX")
             return None
+            
+    except ImportError:
+        st.error("python-docx not installed. Please add 'python-docx' to requirements.txt")
+        return None
     except Exception as e:
         st.error(f"Error extracting DOCX text: {e}")
         return None
 
 def extract_text_from_doc(doc_file):
-    """Extract text from uploaded DOC using antiword or catdoc"""
+    """Extract text from uploaded DOC (legacy format)"""
     try:
-        # Save to temp file
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.doc') as tmp:
-            tmp.write(doc_file.read())
-            tmp_path = tmp.name
-        
-        # Try antiword first, fall back to catdoc
+        # For .doc files, we need to try different approaches
+        # First, try reading as if it might be a docx renamed
         try:
-            result = subprocess.run(
-                ['antiword', tmp_path],
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            if result.returncode == 0:
-                os.unlink(tmp_path)
-                return result.stdout
+            from docx import Document
+            doc = Document(doc_file)
+            text_parts = []
+            for para in doc.paragraphs:
+                if para.text.strip():
+                    text_parts.append(para.text)
+            if text_parts:
+                return "\n\n".join(text_parts)
         except:
             pass
         
-        # Try catdoc
+        # Reset file position
+        doc_file.seek(0)
+        
+        # Try reading raw text (works for some older formats)
         try:
-            result = subprocess.run(
-                ['catdoc', tmp_path],
-                capture_output=True,
-                text=True,
-                timeout=60
-            )
-            os.unlink(tmp_path)
-            if result.returncode == 0:
-                return result.stdout
+            content = doc_file.read()
+            # Try to decode as text, extracting readable portions
+            if isinstance(content, bytes):
+                # Extract ASCII text portions
+                import re
+                text = content.decode('latin-1', errors='ignore')
+                # Remove control characters but keep newlines
+                text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', ' ', text)
+                # Clean up multiple spaces
+                text = re.sub(r' +', ' ', text)
+                text = re.sub(r'\n\s*\n', '\n\n', text)
+                if len(text.strip()) > 100:
+                    return text.strip()
         except:
             pass
         
-        os.unlink(tmp_path)
-        st.error("Could not extract text from .doc file")
+        st.error("Could not extract text from .doc file. Please convert to .docx or PDF format.")
         return None
+        
     except Exception as e:
         st.error(f"Error extracting DOC text: {e}")
         return None
