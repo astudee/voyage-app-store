@@ -369,20 +369,23 @@ if run_review:
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Debug: show detailed report columns
-            st.caption(f"📋 Detailed report columns: {list(detailed_df.columns)[:15]}")
+            # Debug: show ALL detailed report columns
+            st.caption(f"📋 Detailed report ALL columns: {list(detailed_df.columns)}")
             
             # Map column names
-            # Note: 'Hours' should be TOTAL hours, 'Billable' should be billable hours
+            # 'Hours' = TOTAL hours (Input column) - used for under 40 check
+            # 'Billable' = billable hours - used for project overrun check
             col_mapping = {}
             for standard_name, possible_names in {
                 'Staff': ['Staff Member', 'tmstaffnm'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Hours': ['Hours', 'tmhrs', 'Total Hours', 'TotalHours'],  # Total hours first
-                'Billable': ['Billable', 'tmhrsbill', 'Billable ($)', 'tmchgbillbase'],  # Billable hours/dollars
+                'Hours': ['Input', 'tmhrs', 'Hours', 'Total Hours', 'TotalHours'],  # Input = total hours entered
+                'Billable': ['Billable', 'tmhrsbill'],  # Billable hours
+                'Billable_Dollars': ['Billable ($)', 'tmchgbillbase'],  # Billable dollars
                 'Date': ['Date', 'tmdt'],
-                'Notes': ['Notes', 'tmnotes']
+                'Notes': ['Notes', 'tmnotes'],
+                'Project_ID': ['tmprojectnm_id', 'Code/ID', 'Project_ID', 'ProjectID']
             }.items():
                 for possible in possible_names:
                     if possible in detailed_df.columns:
