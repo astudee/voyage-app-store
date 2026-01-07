@@ -484,7 +484,7 @@ if run_review:
                                     'Client': ['Client', 'tmclientnm'],
                                     'Project': ['Project', 'tmprojectnm'],
                                     'Hours': ['Billable', 'tmhrsbill', 'Hours'],
-                                    'Project_ID': ['Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID', 'Proj_Sid', 'ProjSid']
+                                    'Project_ID': ['tmprojectnm_id', 'Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID', 'Proj_Sid', 'ProjSid']
                                 }.items():
                                     for possible in possible_names:
                                         if possible in all_time_df.columns and standard_name not in all_time_df.columns:
