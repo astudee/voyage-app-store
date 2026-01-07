@@ -580,67 +580,67 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
                 deal_name = deal.get('title', 'Unknown')
                 deal_value = deal.get('value', 0)
-                        
-                        # Get start date and duration from custom fields
-                        start_date_str = None
-                        duration_months = 3  # Default
-                        
-                        if 'project_start_date' in custom_fields:
-                            start_date_str = deal.get(custom_fields['project_start_date'])
-                        
-                        if 'project_duration' in custom_fields:
-                            duration = deal.get(custom_fields['project_duration'])
-                            if duration:
-                                try:
-                                    duration_months = int(duration)
-                                except:
-                                    duration_months = 3
-                        
-                        # Determine start month
-                        if start_date_str:
-                            try:
-                                project_start = pd.to_datetime(start_date_str)
-                                start_period = pd.Period(project_start, freq='M')
-                            except:
-                                # Fall back to close date + 1 month
-                                close_date_str = deal.get('expected_close_date') or deal.get('close_time')
-                                if close_date_str:
-                                    close_date = pd.to_datetime(close_date_str)
-                                    start_period = pd.Period(close_date, freq='M') + 1
-                                else:
-                                    continue  # Skip if no dates
+                
+                # Get start date and duration from custom fields
+                start_date_str = None
+                duration_months = 3  # Default
+                
+                if 'project_start_date' in custom_fields:
+                    start_date_str = deal.get(custom_fields['project_start_date'])
+                
+                if 'project_duration' in custom_fields:
+                    duration = deal.get(custom_fields['project_duration'])
+                    if duration:
+                        try:
+                            duration_months = int(duration)
+                        except:
+                            duration_months = 3
+                
+                # Determine start month
+                if start_date_str:
+                    try:
+                        project_start = pd.to_datetime(start_date_str)
+                        start_period = pd.Period(project_start, freq='M')
+                    except:
+                        # Fall back to close date + 1 month
+                        close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                        if close_date_str:
+                            close_date = pd.to_datetime(close_date_str)
+                            start_period = pd.Period(close_date, freq='M') + 1
                         else:
-                            # Use close date + 1 month
-                            close_date_str = deal.get('expected_close_date') or deal.get('close_time')
-                            if close_date_str:
-                                close_date = pd.to_datetime(close_date_str)
-                                start_period = pd.Period(close_date, freq='M') + 1
-                            else:
-                                continue  # Skip if no dates
-                        
-                        # Straight-line monthly revenue
-                        monthly_revenue = deal_value / duration_months if duration_months > 0 else deal_value
-                        
-                        # Build row
-                        row_data = {
-                            'Client': org_name,
-                            'Project': deal_name
-                        }
-                        
-                        # Add monthly revenue for duration
-                        for period in forecast_months:
-                            month_label = period.strftime('%Y-%m')
-                            
-                            # Check if this month falls within the project duration
-                            if start_period <= period < (start_period + duration_months):
-                                if metric_type == "Billable Hours":
-                                    row_data[month_label] = 0  # No hours for pipeline
-                                else:
-                                    row_data[month_label] = monthly_revenue
-                            else:
-                                row_data[month_label] = 0
-                        
-                        results_section3.append(row_data)
+                            continue  # Skip if no dates
+                else:
+                    # Use close date + 1 month
+                    close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                    if close_date_str:
+                        close_date = pd.to_datetime(close_date_str)
+                        start_period = pd.Period(close_date, freq='M') + 1
+                    else:
+                        continue  # Skip if no dates
+                
+                # Straight-line monthly revenue
+                monthly_revenue = deal_value / duration_months if duration_months > 0 else deal_value
+                
+                # Build row
+                row_data = {
+                    'Client': org_name,
+                    'Project': deal_name
+                }
+                
+                # Add monthly revenue for duration
+                for period in forecast_months:
+                    month_label = period.strftime('%Y-%m')
+                    
+                    # Check if this month falls within the project duration
+                    if start_period <= period < (start_period + duration_months):
+                        if metric_type == "Billable Hours":
+                            row_data[month_label] = 0  # No hours for pipeline
+                        else:
+                            row_data[month_label] = monthly_revenue
+                    else:
+                        row_data[month_label] = 0
+                
+                results_section3.append(row_data)
         
         results_section3_df = pd.DataFrame(results_section3)
         
