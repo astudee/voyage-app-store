@@ -124,8 +124,15 @@ def get_pipedrive_stages_map():
     except Exception as e:
         return {}
 
-def get_deal_stage_info(deal, stages_map):
-    """Get stage name and probability factor from deal"""
+def get_deal_stage_info(deal, stages_map, prob_overrides=None):
+    """Get stage name and probability factor from deal
+    
+    Args:
+        deal: Pipedrive deal object
+        stages_map: Dict mapping stage_id to stage_name
+        prob_overrides: Optional dict with keys 'qualified', 'proposal', 'forecast' 
+                       and values as decimals (e.g., 0.33, 0.50, 0.75)
+    """
     # Get stage ID from deal
     stage_id = deal.get('stage_id')
     
@@ -134,6 +141,17 @@ def get_deal_stage_info(deal, stages_map):
     
     stage_lower = stage_name.lower() if stage_name else ''
     
+    # Default probabilities
+    prob_qualified = 0.33
+    prob_proposal = 0.50
+    prob_forecast = 0.75
+    
+    # Apply overrides if provided
+    if prob_overrides:
+        prob_qualified = prob_overrides.get('qualified', prob_qualified)
+        prob_proposal = prob_overrides.get('proposal', prob_proposal)
+        prob_forecast = prob_overrides.get('forecast', prob_forecast)
+    
     # Define probability factors and exclusions
     # Exclude early stages (0% probability - don't include in report)
     if 'early' in stage_lower or 'qualification in progress' in stage_lower:
@@ -141,14 +159,14 @@ def get_deal_stage_info(deal, stages_map):
     
     # Map stage names to probability factors
     if 'forecast' in stage_lower:
-        return stage_name, 0.75
+        return stage_name, prob_forecast
     elif 'proposal' in stage_lower or 'sow' in stage_lower or 'resourcing' in stage_lower:
-        return stage_name, 0.50
+        return stage_name, prob_proposal
     elif 'qualified' in stage_lower:
-        return stage_name, 0.33
+        return stage_name, prob_qualified
     else:
-        # For any other stage we don't recognize, include at 33%
-        return stage_name, 0.33
+        # For any other stage we don't recognize, include at qualified rate
+        return stage_name, prob_qualified
 
 def get_pipedrive_custom_field_keys():
     """Get custom field keys from Pipedrive"""
@@ -243,6 +261,43 @@ metric_type = st.radio(
     horizontal=True,
     help="Choose between hours or revenue view"
 )
+
+# Probability override controls
+with st.expander("⚙️ Override Pipeline Probability Factors (Sections 4 & 5)"):
+    st.caption("Adjust probability factors for pipeline stages. These override defaults for Sections 4 and 5 only.")
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        override_qualified = st.slider(
+            "Qualified",
+            min_value=0,
+            max_value=100,
+            value=33,
+            step=5,
+            help="Default: 33%"
+        )
+    with col2:
+        override_proposal = st.slider(
+            "Proposal / SOW / Resourcing",
+            min_value=0,
+            max_value=100,
+            value=50,
+            step=5,
+            help="Default: 50%"
+        )
+    with col3:
+        override_forecast = st.slider(
+            "Forecast",
+            min_value=0,
+            max_value=100,
+            value=75,
+            step=5,
+            help="Default: 75%"
+        )
+    
+    # Show if any overrides are active
+    if override_qualified != 33 or override_proposal != 50 or override_forecast != 75:
+        st.info(f"🔧 Custom factors: Qualified={override_qualified}%, Proposal/SOW={override_proposal}%, Forecast={override_forecast}%")
 
 if st.button("📊 Generate Revenue Forecast", type="primary"):
     
@@ -684,10 +739,17 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         results_section4 = []
         
+        # Build probability overrides dict
+        prob_overrides = {
+            'qualified': override_qualified / 100,
+            'proposal': override_proposal / 100,
+            'forecast': override_forecast / 100
+        }
+        
         if pipeline_deals:
             for deal in pipeline_deals:
-                # Get stage info and check if should be included
-                stage_name, probability_factor = get_deal_stage_info(deal, stages_map)
+                # Get stage info and check if should be included (WITH overrides)
+                stage_name, probability_factor = get_deal_stage_info(deal, stages_map, prob_overrides)
                 
                 # Skip deals from early stages (stage_name = None means exclude)
                 if stage_name is None:
