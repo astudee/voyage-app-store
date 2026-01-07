@@ -41,18 +41,28 @@ def get_google_credentials():
     try:
         from google.oauth2.service_account import Credentials
         
+        # Try different possible key names for service account
+        sa_key = None
+        for key_name in ['gcp_service_account', 'google_service_account', 'service_account']:
+            if key_name in st.secrets:
+                sa_key = st.secrets[key_name]
+                break
+        
+        if not sa_key:
+            return None
+        
         # Build credentials dict from secrets
         creds_dict = {
             "type": "service_account",
-            "project_id": st.secrets["gcp_service_account"]["project_id"],
-            "private_key_id": st.secrets["gcp_service_account"]["private_key_id"],
-            "private_key": st.secrets["gcp_service_account"]["private_key"],
-            "client_email": st.secrets["gcp_service_account"]["client_email"],
-            "client_id": st.secrets["gcp_service_account"]["client_id"],
+            "project_id": sa_key.get("project_id"),
+            "private_key_id": sa_key.get("private_key_id"),
+            "private_key": sa_key.get("private_key"),
+            "client_email": sa_key.get("client_email"),
+            "client_id": sa_key.get("client_id"),
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": st.secrets["gcp_service_account"].get("client_x509_cert_url", "")
+            "client_x509_cert_url": sa_key.get("client_x509_cert_url", "")
         }
         
         scopes = [
@@ -63,23 +73,31 @@ def get_google_credentials():
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         return credentials
     except Exception as e:
-        st.warning(f"Could not load Google credentials: {e}")
         return None
 
 def fetch_google_doc_content(doc_id):
-    """Fetch content from a Google Doc using authenticated API or public export"""
+    """Fetch content from a Google Doc - tries public export first, then authenticated"""
     
-    # Try authenticated access first
+    # Try public export first (simplest approach - works if doc is "Anyone with link")
+    try:
+        export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
+        response = requests.get(export_url, timeout=30)
+        
+        if response.status_code == 200:
+            return response.text
+    except Exception as e:
+        pass
+    
+    # Try authenticated access as fallback
     credentials = get_google_credentials()
     
     if credentials:
         try:
             from googleapiclient.discovery import build
             
-            # Use Drive API to export as plain text (more reliable than Docs API for text extraction)
+            # Use Drive API to export as plain text
             drive_service = build('drive', 'v3', credentials=credentials)
             
-            # Export as plain text
             request = drive_service.files().export_media(
                 fileId=doc_id,
                 mimeType='text/plain'
@@ -93,21 +111,10 @@ def fetch_google_doc_content(doc_id):
             return content
             
         except Exception as e:
-            st.warning(f"Authenticated access failed, trying public export: {e}")
+            st.warning(f"Authenticated access also failed: {e}")
     
-    # Fallback to public export (if doc is shared publicly)
-    try:
-        export_url = f"https://docs.google.com/document/d/{doc_id}/export?format=txt"
-        response = requests.get(export_url, timeout=30)
-        
-        if response.status_code == 200:
-            return response.text
-        else:
-            st.error(f"Failed to fetch Google Doc: HTTP {response.status_code}")
-            return None
-    except Exception as e:
-        st.error(f"Error fetching Google Doc: {e}")
-        return None
+    st.error("Could not fetch Google Doc. Please ensure the document is shared as 'Anyone with the link can view'")
+    return None
 
 def extract_text_from_pdf(pdf_file):
     """Extract text from uploaded PDF using PyPDF2"""
