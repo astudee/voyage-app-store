@@ -115,6 +115,15 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             st.stop()
         
         st.success(f"✅ Loaded {len(assignments_df)} assignment rows")
+        
+        # Load FixedFee tab
+        fixedfee_df = sheets.read_config(CONFIG_SHEET_ID, "FixedFee")
+        
+        if fixedfee_df is not None and not fixedfee_df.empty:
+            st.success(f"✅ Loaded {len(fixedfee_df)} fixed fee project rows")
+        else:
+            st.warning("⚠️ No FixedFee data found - Section 2 will match Section 1")
+            fixedfee_df = pd.DataFrame()
     
     # ============================================================
     # PHASE 2: LOAD BIGTIME ACTUALS (for past months)
@@ -185,6 +194,47 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                     pass
         
         month_cols = sorted(month_cols, key=lambda x: x['date'])
+        
+        # Process FixedFee tab
+        fixedfee_lookup = {}
+        
+        if not fixedfee_df.empty:
+            # Normalize Project IDs in FixedFee
+            fixedfee_df['Project_ID_Norm'] = fixedfee_df['Project ID'].apply(normalize_project_id)
+            
+            # Identify month columns in FixedFee
+            fixedfee_standard_cols = ['Client', 'Project Name', 'Project ID', 'Project Status', 'Total']
+            fixedfee_month_cols = []
+            
+            for col in fixedfee_df.columns:
+                if col not in fixedfee_standard_cols:
+                    try:
+                        col_date = pd.to_datetime(col)
+                        fixedfee_month_cols.append({
+                            'column': col,
+                            'date': col_date,
+                            'period': col_date.to_period('M')
+                        })
+                    except:
+                        pass
+            
+            fixedfee_month_cols = sorted(fixedfee_month_cols, key=lambda x: x['date'])
+            
+            # Build lookup: project_id -> {period: revenue}
+            for _, row in fixedfee_df.iterrows():
+                project_id = row['Project_ID_Norm']
+                if not project_id:
+                    continue
+                
+                fixedfee_lookup[project_id] = {}
+                
+                for m in fixedfee_month_cols:
+                    revenue = pd.to_numeric(row.get(m['column'], 0), errors='coerce')
+                    if pd.isna(revenue):
+                        revenue = 0
+                    
+                    if revenue > 0:
+                        fixedfee_lookup[project_id][m['period']] = revenue
         
         # Build project-level data
         projects = {}
@@ -264,8 +314,8 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             forecast_months.append(current)
             current += 1
         
-        # Build results
-        results = []
+        # Build results for Section 1 (Hours-Based)
+        results_section1 = []
         
         for project_id, proj in projects.items():
             row_data = {
@@ -300,11 +350,78 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                     else:
                         row_data[month_label] = 0
             
-            results.append(row_data)
+            results_section1.append(row_data)
         
-        results_df = pd.DataFrame(results)
+        results_section1_df = pd.DataFrame(results_section1)
         
-        st.success(f"✅ Generated forecast for {len(results_df)} projects")
+        # Build results for Section 2 (Fixed Fee Reflected)
+        results_section2 = []
+        
+        for project_id, proj in projects.items():
+            row_data = {
+                'Client': proj['Client'],
+                'Project': proj['Project_Name'],
+                'Project_ID': project_id
+            }
+            
+            # Check if this is a fixed fee project
+            is_fixed_fee = project_id in fixedfee_lookup
+            
+            # Add data for each month
+            for period in forecast_months:
+                month_label = period.strftime('%Y-%m')
+                
+                if metric_type == "Billable Hours":
+                    # Hours view: Same as Section 1
+                    if period < current_month_period:
+                        # Past month - use BigTime actuals
+                        if project_id in bt_actuals and period in bt_actuals[project_id]:
+                            hours = bt_actuals[project_id][period]
+                            row_data[month_label] = hours
+                        else:
+                            row_data[month_label] = 0
+                    else:
+                        # Current or future month - use Assignments plan
+                        if period in proj['Monthly_Plan']:
+                            hours = proj['Monthly_Plan'][period]['hours']
+                            row_data[month_label] = hours
+                        else:
+                            row_data[month_label] = 0
+                else:
+                    # Revenue ($) view
+                    if is_fixed_fee:
+                        # Use FixedFee tab revenue
+                        if period in fixedfee_lookup[project_id]:
+                            row_data[month_label] = fixedfee_lookup[project_id][period]
+                        else:
+                            row_data[month_label] = 0
+                    else:
+                        # T&M project - same as Section 1
+                        if period < current_month_period:
+                            # Past month - use BigTime actuals
+                            if project_id in bt_actuals and period in bt_actuals[project_id]:
+                                hours = bt_actuals[project_id][period]
+                                if period in proj['Monthly_Plan']:
+                                    rate = proj['Monthly_Plan'][period]['avg_rate']
+                                else:
+                                    rate = 0
+                                row_data[month_label] = hours * rate
+                            else:
+                                row_data[month_label] = 0
+                        else:
+                            # Current or future month - use Assignments plan
+                            if period in proj['Monthly_Plan']:
+                                hours = proj['Monthly_Plan'][period]['hours']
+                                rate = proj['Monthly_Plan'][period]['avg_rate']
+                                row_data[month_label] = hours * rate
+                            else:
+                                row_data[month_label] = 0
+            
+            results_section2.append(row_data)
+        
+        results_section2_df = pd.DataFrame(results_section2)
+        
+        st.success(f"✅ Generated forecast for {len(results_section1_df)} projects")
     
     # ============================================================
     # DISPLAY RESULTS
@@ -313,51 +430,114 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
     st.header("📊 Project Revenue Forecast")
     st.caption(f"Period: {start_date.strftime('%Y-%m')} to {end_date.strftime('%Y-%m')}")
     
-    # Add month type indicators
-    month_indicators = []
-    for period in forecast_months:
-        if period < current_month_period:
-            month_indicators.append(f"{period.strftime('%Y-%m')} 📊")  # Actual
-        else:
-            month_indicators.append(f"{period.strftime('%Y-%m')} 📅")  # Plan
-    
     st.info("📊 = Actual (BigTime) | 📅 = Plan (Assignments)")
     
-    # Main table with totals row at bottom
-    st.subheader("Project Forecast")
+    # ============================================================
+    # SECTION 1: Hours-Based Revenue
+    # ============================================================
     
-    # Add totals row
-    totals_row = {
+    st.subheader("Section 1: Revenue and Hours Forecast - Based Upon Hours")
+    st.caption("All projects: Revenue = Hours × Bill Rate")
+    
+    # Add totals row for Section 1
+    totals_row_s1 = {
         'Client': '---',
         'Project': 'TOTAL',
         'Project_ID': ''
     }
     for period in forecast_months:
         month_label = period.strftime('%Y-%m')
-        totals_row[month_label] = results_df[month_label].sum()
+        totals_row_s1[month_label] = results_section1_df[month_label].sum()
     
     # Append totals row
-    display_df = pd.concat([results_df, pd.DataFrame([totals_row])], ignore_index=True)
+    display_s1_df = pd.concat([results_section1_df, pd.DataFrame([totals_row_s1])], ignore_index=True)
     
     # Format display
     if metric_type == "Billable Hours":
         st.dataframe(
-            display_df.style.format({
-                col: '{:.1f}' for col in display_df.columns if col not in ['Client', 'Project', 'Project_ID']
+            display_s1_df.style.format({
+                col: '{:.1f}' for col in display_s1_df.columns if col not in ['Client', 'Project', 'Project_ID']
             }),
             hide_index=True,
             use_container_width=True,
-            height=600
+            height=400
         )
     else:
         st.dataframe(
-            display_df.style.format({
-                col: '${:,.0f}' for col in display_df.columns if col not in ['Client', 'Project', 'Project_ID']
+            display_s1_df.style.format({
+                col: '${:,.0f}' for col in display_s1_df.columns if col not in ['Client', 'Project', 'Project_ID']
             }),
             hide_index=True,
             use_container_width=True,
-            height=600
+            height=400
         )
+    
+    st.divider()
+    
+    # ============================================================
+    # SECTION 2: Fixed Fee Reflected
+    # ============================================================
+    
+    st.subheader("Section 2: Revenue and Hours Forecast - Fixed Fees Reflected")
+    if metric_type == "Billable Hours":
+        st.caption("Hours view: Same as Section 1")
+    else:
+        st.caption("Revenue view: Fixed fee projects use FixedFee tab schedule, T&M projects use Hours × Rate")
+    
+    # Add totals row for Section 2
+    totals_row_s2 = {
+        'Client': '---',
+        'Project': 'TOTAL',
+        'Project_ID': ''
+    }
+    for period in forecast_months:
+        month_label = period.strftime('%Y-%m')
+        totals_row_s2[month_label] = results_section2_df[month_label].sum()
+    
+    # Append totals row
+    display_s2_df = pd.concat([results_section2_df, pd.DataFrame([totals_row_s2])], ignore_index=True)
+    
+    # Format display
+    if metric_type == "Billable Hours":
+        st.dataframe(
+            display_s2_df.style.format({
+                col: '{:.1f}' for col in display_s2_df.columns if col not in ['Client', 'Project', 'Project_ID']
+            }),
+            hide_index=True,
+            use_container_width=True,
+            height=400
+        )
+    else:
+        st.dataframe(
+            display_s2_df.style.format({
+                col: '${:,.0f}' for col in display_s2_df.columns if col not in ['Client', 'Project', 'Project_ID']
+            }),
+            hide_index=True,
+            use_container_width=True,
+            height=400
+        )
+    
+    # Show variance if revenue view
+    if metric_type == "Billable Revenue ($)":
+        st.divider()
+        st.subheader("📊 Revenue Timing Impact")
+        
+        variance_data = {'Metric': 'Variance (Section 2 - Section 1)'}
+        for period in forecast_months:
+            month_label = period.strftime('%Y-%m')
+            variance_data[month_label] = totals_row_s2[month_label] - totals_row_s1[month_label]
+        
+        variance_df = pd.DataFrame([variance_data])
+        
+        st.dataframe(
+            variance_df.style.format({
+                col: '${:+,.0f}' for col in variance_df.columns if col != 'Metric'
+            }),
+            hide_index=True,
+            use_container_width=True
+        )
+        
+        st.caption("Positive = Fixed fee timing creates revenue acceleration | Negative = Fixed fee timing creates revenue delay")
     
     # Excel export
     st.divider()
@@ -367,7 +547,11 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         output = BytesIO()
         
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            display_df.to_excel(writer, sheet_name='Revenue_Forecast', index=False)
+            display_s1_df.to_excel(writer, sheet_name='Section_1_Hours_Based', index=False)
+            display_s2_df.to_excel(writer, sheet_name='Section_2_Fixed_Fee', index=False)
+            
+            if metric_type == "Billable Revenue ($)":
+                variance_df.to_excel(writer, sheet_name='Revenue_Timing_Impact', index=False)
         
         excel_data = output.getvalue()
         filename = f"revenue_forecast_{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.xlsx"
