@@ -369,14 +369,18 @@ if run_review:
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
+            # Debug: show detailed report columns
+            st.caption(f"📋 Detailed report columns: {list(detailed_df.columns)[:15]}")
+            
             # Map column names
+            # Note: 'Hours' should be TOTAL hours, 'Billable' should be billable hours
             col_mapping = {}
             for standard_name, possible_names in {
                 'Staff': ['Staff Member', 'tmstaffnm'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Hours': ['Billable', 'tmhrsbill', 'Hours'],
-                'Billable': ['Billable ($)', 'tmchgbillbase'],
+                'Hours': ['Hours', 'tmhrs', 'Total Hours', 'TotalHours'],  # Total hours first
+                'Billable': ['Billable', 'tmhrsbill', 'Billable ($)', 'tmchgbillbase'],  # Billable hours/dollars
                 'Date': ['Date', 'tmdt'],
                 'Notes': ['Notes', 'tmnotes']
             }.items():
@@ -384,6 +388,8 @@ if run_review:
                     if possible in detailed_df.columns:
                         col_mapping[standard_name] = possible
                         break
+            
+            st.caption(f"📋 Column mapping: {col_mapping}")
             
             # Rename columns
             detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
