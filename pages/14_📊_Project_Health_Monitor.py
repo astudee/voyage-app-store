@@ -290,6 +290,30 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     
     with st.spinner("🔨 Analyzing project health..."):
         
+        # DEBUG: Show what we found
+        with st.expander("🔍 Debug: Data Summary"):
+            st.write(f"**Pipedrive Deals:** {len(pipedrive_deals)} won deals loaded")
+            st.write(f"**Assignments Rows:** {len(assignments_df)} rows")
+            
+            # Show sample deals with BigTime IDs
+            deals_with_bt_id = []
+            for deal in pipedrive_deals:
+                bt_id = None
+                if 'bigtime_project_id' in custom_fields:
+                    bt_id = deal.get(custom_fields['bigtime_project_id'])
+                deals_with_bt_id.append({
+                    'Deal': deal.get('title'),
+                    'Value': deal.get('value'),
+                    'BigTime_Project_ID': normalize_project_id(bt_id)
+                })
+            st.write("**Sample Pipedrive Deals:**")
+            st.dataframe(pd.DataFrame(deals_with_bt_id).head(10))
+            
+            # Show unique project IDs in Assignments
+            unique_project_ids = assignments_df['Project_ID_Norm'].dropna().unique()
+            st.write(f"**Unique Project IDs in Assignments:** {len(unique_project_ids)}")
+            st.write(unique_project_ids[:20])
+        
         # Get unique project IDs from Assignments
         assignments_df['Project_ID_Norm'] = assignments_df['Project ID'].apply(normalize_project_id)
         
@@ -426,9 +450,17 @@ if st.button("📊 Generate Project Health Report", type="primary"):
         results = []
         today_dt = pd.Timestamp(datetime.now())
         
+        # DEBUG: Track what's being filtered out
+        debug_skipped = []
+        
         for project_id, proj in projects.items():
             # Skip if no deal value (not in Pipedrive)
             if 'Deal_Value' not in proj or proj['Deal_Value'] == 0:
+                debug_skipped.append({
+                    'Project_ID': project_id,
+                    'Project_Name': proj['Project_Name'],
+                    'Reason': 'No Deal in Pipedrive'
+                })
                 continue
             
             # Determine timeline
@@ -453,6 +485,11 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             
             # Skip if we can't determine timeline
             if not start_date or not end_date:
+                debug_skipped.append({
+                    'Project_ID': project_id,
+                    'Project_Name': proj['Project_Name'],
+                    'Reason': f'Missing timeline (start: {start_date}, end: {end_date})'
+                })
                 continue
             
             # Calculate metrics
@@ -510,6 +547,27 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             })
         
         results_df = pd.DataFrame(results)
+        
+        # DEBUG: Show what was skipped
+        with st.expander("🔍 Debug: Skipped Projects"):
+            if debug_skipped:
+                st.warning(f"⚠️ {len(debug_skipped)} projects were skipped")
+                st.dataframe(pd.DataFrame(debug_skipped))
+            else:
+                st.success("✅ No projects were skipped")
+            
+            # Show timeline calculations for included projects
+            st.write("**Timeline Calculations for Included Projects:**")
+            timeline_debug = []
+            for r in results:
+                timeline_debug.append({
+                    'Project': r['Project_Name'],
+                    'Start_Date': r['Start_Date'].strftime('%Y-%m-%d'),
+                    'End_Date': r['End_Date'].strftime('%Y-%m-%d'),
+                    'Timeline_Display': r['Timeline'],
+                    'Duration_Days': (r['End_Date'] - r['Start_Date']).days
+                })
+            st.dataframe(pd.DataFrame(timeline_debug))
         
         # Apply filters
         if project_status_filter != "All Projects":
