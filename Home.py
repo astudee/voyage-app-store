@@ -299,6 +299,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '📊',
+        'name': 'Revenue Forecaster',
+        'page': '16_📊_Revenue_Forecaster',
+        'description': 'Project-level revenue forecast: Actuals (past) + Plan (future)',
+        'features': [
+            'Combines BigTime actuals (past months) with Assignments plan (future months)',
+            'Project-level view: Client, Project Name, Project ID',
+            'Toggle between Billable Hours and Revenue ($)',
+            'Month indicators: 📊 Actual | 📅 Plan',
+            'Monthly totals section',
+            'Excel export with multiple sheets'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
