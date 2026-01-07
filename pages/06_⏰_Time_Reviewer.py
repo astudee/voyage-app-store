@@ -528,11 +528,23 @@ if run_review:
                                                 else:
                                                     assigned_lookup[key] = total_assigned
                                         
-                                        # Check each staff/project combo
+                                        # Build set of staff/project combos that had activity THIS WEEK
+                                        this_week_combos = set()
+                                        for _, row in staff_project_hours.iterrows():
+                                            staff = row['Staff']
+                                            project = row['Project']
+                                            this_week_combos.add((staff, project))
+                                        
+                                        # Check ONLY staff/project combos that had activity this week
                                         for _, row in lifetime_hours.iterrows():
                                             staff = row['Staff']
                                             client = row['Client']
                                             project = row['Project']
+                                            
+                                            # Skip if this combo didn't have activity this week
+                                            if (staff, project) not in this_week_combos:
+                                                continue
+                                            
                                             project_id = str(row.get('Project_ID', '')) if 'Project_ID' in row else ''
                                             hours_used = row['Lifetime_Hours_Used']
                                             
