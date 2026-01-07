@@ -500,26 +500,41 @@ if run_review:
                                     lifetime_hours.rename(columns={'Hours': 'Lifetime_Hours_Used'}, inplace=True)
                                     
                                     # Get assigned hours from Assignments
-                                    # Assignments has columns like: Staff, Client, Project_Name, Project_ID, and monthly columns
-                                    # Sum all monthly hours per staff/project
+                                    # Assignments has columns: Client, Project Name, Project ID, Staff Member, Bill Rate, Project Status, Total, ...
+                                    # Use the Total column for assigned hours
                                     
-                                    # Find month columns (format like 2024-01, 2025-02, etc.)
-                                    month_cols = [col for col in assignments_df.columns if '-' in str(col) and len(str(col)) == 7]
+                                    # Create lookup for assigned hours using Total column
+                                    assigned_lookup = {}
                                     
-                                    if month_cols:
-                                        # Convert month columns to numeric, coercing errors to 0
-                                        for col in month_cols:
-                                            assignments_df[col] = pd.to_numeric(assignments_df[col], errors='coerce').fillna(0)
+                                    # Find the staff column name
+                                    staff_col = None
+                                    for col in ['Staff', 'Staff Member', 'Staff_Name']:
+                                        if col in assignments_df.columns:
+                                            staff_col = col
+                                            break
+                                    
+                                    # Find the project ID column name
+                                    proj_id_col = None
+                                    for col in ['Project_ID', 'Project ID', 'ProjectID']:
+                                        if col in assignments_df.columns:
+                                            proj_id_col = col
+                                            break
+                                    
+                                    # Find the total column
+                                    total_col = None
+                                    for col in ['Total', 'total', 'TOTAL']:
+                                        if col in assignments_df.columns:
+                                            total_col = col
+                                            break
+                                    
+                                    if staff_col and proj_id_col and total_col:
+                                        # Convert Total to numeric
+                                        assignments_df[total_col] = pd.to_numeric(assignments_df[total_col], errors='coerce').fillna(0)
                                         
-                                        # Sum hours across all months for each staff/project
-                                        assignments_df['Total_Assigned'] = assignments_df[month_cols].sum(axis=1)
-                                        
-                                        # Create lookup for assigned hours
-                                        assigned_lookup = {}
                                         for _, row in assignments_df.iterrows():
-                                            staff = row.get('Staff', row.get('Staff_Name', ''))
-                                            project_id = str(row.get('Project_ID', row.get('ProjectID', '')))
-                                            total_assigned = row.get('Total_Assigned', 0)
+                                            staff = row.get(staff_col, '')
+                                            project_id = str(row.get(proj_id_col, ''))
+                                            total_assigned = row.get(total_col, 0)
                                             
                                             if staff and project_id:
                                                 key = (staff, project_id)
