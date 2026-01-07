@@ -93,37 +93,37 @@ def fetch_pipedrive_deals():
         st.error(f"❌ Error fetching Pipedrive deals: {e}")
         return None
 
-def get_pipedrive_stages():
-    """Get all pipeline stages with their probabilities from Pipedrive"""
-    if not PIPEDRIVE_API_TOKEN:
-        return {}
+def get_deal_stage_info(deal):
+    """Get stage name and probability factor from deal"""
+    # Try to get stage name from deal
+    stage_name = ''
     
-    base_url = "https://api.pipedrive.com/v1"
-    url = f"{base_url}/stages"
+    # stage_id might be an int or a dict depending on Pipedrive API response
+    stage_id = deal.get('stage_id')
+    if isinstance(stage_id, dict):
+        stage_name = stage_id.get('name', '')
     
-    params = {'api_token': PIPEDRIVE_API_TOKEN}
+    # Also check stage_name directly if available
+    if not stage_name:
+        stage_name = deal.get('stage_name', '')
     
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            if data.get('success'):
-                stages = data.get('data', [])
-                
-                # Build map: stage_id -> probability
-                stage_map = {}
-                for stage in stages:
-                    stage_id = stage.get('id')
-                    probability = stage.get('probability', 0)  # Default to 0
-                    stage_map[stage_id] = probability / 100  # Convert to decimal (e.g., 75 -> 0.75)
-                
-                return stage_map
-        
-        return {}
+    stage_lower = stage_name.lower() if stage_name else ''
     
-    except Exception as e:
-        st.warning(f"⚠️ Could not fetch Pipedrive stages: {e}")
-        return {}
+    # Define probability factors and exclusions
+    # Exclude early stages (0% probability - don't include in report)
+    if 'early' in stage_lower or 'qualification in progress' in stage_lower:
+        return None, 0  # Return None to indicate exclusion
+    
+    # Map stage names to probability factors
+    if 'forecast' in stage_lower:
+        return stage_name, 0.75
+    elif 'proposal' in stage_lower or 'sow' in stage_lower or 'resourcing' in stage_lower:
+        return stage_name, 0.50
+    elif 'qualified' in stage_lower:
+        return stage_name, 0.33
+    else:
+        # For any other stage we don't recognize, include at 33%
+        return stage_name, 0.33
 
 def get_pipedrive_custom_field_keys():
     """Get custom field keys from Pipedrive"""
@@ -544,7 +544,6 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         # ============================================================
         
         pipeline_deals = None
-        stage_probabilities = {}
         custom_fields = {}
         
         if PIPEDRIVE_API_TOKEN:
@@ -554,28 +553,32 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 if pipeline_deals:
                     st.success(f"✅ Loaded {len(pipeline_deals)} pipeline deals")
                     
-                    # Get custom field keys and stage probabilities
+                    # Get custom field keys
                     custom_fields = get_pipedrive_custom_field_keys()
-                    stage_probabilities = get_pipedrive_stages()
                 else:
                     st.warning("⚠️ Could not load Pipedrive pipeline deals")
         else:
             st.info("ℹ️ Pipedrive API token not configured - Sections 3 & 4 will be empty")
         
         # ============================================================
-        # BUILD SECTION 3: PIPELINE DEALS
+        # BUILD SECTION 3: PIPELINE DEALS (UNFACTORED)
         # ============================================================
         
         results_section3 = []
+        included_count = 0
+        excluded_count = 0
         
         if pipeline_deals:
             for deal in pipeline_deals:
-                # Get stage ID and check probability
-                stage_id = deal.get('stage_id')
+                # Get stage info and check if should be included
+                stage_name, probability = get_deal_stage_info(deal)
                 
-                # Skip if stage has 0% probability (Early, Qualification in Progress)
-                if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
+                # Skip deals from early stages (stage_name = None means exclude)
+                if stage_name is None:
+                    excluded_count += 1
                     continue
+                
+                included_count += 1
                 
                 org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
                 deal_name = deal.get('title', 'Unknown')
@@ -644,6 +647,9 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         results_section3_df = pd.DataFrame(results_section3)
         
+        if included_count > 0 or excluded_count > 0:
+            st.info(f"📊 Pipeline deals: {included_count} included, {excluded_count} excluded (early stages)")
+        
         # ============================================================
         # BUILD SECTION 4: PIPELINE DEALS WITH FACTORING
         # ============================================================
@@ -652,14 +658,12 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         if pipeline_deals:
             for deal in pipeline_deals:
-                # Get stage ID and probability
-                stage_id = deal.get('stage_id')
+                # Get stage info and check if should be included
+                stage_name, probability_factor = get_deal_stage_info(deal)
                 
-                # Skip if stage has 0% probability (Early, Qualification in Progress)
-                if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
+                # Skip deals from early stages (stage_name = None means exclude)
+                if stage_name is None:
                     continue
-                
-                probability_factor = stage_probabilities[stage_id]
                 
                 org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
                 deal_name = deal.get('title', 'Unknown')
