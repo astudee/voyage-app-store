@@ -93,6 +93,38 @@ def fetch_pipedrive_deals():
         st.error(f"❌ Error fetching Pipedrive deals: {e}")
         return None
 
+def get_pipedrive_stages():
+    """Get all pipeline stages with their probabilities from Pipedrive"""
+    if not PIPEDRIVE_API_TOKEN:
+        return {}
+    
+    base_url = "https://api.pipedrive.com/v1"
+    url = f"{base_url}/stages"
+    
+    params = {'api_token': PIPEDRIVE_API_TOKEN}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                stages = data.get('data', [])
+                
+                # Build map: stage_id -> probability
+                stage_map = {}
+                for stage in stages:
+                    stage_id = stage.get('id')
+                    probability = stage.get('probability', 0)  # Default to 0
+                    stage_map[stage_id] = probability / 100  # Convert to decimal (e.g., 75 -> 0.75)
+                
+                return stage_map
+        
+        return {}
+    
+    except Exception as e:
+        st.warning(f"⚠️ Could not fetch Pipedrive stages: {e}")
+        return {}
+
 def get_pipedrive_custom_field_keys():
     """Get custom field keys from Pipedrive"""
     if not PIPEDRIVE_API_TOKEN:
@@ -126,23 +158,6 @@ def get_pipedrive_custom_field_keys():
     
     except Exception as e:
         return {}
-
-def get_deal_probability_factor(stage_name):
-    """Get probability factor based on deal stage"""
-    if not stage_name:
-        return 0.33  # Default
-    
-    stage_lower = stage_name.lower()
-    
-    # Map stage names to probability factors
-    if 'forecast' in stage_lower:
-        return 0.75
-    elif 'proposal' in stage_lower or 'sow' in stage_lower or 'resourcing' in stage_lower:
-        return 0.50
-    elif 'qualified' in stage_lower:
-        return 0.33
-    else:
-        return 0.33  # Default for unknown stages
 
 # ============================================================
 # DATE RANGE SELECTION
@@ -537,10 +552,18 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 if pipeline_deals:
                     st.success(f"✅ Loaded {len(pipeline_deals)} pipeline deals")
                     
-                    # Get custom field keys
+                    # Get custom field keys and stage probabilities
                     custom_fields = get_pipedrive_custom_field_keys()
+                    stage_probabilities = get_pipedrive_stages()
                     
                     for deal in pipeline_deals:
+                        # Get stage ID and check probability
+                        stage_id = deal.get('stage_id')
+                        
+                        # Skip if stage has 0% probability (Early, Qualification in Progress)
+                        if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
+                            continue
+                        
                         org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
                         deal_name = deal.get('title', 'Unknown')
                         deal_value = deal.get('value', 0)
@@ -620,13 +643,18 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         if PIPEDRIVE_API_TOKEN and pipeline_deals:
             for deal in pipeline_deals:
+                # Get stage ID and probability
+                stage_id = deal.get('stage_id')
+                
+                # Skip if stage has 0% probability (Early, Qualification in Progress)
+                if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
+                    continue
+                
+                probability_factor = stage_probabilities[stage_id]
+                
                 org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
                 deal_name = deal.get('title', 'Unknown')
                 deal_value = deal.get('value', 0)
-                
-                # Get stage name for probability factor
-                stage_name = deal.get('stage_id', {}).get('name', '') if isinstance(deal.get('stage_id'), dict) else ''
-                probability_factor = get_deal_probability_factor(stage_name)
                 
                 # Get start date and duration from custom fields (same logic as Section 3)
                 start_date_str = None
