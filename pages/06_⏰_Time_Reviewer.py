@@ -430,6 +430,9 @@ if run_review:
             assignments_df = sheets.read_config(config_sheet_id, "Assignments")
             
             if assignments_df is not None and not assignments_df.empty:
+                # Debug: show columns
+                st.caption(f"📋 Assignments columns: {list(assignments_df.columns)[:10]}")
+                
                 # Get all billable hours from BigTime by staff/project
                 # Filter out Internal clients
                 if not detailed_df.empty and 'Client' in detailed_df.columns:
