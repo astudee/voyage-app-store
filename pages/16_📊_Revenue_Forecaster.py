@@ -93,19 +93,44 @@ def fetch_pipedrive_deals():
         st.error(f"❌ Error fetching Pipedrive deals: {e}")
         return None
 
-def get_deal_stage_info(deal):
+def get_pipedrive_stages_map():
+    """Get all pipeline stages from Pipedrive and return id->name map"""
+    if not PIPEDRIVE_API_TOKEN:
+        return {}
+    
+    base_url = "https://api.pipedrive.com/v1"
+    url = f"{base_url}/stages"
+    
+    params = {'api_token': PIPEDRIVE_API_TOKEN}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                stages = data.get('data', [])
+                
+                # Build map: stage_id -> stage_name
+                stage_map = {}
+                for stage in stages:
+                    stage_id = stage.get('id')
+                    stage_name = stage.get('name', 'Unknown')
+                    stage_map[stage_id] = stage_name
+                
+                return stage_map
+        
+        return {}
+    
+    except Exception as e:
+        return {}
+
+def get_deal_stage_info(deal, stages_map):
     """Get stage name and probability factor from deal"""
-    # Try to get stage name from deal
-    stage_name = ''
-    
-    # stage_id might be an int or a dict depending on Pipedrive API response
+    # Get stage ID from deal
     stage_id = deal.get('stage_id')
-    if isinstance(stage_id, dict):
-        stage_name = stage_id.get('name', '')
     
-    # Also check stage_name directly if available
-    if not stage_name:
-        stage_name = deal.get('stage_name', '')
+    # Look up stage name from map
+    stage_name = stages_map.get(stage_id, 'Unknown') if stages_map else 'Unknown'
     
     stage_lower = stage_name.lower() if stage_name else ''
     
@@ -545,6 +570,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         pipeline_deals = None
         custom_fields = {}
+        stages_map = {}
         
         if PIPEDRIVE_API_TOKEN:
             with st.spinner("📡 Loading pipeline deals from Pipedrive..."):
@@ -553,8 +579,9 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 if pipeline_deals:
                     st.success(f"✅ Loaded {len(pipeline_deals)} pipeline deals")
                     
-                    # Get custom field keys
+                    # Get custom field keys and stages map
                     custom_fields = get_pipedrive_custom_field_keys()
+                    stages_map = get_pipedrive_stages_map()
                 else:
                     st.warning("⚠️ Could not load Pipedrive pipeline deals")
         else:
@@ -571,7 +598,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         if pipeline_deals:
             for deal in pipeline_deals:
                 # Get stage info and check if should be included
-                stage_name, probability = get_deal_stage_info(deal)
+                stage_name, probability = get_deal_stage_info(deal, stages_map)
                 
                 # Skip deals from early stages (stage_name = None means exclude)
                 if stage_name is None:
@@ -660,7 +687,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         if pipeline_deals:
             for deal in pipeline_deals:
                 # Get stage info and check if should be included
-                stage_name, probability_factor = get_deal_stage_info(deal)
+                stage_name, probability_factor = get_deal_stage_info(deal, stages_map)
                 
                 # Skip deals from early stages (stage_name = None means exclude)
                 if stage_name is None:
