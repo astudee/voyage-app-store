@@ -127,6 +127,23 @@ def get_pipedrive_custom_field_keys():
     except Exception as e:
         return {}
 
+def get_deal_probability_factor(stage_name):
+    """Get probability factor based on deal stage"""
+    if not stage_name:
+        return 0.33  # Default
+    
+    stage_lower = stage_name.lower()
+    
+    # Map stage names to probability factors
+    if 'forecast' in stage_lower:
+        return 0.75
+    elif 'proposal' in stage_lower or 'sow' in stage_lower or 'resourcing' in stage_lower:
+        return 0.50
+    elif 'qualified' in stage_lower:
+        return 0.33
+    else:
+        return 0.33  # Default for unknown stages
+
 # ============================================================
 # DATE RANGE SELECTION
 # ============================================================
@@ -595,6 +612,87 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         results_section3_df = pd.DataFrame(results_section3)
         
+        # ============================================================
+        # BUILD SECTION 4: PIPELINE DEALS WITH FACTORING
+        # ============================================================
+        
+        results_section4 = []
+        
+        if PIPEDRIVE_API_TOKEN and pipeline_deals:
+            for deal in pipeline_deals:
+                org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
+                deal_name = deal.get('title', 'Unknown')
+                deal_value = deal.get('value', 0)
+                
+                # Get stage name for probability factor
+                stage_name = deal.get('stage_id', {}).get('name', '') if isinstance(deal.get('stage_id'), dict) else ''
+                probability_factor = get_deal_probability_factor(stage_name)
+                
+                # Get start date and duration from custom fields (same logic as Section 3)
+                start_date_str = None
+                duration_months = 3  # Default
+                
+                if 'project_start_date' in custom_fields:
+                    start_date_str = deal.get(custom_fields['project_start_date'])
+                
+                if 'project_duration' in custom_fields:
+                    duration = deal.get(custom_fields['project_duration'])
+                    if duration:
+                        try:
+                            duration_months = int(duration)
+                        except:
+                            duration_months = 3
+                
+                # Determine start month (same logic as Section 3)
+                if start_date_str:
+                    try:
+                        project_start = pd.to_datetime(start_date_str)
+                        start_period = pd.Period(project_start, freq='M')
+                    except:
+                        close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                        if close_date_str:
+                            close_date = pd.to_datetime(close_date_str)
+                            start_period = pd.Period(close_date, freq='M') + 1
+                        else:
+                            continue
+                else:
+                    close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                    if close_date_str:
+                        close_date = pd.to_datetime(close_date_str)
+                        start_period = pd.Period(close_date, freq='M') + 1
+                    else:
+                        continue
+                
+                # Factored deal value
+                factored_value = deal_value * probability_factor
+                
+                # Straight-line monthly revenue (factored)
+                monthly_revenue = factored_value / duration_months if duration_months > 0 else factored_value
+                
+                # Build row
+                row_data = {
+                    'Client': org_name,
+                    'Project': deal_name,
+                    'Factor': f"{int(probability_factor * 100)}%"
+                }
+                
+                # Add monthly revenue for duration
+                for period in forecast_months:
+                    month_label = period.strftime('%Y-%m')
+                    
+                    # Check if this month falls within the project duration
+                    if start_period <= period < (start_period + duration_months):
+                        if metric_type == "Billable Hours":
+                            row_data[month_label] = 0  # No hours for pipeline
+                        else:
+                            row_data[month_label] = monthly_revenue
+                    else:
+                        row_data[month_label] = 0
+                
+                results_section4.append(row_data)
+        
+        results_section4_df = pd.DataFrame(results_section4)
+        
         st.success(f"✅ Generated forecast for {len(results_section1_df)} projects")
     
     # ============================================================
@@ -738,6 +836,52 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         st.divider()
     
+    # ============================================================
+    # SECTION 4: PIPELINE DEALS WITH FACTORING
+    # ============================================================
+    
+    if not results_section4_df.empty:
+        st.subheader("Section 4: Higher Probability Deals (With Factoring)")
+        if metric_type == "Billable Hours":
+            st.caption("Hours view: Pipeline deals have no hours assigned")
+        else:
+            st.caption("Revenue view: Deal values factored by probability (Forecast=75%, Proposal/SOW/Resourcing=50%, Qualified=33%)")
+        
+        # Add totals row for Section 4
+        totals_row_s4 = {
+            'Client': '---',
+            'Project': 'TOTAL',
+            'Factor': ''
+        }
+        for period in forecast_months:
+            month_label = period.strftime('%Y-%m')
+            totals_row_s4[month_label] = results_section4_df[month_label].sum()
+        
+        # Append totals row
+        display_s4_df = pd.concat([results_section4_df, pd.DataFrame([totals_row_s4])], ignore_index=True)
+        
+        # Format display
+        if metric_type == "Billable Hours":
+            st.dataframe(
+                display_s4_df.style.format({
+                    col: '{:.1f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Factor']
+                }),
+                hide_index=True,
+                use_container_width=True,
+                height=400
+            )
+        else:
+            st.dataframe(
+                display_s4_df.style.format({
+                    col: '${:,.0f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Factor']
+                }),
+                hide_index=True,
+                use_container_width=True,
+                height=400
+            )
+        
+        st.divider()
+    
     # Excel export
     st.divider()
     st.subheader("📥 Export Forecast")
@@ -751,6 +895,9 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             
             if not results_section3_df.empty:
                 display_s3_df.to_excel(writer, sheet_name='Section_3_Pipeline', index=False)
+            
+            if not results_section4_df.empty:
+                display_s4_df.to_excel(writer, sheet_name='Section_4_Pipeline_Factored', index=False)
         
         excel_data = output.getvalue()
         filename = f"revenue_forecast_{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.xlsx"
