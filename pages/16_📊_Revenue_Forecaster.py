@@ -6,6 +6,7 @@ Project-level revenue forecast combining BigTime actuals (past) with Assignment 
 import streamlit as st
 import pandas as pd
 import sys
+import requests
 from datetime import date, datetime
 from dateutil.relativedelta import relativedelta
 from io import BytesIO
@@ -27,9 +28,11 @@ st.markdown("Project-level revenue forecast: Actuals (past) + Plan (future)")
 # Config from secrets
 try:
     CONFIG_SHEET_ID = st.secrets["SHEET_CONFIG_ID"]
+    PIPEDRIVE_API_TOKEN = st.secrets.get("PIPEDRIVE_API_TOKEN", None)
 except:
     import credentials
     CONFIG_SHEET_ID = credentials.get("SHEET_CONFIG_ID")
+    PIPEDRIVE_API_TOKEN = None
 
 # ============================================================
 # HELPER FUNCTIONS
@@ -40,6 +43,89 @@ def normalize_project_id(pid):
     if pd.isna(pid):
         return None
     return str(pid).strip()
+
+def fetch_pipedrive_deals():
+    """Fetch pipeline deals from Pipedrive"""
+    if not PIPEDRIVE_API_TOKEN:
+        return None
+    
+    base_url = "https://api.pipedrive.com/v1"
+    url = f"{base_url}/deals"
+    
+    params = {
+        'api_token': PIPEDRIVE_API_TOKEN,
+        'status': 'open',  # Pipeline deals
+        'start': 0,
+        'limit': 500
+    }
+    
+    all_deals = []
+    
+    try:
+        while True:
+            response = requests.get(url, params=params, timeout=30)
+            
+            if response.status_code != 200:
+                return None
+            
+            data = response.json()
+            
+            if not data.get('success'):
+                return None
+            
+            deals = data.get('data', [])
+            if not deals:
+                break
+            
+            all_deals.extend(deals)
+            
+            # Check pagination
+            additional_data = data.get('additional_data', {})
+            pagination = additional_data.get('pagination', {})
+            if not pagination.get('more_items_in_collection'):
+                break
+            
+            params['start'] = pagination.get('next_start', 0)
+        
+        return all_deals
+    
+    except Exception as e:
+        st.error(f"❌ Error fetching Pipedrive deals: {e}")
+        return None
+
+def get_pipedrive_custom_field_keys():
+    """Get custom field keys from Pipedrive"""
+    if not PIPEDRIVE_API_TOKEN:
+        return {}
+    
+    base_url = "https://api.pipedrive.com/v1"
+    url = f"{base_url}/dealFields"
+    
+    params = {'api_token': PIPEDRIVE_API_TOKEN}
+    
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                fields = data.get('data', [])
+                
+                field_map = {}
+                for field in fields:
+                    name = field.get('name', '').lower()
+                    key = field.get('key')
+                    
+                    if 'project start date' in name or 'start date' in name:
+                        field_map['project_start_date'] = key
+                    elif 'project duration' in name or 'duration' in name:
+                        field_map['project_duration'] = key
+                
+                return field_map
+        
+        return {}
+    
+    except Exception as e:
+        return {}
 
 # ============================================================
 # DATE RANGE SELECTION
@@ -421,6 +507,94 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         results_section2_df = pd.DataFrame(results_section2)
         
+        # ============================================================
+        # BUILD SECTION 3: PIPELINE DEALS
+        # ============================================================
+        
+        results_section3 = []
+        
+        if PIPEDRIVE_API_TOKEN:
+            with st.spinner("📡 Loading pipeline deals from Pipedrive..."):
+                pipeline_deals = fetch_pipedrive_deals()
+                
+                if pipeline_deals:
+                    st.success(f"✅ Loaded {len(pipeline_deals)} pipeline deals")
+                    
+                    # Get custom field keys
+                    custom_fields = get_pipedrive_custom_field_keys()
+                    
+                    for deal in pipeline_deals:
+                        org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
+                        deal_name = deal.get('title', 'Unknown')
+                        deal_value = deal.get('value', 0)
+                        
+                        # Get start date and duration from custom fields
+                        start_date_str = None
+                        duration_months = 3  # Default
+                        
+                        if 'project_start_date' in custom_fields:
+                            start_date_str = deal.get(custom_fields['project_start_date'])
+                        
+                        if 'project_duration' in custom_fields:
+                            duration = deal.get(custom_fields['project_duration'])
+                            if duration:
+                                try:
+                                    duration_months = int(duration)
+                                except:
+                                    duration_months = 3
+                        
+                        # Determine start month
+                        if start_date_str:
+                            try:
+                                project_start = pd.to_datetime(start_date_str)
+                                start_period = pd.Period(project_start, freq='M')
+                            except:
+                                # Fall back to close date + 1 month
+                                close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                                if close_date_str:
+                                    close_date = pd.to_datetime(close_date_str)
+                                    start_period = pd.Period(close_date, freq='M') + 1
+                                else:
+                                    continue  # Skip if no dates
+                        else:
+                            # Use close date + 1 month
+                            close_date_str = deal.get('expected_close_date') or deal.get('close_time')
+                            if close_date_str:
+                                close_date = pd.to_datetime(close_date_str)
+                                start_period = pd.Period(close_date, freq='M') + 1
+                            else:
+                                continue  # Skip if no dates
+                        
+                        # Straight-line monthly revenue
+                        monthly_revenue = deal_value / duration_months if duration_months > 0 else deal_value
+                        
+                        # Build row
+                        row_data = {
+                            'Client': org_name,
+                            'Project': deal_name
+                        }
+                        
+                        # Add monthly revenue for duration
+                        for period in forecast_months:
+                            month_label = period.strftime('%Y-%m')
+                            
+                            # Check if this month falls within the project duration
+                            if start_period <= period < (start_period + duration_months):
+                                if metric_type == "Billable Hours":
+                                    row_data[month_label] = 0  # No hours for pipeline
+                                else:
+                                    row_data[month_label] = monthly_revenue
+                            else:
+                                row_data[month_label] = 0
+                        
+                        results_section3.append(row_data)
+                else:
+                    st.warning("⚠️ Could not load Pipedrive pipeline deals")
+        else:
+            st.info("ℹ️ Pipedrive API token not configured - Section 3 will be empty")
+        
+        results_section3_df = pd.DataFrame(results_section3)
+        
         st.success(f"✅ Generated forecast for {len(results_section1_df)} projects")
     
     # ============================================================
@@ -517,27 +691,52 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             height=400
         )
     
-    # Show variance if revenue view
-    if metric_type == "Billable Revenue ($)":
-        st.divider()
-        st.subheader("📊 Revenue Timing Impact")
+    st.divider()
+    
+    # ============================================================
+    # SECTION 3: PIPELINE DEALS
+    # ============================================================
+    
+    if not results_section3_df.empty:
+        st.subheader("Section 3: Higher Probability Deals (Without Factoring)")
+        if metric_type == "Billable Hours":
+            st.caption("Hours view: Pipeline deals have no hours assigned")
+        else:
+            st.caption("Revenue view: Deal value spread evenly across project duration (no probability factoring)")
         
-        variance_data = {'Metric': 'Variance (Section 2 - Section 1)'}
+        # Add totals row for Section 3
+        totals_row_s3 = {
+            'Client': '---',
+            'Project': 'TOTAL'
+        }
         for period in forecast_months:
             month_label = period.strftime('%Y-%m')
-            variance_data[month_label] = totals_row_s2[month_label] - totals_row_s1[month_label]
+            totals_row_s3[month_label] = results_section3_df[month_label].sum()
         
-        variance_df = pd.DataFrame([variance_data])
+        # Append totals row
+        display_s3_df = pd.concat([results_section3_df, pd.DataFrame([totals_row_s3])], ignore_index=True)
         
-        st.dataframe(
-            variance_df.style.format({
-                col: '${:+,.0f}' for col in variance_df.columns if col != 'Metric'
-            }),
-            hide_index=True,
-            use_container_width=True
-        )
+        # Format display
+        if metric_type == "Billable Hours":
+            st.dataframe(
+                display_s3_df.style.format({
+                    col: '{:.1f}' for col in display_s3_df.columns if col not in ['Client', 'Project']
+                }),
+                hide_index=True,
+                use_container_width=True,
+                height=400
+            )
+        else:
+            st.dataframe(
+                display_s3_df.style.format({
+                    col: '${:,.0f}' for col in display_s3_df.columns if col not in ['Client', 'Project']
+                }),
+                hide_index=True,
+                use_container_width=True,
+                height=400
+            )
         
-        st.caption("Positive = Fixed fee timing creates revenue acceleration | Negative = Fixed fee timing creates revenue delay")
+        st.divider()
     
     # Excel export
     st.divider()
@@ -550,8 +749,8 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             display_s1_df.to_excel(writer, sheet_name='Section_1_Hours_Based', index=False)
             display_s2_df.to_excel(writer, sheet_name='Section_2_Fixed_Fee', index=False)
             
-            if metric_type == "Billable Revenue ($)":
-                variance_df.to_excel(writer, sheet_name='Revenue_Timing_Impact', index=False)
+            if not results_section3_df.empty:
+                display_s3_df.to_excel(writer, sheet_name='Section_3_Pipeline', index=False)
         
         excel_data = output.getvalue()
         filename = f"revenue_forecast_{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.xlsx"
