@@ -627,7 +627,8 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 # Build row
                 row_data = {
                     'Client': org_name,
-                    'Project': deal_name
+                    'Project': deal_name,
+                    'Stage': stage_name if stage_name else 'Unknown'
                 }
                 
                 # Add monthly revenue for duration
@@ -714,6 +715,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                 row_data = {
                     'Client': org_name,
                     'Project': deal_name,
+                    'Stage': stage_name if stage_name else 'Unknown',
                     'Factor': f"{int(probability_factor * 100)}%"
                 }
                 
@@ -846,7 +848,8 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         # Add totals row for Section 3
         totals_row_s3 = {
             'Client': '---',
-            'Project': 'TOTAL'
+            'Project': 'TOTAL',
+            'Stage': ''
         }
         for period in forecast_months:
             month_label = period.strftime('%Y-%m')
@@ -859,7 +862,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         if metric_type == "Billable Hours":
             st.dataframe(
                 display_s3_df.style.format({
-                    col: '{:.1f}' for col in display_s3_df.columns if col not in ['Client', 'Project']
+                    col: '{:.1f}' for col in display_s3_df.columns if col not in ['Client', 'Project', 'Stage']
                 }),
                 hide_index=True,
                 use_container_width=True,
@@ -868,7 +871,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         else:
             st.dataframe(
                 display_s3_df.style.format({
-                    col: '${:,.0f}' for col in display_s3_df.columns if col not in ['Client', 'Project']
+                    col: '${:,.0f}' for col in display_s3_df.columns if col not in ['Client', 'Project', 'Stage']
                 }),
                 hide_index=True,
                 use_container_width=True,
@@ -892,6 +895,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         totals_row_s4 = {
             'Client': '---',
             'Project': 'TOTAL',
+            'Stage': '',
             'Factor': ''
         }
         for period in forecast_months:
@@ -905,7 +909,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         if metric_type == "Billable Hours":
             st.dataframe(
                 display_s4_df.style.format({
-                    col: '{:.1f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Factor']
+                    col: '{:.1f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Stage', 'Factor']
                 }),
                 hide_index=True,
                 use_container_width=True,
@@ -914,7 +918,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         else:
             st.dataframe(
                 display_s4_df.style.format({
-                    col: '${:,.0f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Factor']
+                    col: '${:,.0f}' for col in display_s4_df.columns if col not in ['Client', 'Project', 'Stage', 'Factor']
                 }),
                 hide_index=True,
                 use_container_width=True,
@@ -922,6 +926,84 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             )
         
         st.divider()
+    
+    # ============================================================
+    # SECTION 5: UNIFIED FACTORED FORECAST
+    # ============================================================
+    
+    st.subheader("Section 5: Unified Factored Forecast")
+    if metric_type == "Billable Hours":
+        st.caption("Hours view: Won deals (Section 2) + Pipeline deals (Section 4)")
+    else:
+        st.caption("Revenue view: Won deals at 100% + Pipeline deals factored by probability")
+    
+    # Build Section 5 by combining Section 2 (won) + Section 4 (pipeline factored)
+    results_section5 = []
+    
+    # Add won deals from Section 2 (at 100%)
+    for _, row in results_section2_df.iterrows():
+        row_data = {
+            'Client': row['Client'],
+            'Project': row['Project'],
+            'Stage': 'Won',
+            'Factor': '100%'
+        }
+        for period in forecast_months:
+            month_label = period.strftime('%Y-%m')
+            row_data[month_label] = row[month_label]
+        results_section5.append(row_data)
+    
+    # Add pipeline deals from Section 4 (already factored)
+    if not results_section4_df.empty:
+        for _, row in results_section4_df.iterrows():
+            row_data = {
+                'Client': row['Client'],
+                'Project': row['Project'],
+                'Stage': row['Stage'],
+                'Factor': row['Factor']
+            }
+            for period in forecast_months:
+                month_label = period.strftime('%Y-%m')
+                row_data[month_label] = row[month_label]
+            results_section5.append(row_data)
+    
+    results_section5_df = pd.DataFrame(results_section5)
+    
+    # Add totals row for Section 5
+    totals_row_s5 = {
+        'Client': '---',
+        'Project': 'TOTAL',
+        'Stage': '',
+        'Factor': ''
+    }
+    for period in forecast_months:
+        month_label = period.strftime('%Y-%m')
+        totals_row_s5[month_label] = results_section5_df[month_label].sum()
+    
+    # Append totals row
+    display_s5_df = pd.concat([results_section5_df, pd.DataFrame([totals_row_s5])], ignore_index=True)
+    
+    # Format display
+    if metric_type == "Billable Hours":
+        st.dataframe(
+            display_s5_df.style.format({
+                col: '{:.1f}' for col in display_s5_df.columns if col not in ['Client', 'Project', 'Stage', 'Factor']
+            }),
+            hide_index=True,
+            use_container_width=True,
+            height=500
+        )
+    else:
+        st.dataframe(
+            display_s5_df.style.format({
+                col: '${:,.0f}' for col in display_s5_df.columns if col not in ['Client', 'Project', 'Stage', 'Factor']
+            }),
+            hide_index=True,
+            use_container_width=True,
+            height=500
+        )
+    
+    st.divider()
     
     # Excel export
     st.divider()
@@ -939,6 +1021,8 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
             
             if not results_section4_df.empty:
                 display_s4_df.to_excel(writer, sheet_name='Section_4_Pipeline_Factored', index=False)
+            
+            display_s5_df.to_excel(writer, sheet_name='Section_5_Unified_Forecast', index=False)
         
         excel_data = output.getvalue()
         filename = f"revenue_forecast_{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.xlsx"
