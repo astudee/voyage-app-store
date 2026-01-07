@@ -649,7 +649,7 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     st.subheader("📋 Project Details")
     
     display_df = results_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 
+        'Client', 'Project_Name', 'Project_ID', 'Timeline', 'Booking', 'Planned_Revenue', 
         'Fees_to_Date', 'Plan_Match_Pct', 'Plan_Booked_Color', 
         'Fees_Booked_Pct', 'Fees_Booked_Color', 'Duration_Pct'
     ]].copy()
@@ -659,10 +659,11 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     display_df['% Duration'] = display_df['Duration_Pct'].apply(lambda x: f"{x:.0f}%")
     
     display_final = display_df[[
-        'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue',
+        'Client', 'Project_Name', 'Project_ID', 'Timeline', 'Booking', 'Planned_Revenue',
         'Fees_to_Date', 'Plan/Booked', 'Fees/Booked', '% Duration'
     ]].rename(columns={
         'Project_Name': 'Project',
+        'Project_ID': 'BT Project ID',
         'Planned_Revenue': 'Plan',
         'Fees_to_Date': 'Fees to Date'
     })
