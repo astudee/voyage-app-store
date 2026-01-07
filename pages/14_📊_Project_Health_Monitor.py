@@ -290,6 +290,9 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     
     with st.spinner("🔨 Analyzing project health..."):
         
+        # Normalize Project IDs in Assignments first
+        assignments_df['Project_ID_Norm'] = assignments_df['Project ID'].apply(normalize_project_id)
+        
         # DEBUG: Show what we found
         with st.expander("🔍 Debug: Data Summary"):
             st.write(f"**Pipedrive Deals:** {len(pipedrive_deals)} won deals loaded")
@@ -313,9 +316,6 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             unique_project_ids = assignments_df['Project_ID_Norm'].dropna().unique()
             st.write(f"**Unique Project IDs in Assignments:** {len(unique_project_ids)}")
             st.write(unique_project_ids[:20])
-        
-        # Get unique project IDs from Assignments
-        assignments_df['Project_ID_Norm'] = assignments_df['Project ID'].apply(normalize_project_id)
         
         # Identify month columns
         standard_cols = ['Client', 'Project Name', 'Project ID', 'Staff Member', 'Bill Rate', 'Project Status', 'Total']
