@@ -52,19 +52,20 @@ today = date.today()
 default_start = date(today.year, today.month, 1)  # First day of current month
 default_end = default_start + relativedelta(months=12)
 
-# Generate list of months for next 36 months (3 years)
+# Generate list of months: 24 months back + 48 months forward = 72 months total
 month_options = []
-current_month = date(today.year, today.month, 1)
-for i in range(36):
-    month_options.append({
-        'label': current_month.strftime('%Y-%m'),
-        'value': current_month
-    })
-    current_month = current_month + relativedelta(months=1)
+start_month = date(today.year, today.month, 1) - relativedelta(months=24)  # 2 years back
 
-# Find default indices
-default_start_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_start), 0)
-default_end_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_end), 12)
+for i in range(72):  # 6 years total (2 back + 4 forward)
+    month_options.append({
+        'label': start_month.strftime('%Y-%m'),
+        'value': start_month
+    })
+    start_month = start_month + relativedelta(months=1)
+
+# Find default indices (current month for start, +12 months for end)
+default_start_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_start), 24)
+default_end_idx = next((i for i, m in enumerate(month_options) if m['value'] == default_end), 36)
 
 col1, col2 = st.columns(2)
 with col1:
@@ -322,54 +323,40 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
     
     st.info("📊 = Actual (BigTime) | 📅 = Plan (Assignments)")
     
-    # Main table
-    st.subheader("Section 1: Project Forecast")
+    # Main table with totals row at bottom
+    st.subheader("Project Forecast")
     
-    # Format display
-    if metric_type == "Billable Hours":
-        st.dataframe(
-            results_df.style.format({
-                col: '{:.1f}' for col in results_df.columns if col not in ['Client', 'Project', 'Project_ID']
-            }),
-            hide_index=True,
-            use_container_width=True,
-            height=600
-        )
-    else:
-        st.dataframe(
-            results_df.style.format({
-                col: '${:,.0f}' for col in results_df.columns if col not in ['Client', 'Project', 'Project_ID']
-            }),
-            hide_index=True,
-            use_container_width=True,
-            height=600
-        )
-    
-    # Monthly totals
-    st.subheader("Section 2: Monthly Totals")
-    
-    totals_row = {'Metric': 'Total'}
+    # Add totals row
+    totals_row = {
+        'Client': '---',
+        'Project': 'TOTAL',
+        'Project_ID': ''
+    }
     for period in forecast_months:
         month_label = period.strftime('%Y-%m')
         totals_row[month_label] = results_df[month_label].sum()
     
-    totals_df = pd.DataFrame([totals_row])
+    # Append totals row
+    display_df = pd.concat([results_df, pd.DataFrame([totals_row])], ignore_index=True)
     
+    # Format display
     if metric_type == "Billable Hours":
         st.dataframe(
-            totals_df.style.format({
-                col: '{:,.0f}' for col in totals_df.columns if col != 'Metric'
+            display_df.style.format({
+                col: '{:.1f}' for col in display_df.columns if col not in ['Client', 'Project', 'Project_ID']
             }),
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            height=600
         )
     else:
         st.dataframe(
-            totals_df.style.format({
-                col: '${:,.0f}' for col in totals_df.columns if col != 'Metric'
+            display_df.style.format({
+                col: '${:,.0f}' for col in display_df.columns if col not in ['Client', 'Project', 'Project_ID']
             }),
             hide_index=True,
-            use_container_width=True
+            use_container_width=True,
+            height=600
         )
     
     # Excel export
@@ -380,8 +367,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         output = BytesIO()
         
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            results_df.to_excel(writer, sheet_name='Project_Forecast', index=False)
-            totals_df.to_excel(writer, sheet_name='Monthly_Totals', index=False)
+            display_df.to_excel(writer, sheet_name='Revenue_Forecast', index=False)
         
         excel_data = output.getvalue()
         filename = f"revenue_forecast_{start_date.strftime('%Y%m')}_{end_date.strftime('%Y%m')}.xlsx"
