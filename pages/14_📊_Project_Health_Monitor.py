@@ -96,6 +96,30 @@ def get_plan_match_status(match_pct):
     else:
         return '🔴'
 
+def get_plan_booked_color(plan_booked_pct):
+    """Get color for Plan/Booked column"""
+    if 98 <= plan_booked_pct <= 102:
+        return '🟢'
+    elif plan_booked_pct > 102:
+        return '🔴'
+    elif 80 <= plan_booked_pct < 98:
+        return '🟡'
+    else:  # < 80
+        return '🔵'
+
+def get_fees_booked_color(fees_booked_pct, duration_pct):
+    """Get color for Fees/Booked column based on comparison to % Duration"""
+    variance = fees_booked_pct - duration_pct
+    
+    if abs(variance) <= 3:
+        return '🟢'  # Within 3% of duration
+    elif variance > 3:
+        return '🔴'  # More than 3% ahead of schedule
+    elif -10 <= variance < -3:
+        return '🟡'  # 3-10% behind schedule
+    else:  # variance < -10
+        return '🔵'  # More than 10% behind schedule
+
 def fetch_pipedrive_deals():
     """Fetch won deals from Pipedrive"""
     base_url = "https://api.pipedrive.com/v1"
@@ -527,6 +551,10 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             # Plan Match Status
             plan_match_status = get_plan_match_status(plan_booked_pct)
             
+            # Color statuses
+            plan_booked_color = get_plan_booked_color(plan_booked_pct)
+            fees_booked_color = get_fees_booked_color(fees_booked_pct, duration_pct)
+            
             results.append({
                 'Client': proj['Client'],
                 'Project_Name': proj['Project_Name'],
@@ -536,8 +564,10 @@ if st.button("📊 Generate Project Health Report", type="primary"):
                 'Planned_Revenue': planned_revenue,
                 'Plan_Match_Pct': plan_booked_pct,
                 'Plan_Match_Status': plan_match_status,
+                'Plan_Booked_Color': plan_booked_color,
                 'Fees_to_Date': fees_to_date,
                 'Fees_Booked_Pct': fees_booked_pct,
+                'Fees_Booked_Color': fees_booked_color,
                 'Duration_Pct': duration_pct,
                 'Project_Status': project_status,
                 'Start_Date': start_date,
@@ -620,11 +650,12 @@ if st.button("📊 Generate Project Health Report", type="primary"):
     
     display_df = results_df[[
         'Client', 'Project_Name', 'Timeline', 'Booking', 'Planned_Revenue', 
-        'Fees_to_Date', 'Plan_Match_Pct', 'Fees_Booked_Pct', 'Duration_Pct'
+        'Fees_to_Date', 'Plan_Match_Pct', 'Plan_Booked_Color', 
+        'Fees_Booked_Pct', 'Fees_Booked_Color', 'Duration_Pct'
     ]].copy()
     
-    display_df['Plan/Booked'] = display_df['Plan_Match_Pct'].apply(lambda x: f"{x:.0f}%")
-    display_df['Fees/Booked'] = display_df['Fees_Booked_Pct'].apply(lambda x: f"{x:.0f}%")
+    display_df['Plan/Booked'] = display_df['Plan_Booked_Color'] + ' ' + display_df['Plan_Match_Pct'].apply(lambda x: f"{x:.0f}%")
+    display_df['Fees/Booked'] = display_df['Fees_Booked_Color'] + ' ' + display_df['Fees_Booked_Pct'].apply(lambda x: f"{x:.0f}%")
     display_df['% Duration'] = display_df['Duration_Pct'].apply(lambda x: f"{x:.0f}%")
     
     display_final = display_df[[
