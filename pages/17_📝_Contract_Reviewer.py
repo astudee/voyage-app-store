@@ -299,238 +299,98 @@ Remember:
         return None
 
 def create_review_docx(review_text, contract_name):
-    """Create a DOCX file from the review text"""
+    """Create a DOCX file from the review text using python-docx"""
     try:
-        # Create JavaScript file for docx generation
-        js_code = '''
-const { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, LevelFormat } = require('docx');
-const fs = require('fs');
-
-const reviewText = fs.readFileSync('/tmp/review_content.txt', 'utf8');
-const contractName = fs.readFileSync('/tmp/contract_name.txt', 'utf8').trim();
-
-// Parse the review text into sections
-const lines = reviewText.split('\\n');
-const children = [];
-
-// Title
-children.push(new Paragraph({
-    heading: HeadingLevel.TITLE,
-    children: [new TextRun({ text: "Contract Review Report", bold: true })]
-}));
-
-children.push(new Paragraph({
-    children: [new TextRun({ text: `Contract: ${contractName}`, italics: true })]
-}));
-
-children.push(new Paragraph({
-    children: [new TextRun({ text: `Review Date: ${new Date().toLocaleDateString()}`, italics: true })]
-}));
-
-children.push(new Paragraph({ children: [] })); // Blank line
-
-// Process content
-let inBulletSection = false;
-let currentSection = '';
-
-for (const line of lines) {
-    const trimmedLine = line.trim();
-    
-    if (!trimmedLine) {
-        children.push(new Paragraph({ children: [] }));
-        continue;
-    }
-    
-    // Main headings (###)
-    if (trimmedLine.startsWith('### ')) {
-        const headingText = trimmedLine.replace('### ', '').replace(/\\*\\*/g, '');
-        children.push(new Paragraph({
-            heading: HeadingLevel.HEADING_1,
-            spacing: { before: 400, after: 200 },
-            children: [new TextRun({ text: headingText, bold: true })]
-        }));
-        currentSection = headingText;
-        continue;
-    }
-    
-    // Sub-headings (numbered like 1. 2. etc)
-    if (/^\\d+\\.\\s/.test(trimmedLine)) {
-        const subHeadingText = trimmedLine.replace(/^\\d+\\.\\s/, '');
-        children.push(new Paragraph({
-            heading: HeadingLevel.HEADING_2,
-            spacing: { before: 300, after: 150 },
-            children: [new TextRun({ text: trimmedLine, bold: true })]
-        }));
-        continue;
-    }
-    
-    // Bullet points
-    if (trimmedLine.startsWith('• ') || trimmedLine.startsWith('- ')) {
-        const bulletText = trimmedLine.replace(/^[•-]\\s/, '');
+        from docx import Document
+        from docx.shared import Inches, Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.enum.style import WD_STYLE_TYPE
+        import re
         
-        // Parse bold sections
-        const parts = [];
-        let remaining = bulletText;
-        const boldRegex = /\\*\\*([^*]+)\\*\\*/g;
-        let lastIndex = 0;
-        let match;
+        doc = Document()
         
-        while ((match = boldRegex.exec(bulletText)) !== null) {
-            if (match.index > lastIndex) {
-                parts.push(new TextRun({ text: bulletText.substring(lastIndex, match.index) }));
-            }
-            parts.push(new TextRun({ text: match[1], bold: true }));
-            lastIndex = boldRegex.lastIndex;
-        }
-        if (lastIndex < bulletText.length) {
-            parts.push(new TextRun({ text: bulletText.substring(lastIndex) }));
-        }
+        # Set up styles
+        style = doc.styles['Normal']
+        style.font.name = 'Arial'
+        style.font.size = Pt(11)
         
-        if (parts.length === 0) {
-            parts.push(new TextRun({ text: bulletText }));
-        }
+        # Title
+        title = doc.add_heading('Contract Review Report', 0)
+        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        children.push(new Paragraph({
-            bullet: { level: 0 },
-            spacing: { before: 100, after: 100 },
-            children: parts
-        }));
-        continue;
-    }
-    
-    // Proposed Language (indented)
-    if (trimmedLine.startsWith('**Proposed Language:**') || trimmedLine.startsWith('Proposed Language:')) {
-        const langText = trimmedLine.replace(/\\*\\*Proposed Language:\\*\\*|Proposed Language:/, '').trim();
-        children.push(new Paragraph({
-            indent: { left: 720 },
-            spacing: { before: 50, after: 150 },
-            children: [
-                new TextRun({ text: "Proposed Language: ", bold: true }),
-                new TextRun({ text: langText, italics: true })
-            ]
-        }));
-        continue;
-    }
-    
-    // Regular paragraph - parse bold
-    const parts = [];
-    let remaining = trimmedLine;
-    const boldRegex = /\\*\\*([^*]+)\\*\\*/g;
-    let lastIndex = 0;
-    let match;
-    
-    while ((match = boldRegex.exec(trimmedLine)) !== null) {
-        if (match.index > lastIndex) {
-            parts.push(new TextRun({ text: trimmedLine.substring(lastIndex, match.index) }));
-        }
-        parts.push(new TextRun({ text: match[1], bold: true }));
-        lastIndex = boldRegex.lastIndex;
-    }
-    if (lastIndex < trimmedLine.length) {
-        parts.push(new TextRun({ text: trimmedLine.substring(lastIndex) }));
-    }
-    
-    if (parts.length === 0) {
-        parts.push(new TextRun({ text: trimmedLine }));
-    }
-    
-    children.push(new Paragraph({
-        spacing: { after: 120 },
-        children: parts
-    }));
-}
-
-const doc = new Document({
-    styles: {
-        default: {
-            document: {
-                run: { font: "Arial", size: 24 }
-            }
-        },
-        paragraphStyles: [
-            {
-                id: "Title",
-                name: "Title",
-                basedOn: "Normal",
-                run: { size: 48, bold: true, color: "000000", font: "Arial" },
-                paragraph: { spacing: { before: 0, after: 200 }, alignment: AlignmentType.CENTER }
-            },
-            {
-                id: "Heading1",
-                name: "Heading 1",
-                basedOn: "Normal",
-                next: "Normal",
-                quickFormat: true,
-                run: { size: 32, bold: true, color: "1F4E79", font: "Arial" },
-                paragraph: { spacing: { before: 400, after: 200 } }
-            },
-            {
-                id: "Heading2",
-                name: "Heading 2",
-                basedOn: "Normal",
-                next: "Normal",
-                quickFormat: true,
-                run: { size: 26, bold: true, color: "2E75B6", font: "Arial" },
-                paragraph: { spacing: { before: 300, after: 150 } }
-            }
-        ]
-    },
-    numbering: {
-        config: [{
-            reference: "bullet-list",
-            levels: [{
-                level: 0,
-                format: LevelFormat.BULLET,
-                text: "•",
-                alignment: AlignmentType.LEFT,
-                style: { paragraph: { indent: { left: 720, hanging: 360 } } }
-            }]
-        }]
-    },
-    sections: [{
-        properties: {
-            page: {
-                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
-            }
-        },
-        children: children
-    }]
-});
-
-Packer.toBuffer(doc).then(buffer => {
-    fs.writeFileSync('/tmp/review_output.docx', buffer);
-    console.log('Document created successfully');
-}).catch(err => {
-    console.error('Error creating document:', err);
-    process.exit(1);
-});
-'''
+        # Subtitle info
+        subtitle = doc.add_paragraph()
+        subtitle.add_run(f'Contract: {contract_name}').italic = True
+        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        # Write files
-        with open('/tmp/review_content.txt', 'w') as f:
-            f.write(review_text)
+        date_para = doc.add_paragraph()
+        date_para.add_run(f'Review Date: {datetime.now().strftime("%B %d, %Y")}').italic = True
+        date_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
-        with open('/tmp/contract_name.txt', 'w') as f:
-            f.write(contract_name)
+        doc.add_paragraph()  # Blank line
         
-        with open('/tmp/create_review.js', 'w') as f:
-            f.write(js_code)
+        # Process the review text
+        lines = review_text.split('\n')
         
-        # Run node
-        result = subprocess.run(
-            ['node', '/tmp/create_review.js'],
-            capture_output=True,
-            text=True,
-            timeout=60
-        )
-        
-        if result.returncode == 0 and os.path.exists('/tmp/review_output.docx'):
-            with open('/tmp/review_output.docx', 'rb') as f:
-                return f.read()
-        else:
-            st.error(f"Error creating DOCX: {result.stderr}")
-            return None
+        for line in lines:
+            trimmed = line.strip()
             
+            if not trimmed:
+                doc.add_paragraph()
+                continue
+            
+            # Main headings (### HEADING)
+            if trimmed.startswith('### '):
+                heading_text = trimmed.replace('### ', '').replace('**', '')
+                doc.add_heading(heading_text, level=1)
+                continue
+            
+            # Sub-headings (numbered like 1. 2. etc)
+            if re.match(r'^\d+\.\s', trimmed):
+                doc.add_heading(trimmed, level=2)
+                continue
+            
+            # Bullet points
+            if trimmed.startswith('• ') or trimmed.startswith('- ') or trimmed.startswith('* '):
+                bullet_text = re.sub(r'^[•\-\*]\s', '', trimmed)
+                para = doc.add_paragraph(style='List Bullet')
+                
+                # Parse bold sections **text**
+                parts = re.split(r'(\*\*[^*]+\*\*)', bullet_text)
+                for part in parts:
+                    if part.startswith('**') and part.endswith('**'):
+                        para.add_run(part[2:-2]).bold = True
+                    else:
+                        para.add_run(part)
+                continue
+            
+            # Proposed Language (indented)
+            if trimmed.startswith('**Proposed Language:**') or trimmed.startswith('Proposed Language:'):
+                para = doc.add_paragraph()
+                para.paragraph_format.left_indent = Inches(0.5)
+                para.add_run('Proposed Language: ').bold = True
+                lang_text = re.sub(r'\*\*Proposed Language:\*\*|Proposed Language:', '', trimmed).strip()
+                para.add_run(lang_text).italic = True
+                continue
+            
+            # Regular paragraph - parse bold
+            para = doc.add_paragraph()
+            parts = re.split(r'(\*\*[^*]+\*\*)', trimmed)
+            for part in parts:
+                if part.startswith('**') and part.endswith('**'):
+                    para.add_run(part[2:-2]).bold = True
+                else:
+                    para.add_run(part)
+        
+        # Save to bytes
+        output = BytesIO()
+        doc.save(output)
+        output.seek(0)
+        return output.getvalue()
+        
+    except ImportError as e:
+        st.error(f"python-docx not installed: {e}")
+        return None
     except Exception as e:
         st.error(f"Error creating DOCX: {e}")
         return None
