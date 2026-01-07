@@ -7,3 +7,5 @@ requests
 streamlit
 openpyxl
 reportlab
+PyPDF2
+python-docx
