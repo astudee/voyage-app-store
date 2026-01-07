@@ -231,45 +231,48 @@ YOUR EVALUATION:"""
 # Date selector - centered at top of page
 st.markdown("---")
 
-def get_fridays_only():
-    """Generate list of Fridays for date picker"""
-    today = datetime.now().date()
-    fridays = []
-    
-    # Go back 90 days and forward 30 days
-    start = today - timedelta(days=90)
-    end = today + timedelta(days=30)
-    
-    current = start
-    while current <= end:
-        if current.weekday() == 4:  # Friday is 4
-            fridays.append(current)
-        current += timedelta(days=1)
-    
-    return sorted(fridays, reverse=True)
-
-# Get list of Fridays
-fridays = get_fridays_only()
-friday_options = {f.strftime('%Y-%m-%d (Week Ending)'): f for f in fridays}
-
-# Find most recent Friday
-most_recent_friday = max(f for f in fridays if f <= datetime.now().date())
-default_index = fridays.index(most_recent_friday)
+def snap_to_friday(selected_date):
+    """Snap a date to the nearest Friday"""
+    weekday = selected_date.weekday()
+    if weekday == 4:  # Already Friday
+        return selected_date
+    elif weekday < 4:  # Mon-Thu: go forward to Friday
+        days_until_friday = 4 - weekday
+        return selected_date + timedelta(days=days_until_friday)
+    else:  # Sat-Sun: go back to previous Friday
+        days_since_friday = weekday - 4
+        return selected_date - timedelta(days=days_since_friday)
 
 # Center the date selection
 col_left, col_center, col_right = st.columns([1, 2, 1])
 
 with col_center:
-    selected_friday_str = st.selectbox(
-        "📅 Week Ending (Friday)",
-        options=list(friday_options.keys()),
-        index=default_index
+    # Default to most recent Friday
+    today = datetime.now().date()
+    default_friday = snap_to_friday(today)
+    if default_friday > today:
+        default_friday = default_friday - timedelta(days=7)
+    
+    selected_date = st.date_input(
+        "📅 Select a date (will snap to nearest Friday)",
+        value=default_friday,
+        help="Pick any date - it will automatically adjust to the nearest Friday"
     )
     
-    week_ending = friday_options[selected_friday_str]
+    week_ending = snap_to_friday(selected_date)
     week_starting = week_ending - timedelta(days=6)
     
+    if selected_date != week_ending:
+        st.caption(f"📌 Adjusted to Friday: **{week_ending.strftime('%B %d, %Y')}**")
+    
     st.caption(f"**Report Period:** {week_starting.strftime('%A, %B %d, %Y')} through {week_ending.strftime('%A, %B %d, %Y')}")
+    
+    # AI review checkbox
+    review_notes_with_ai = st.checkbox(
+        "🤖 Have AI review billing notes (takes a few minutes)",
+        value=False,
+        help="Uses Gemini/Claude AI to check if billing notes meet Voyage professional standards"
+    )
     
     run_review = st.button("🔍 Review Timesheets", type="primary", use_container_width=True)
 
@@ -416,36 +419,6 @@ if run_review:
                         'Date': row.get('Date', ''),
                         'Hours': round(row.get('Hours', 0), 1)
                     })
-            
-            # Check 3: Poor quality notes (billable work only)
-            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Hours', 'Billable', 'Date']):
-                billable_entries = detailed_df[
-                    (detailed_df['Billable'].fillna(0) > 0) &
-                    (detailed_df['Hours'] > 0)
-                ]
-                
-                # Check all billable entries (AI calls are rate-limited internally)
-                progress_text = st.empty()
-                for idx, (_, row) in enumerate(billable_entries.iterrows()):
-                    if idx % 5 == 0:  # Update progress every 5 entries
-                        progress_text.text(f"Reviewing note {idx + 1} of {len(billable_entries)}...")
-                    
-                    note = row.get('Notes', '')
-                    client = row.get('Client', '')
-                    is_poor, reason = check_note_quality_with_ai(note, client)
-                    
-                    if is_poor:
-                        issues['poor_notes'].append({
-                            'Staff': row.get('Staff', ''),
-                            'Client': client,
-                            'Project': row.get('Project', ''),
-                            'Date': row.get('Date', ''),
-                            'Hours': round(row.get('Hours', 0), 1),
-                            'Note': note,
-                            'Reason': reason
-                        })
-                
-                progress_text.empty()
     
     # ============================================================
     # PHASE 5B: CHECK PROJECT OVERRUNS
@@ -534,6 +507,10 @@ if run_review:
                                     month_cols = [col for col in assignments_df.columns if '-' in str(col) and len(str(col)) == 7]
                                     
                                     if month_cols:
+                                        # Convert month columns to numeric, coercing errors to 0
+                                        for col in month_cols:
+                                            assignments_df[col] = pd.to_numeric(assignments_df[col], errors='coerce').fillna(0)
+                                        
                                         # Sum hours across all months for each staff/project
                                         assignments_df['Total_Assigned'] = assignments_df[month_cols].sum(axis=1)
                                         
@@ -599,6 +576,43 @@ if run_review:
             st.warning(f"⚠️ Could not check project overruns: {str(e)}")
     
     # ============================================================
+    # PHASE 5C: AI NOTE REVIEW (OPTIONAL)
+    # ============================================================
+    
+    if review_notes_with_ai:
+        with st.spinner("🤖 AI reviewing billing notes (this takes a few minutes)..."):
+            if not detailed_df.empty:
+                if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Hours', 'Billable', 'Date']):
+                    billable_entries = detailed_df[
+                        (detailed_df['Billable'].fillna(0) > 0) &
+                        (detailed_df['Hours'] > 0)
+                    ]
+                    
+                    # Check all billable entries
+                    progress_text = st.empty()
+                    for idx, (_, row) in enumerate(billable_entries.iterrows()):
+                        if idx % 5 == 0:  # Update progress every 5 entries
+                            progress_text.text(f"Reviewing note {idx + 1} of {len(billable_entries)}...")
+                        
+                        note = row.get('Notes', '')
+                        client = row.get('Client', '')
+                        is_poor, reason = check_note_quality_with_ai(note, client)
+                        
+                        if is_poor:
+                            issues['poor_notes'].append({
+                                'Staff': row.get('Staff', ''),
+                                'Client': client,
+                                'Project': row.get('Project', ''),
+                                'Date': row.get('Date', ''),
+                                'Hours': round(row.get('Hours', 0), 1),
+                                'Note': note,
+                                'Reason': reason
+                            })
+                    
+                    progress_text.empty()
+                    st.success(f"✅ AI reviewed {len(billable_entries)} billing notes, found {len(issues['poor_notes'])} issues")
+    
+    # ============================================================
     # PHASE 6: GENERATE REPORT
     # ============================================================
     
@@ -661,19 +675,7 @@ if run_review:
         else:
             st.success("✅ All client work is billable")
     
-    # 5. Poor Quality Notes
-    with st.expander(f"📝 Poor Quality Notes ({len(issues['poor_notes'])})", expanded=len(issues['poor_notes']) > 0):
-        if issues['poor_notes']:
-            st.write("The following billable notes do not appear to meet Voyage guidelines:")
-            for issue in issues['poor_notes']:
-                st.write(f"**{issue['Staff']}** - {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Hours']} hours")
-                st.write(f"  - Note: \"{issue['Note']}\"")
-                st.write(f"  - Issue: {issue['Reason']}")
-                st.write("")
-        else:
-            st.success("✅ All notes meet quality standards")
-    
-    # 6. Potential Project Overruns
+    # 5. Potential Project Overruns
     with st.expander(f"🚨 Potential Project Overruns ({len(issues['project_overruns'])})", expanded=len(issues['project_overruns']) > 0):
         if issues['project_overruns']:
             st.write("The following staff/project combinations have used 90%+ of assigned hours or have no hours assigned:")
@@ -684,6 +686,21 @@ if run_review:
                     st.write(f"- **{issue['Staff']}** - {issue['Client']} - {issue['Project']} - {issue['Project_ID']} - {issue['Hours_Used']} hours out of {issue['Hours_Assigned']} assigned used ({int(issue['Percentage'])}%)")
         else:
             st.success("✅ No potential project overruns detected")
+    
+    # 6. Poor Quality Notes (only if AI review was enabled)
+    if review_notes_with_ai:
+        with st.expander(f"📝 Poor Quality Notes ({len(issues['poor_notes'])})", expanded=len(issues['poor_notes']) > 0):
+            if issues['poor_notes']:
+                st.write("The following billable notes do not appear to meet Voyage guidelines:")
+                for issue in issues['poor_notes']:
+                    st.write(f"**{issue['Staff']}** - {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Hours']} hours")
+                    st.write(f"  - Note: \"{issue['Note']}\"")
+                    st.write(f"  - Issue: {issue['Reason']}")
+                    st.write("")
+            else:
+                st.success("✅ All notes meet quality standards")
+    else:
+        st.info("💡 AI note review was not enabled. Check the box above and re-run to review billing notes.")
     
     # ============================================================
     # PHASE 7: EXPORT OPTIONS
@@ -844,8 +861,8 @@ else:
         2. **Unsubmitted** - Timesheets not yet submitted or rejected
         3. **Under 40 Hours** - Full-time employees with less than 40 hours
         4. **Non-Billable Client Work** - Client work marked as non-billable
-        5. **Poor Notes** - Billing notes that don't meet professional standards
-        6. **Project Overruns** - Staff/projects with 90%+ hours used or no hours assigned
+        5. **Project Overruns** - Staff/projects with 90%+ hours used or no hours assigned
+        6. **Poor Notes** (optional) - Billing notes that don't meet professional standards
         
         **Data Sources:**
         - BigTime Report 284828 (Unsubmitted Status)
@@ -853,8 +870,8 @@ else:
         - BigTime Report 288578 (Zero Hours Audit)
         - Voyage_Global_Config (Employee list, Assignments)
         
-        **AI Note Review:**
-        Uses Gemini AI to check if billing notes are professional and clear.
+        **AI Note Review (Optional):**
+        Check the box to enable AI-powered review of billing notes. Uses Gemini/Claude AI to check if notes meet Voyage professional standards. This takes a few minutes to run.
         """)
 
 # Email functionality
