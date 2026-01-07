@@ -314,6 +314,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '📝',
+        'name': 'Contract Reviewer',
+        'page': '17_📝_Contract_Reviewer',
+        'description': 'Upload contracts for AI review against Voyage standards',
+        'features': [
+            'Upload PDF, DOC, DOCX or paste text',
+            'Fetch contracts from Google Docs',
+            'Claude AI analyzes against Voyage contract standards',
+            'Section-by-section findings with proposed replacement language',
+            'Downloadable Word document report',
+            'Standards auto-update from Google Docs'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
