@@ -475,13 +475,16 @@ if run_review:
                             all_time_df = get_bigtime_report(284796, all_time_start, all_time_end)
                             
                             if all_time_df is not None and not all_time_df.empty:
+                                # Debug: show BigTime columns
+                                st.caption(f"📋 BigTime columns: {list(all_time_df.columns)[:15]}")
+                                
                                 # Apply same column mapping
                                 for standard_name, possible_names in {
-                                    'Staff': ['Staff Member', 'tmstaffnm'],
+                                    'Staff': ['Staff Member', 'tmstaffnm', 'Staff'],
                                     'Client': ['Client', 'tmclientnm'],
                                     'Project': ['Project', 'tmprojectnm'],
                                     'Hours': ['Billable', 'tmhrsbill', 'Hours'],
-                                    'Project_ID': ['Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID']
+                                    'Project_ID': ['Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID', 'Proj_Sid', 'ProjSid']
                                 }.items():
                                     for possible in possible_names:
                                         if possible in all_time_df.columns and standard_name not in all_time_df.columns:
