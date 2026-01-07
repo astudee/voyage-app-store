@@ -373,18 +373,18 @@ if run_review:
             st.caption(f"📋 Detailed report ALL columns: {list(detailed_df.columns)}")
             
             # Map column names
-            # 'Hours' = TOTAL hours (Input column) - used for under 40 check
+            # 'Hours' = TOTAL hours (tmhrsin/Input column) - used for under 40 check
             # 'Billable' = billable hours - used for project overrun check
             col_mapping = {}
             for standard_name, possible_names in {
                 'Staff': ['Staff Member', 'tmstaffnm'],
                 'Client': ['Client', 'tmclientnm'],
                 'Project': ['Project', 'tmprojectnm'],
-                'Hours': ['Input', 'tmhrs', 'Hours', 'Total Hours', 'TotalHours'],  # Input = total hours entered
-                'Billable': ['Billable', 'tmhrsbill'],  # Billable hours
-                'Billable_Dollars': ['Billable ($)', 'tmchgbillbase'],  # Billable dollars
-                'Date': ['Date', 'tmdt'],
-                'Notes': ['Notes', 'tmnotes'],
+                'Hours': ['tmhrsin', 'Input', 'tmhrs', 'Hours', 'Total Hours', 'TotalHours'],  # tmhrsin = total hours entered
+                'Billable': ['tmhrsbill', 'Billable'],  # Billable hours
+                'Billable_Dollars': ['tmchgbillbase', 'Billable ($)'],  # Billable dollars
+                'Date': ['tmdt', 'Date'],
+                'Notes': ['tmnotes', 'Notes'],
                 'Project_ID': ['tmprojectnm_id', 'Code/ID', 'Project_ID', 'ProjectID']
             }.items():
                 for possible in possible_names:
