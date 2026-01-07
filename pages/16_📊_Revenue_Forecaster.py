@@ -540,10 +540,12 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         results_section2_df = pd.DataFrame(results_section2)
         
         # ============================================================
-        # BUILD SECTION 3: PIPELINE DEALS
+        # LOAD PIPEDRIVE DATA (for Sections 3 & 4)
         # ============================================================
         
-        results_section3 = []
+        pipeline_deals = None
+        stage_probabilities = {}
+        custom_fields = {}
         
         if PIPEDRIVE_API_TOKEN:
             with st.spinner("📡 Loading pipeline deals from Pipedrive..."):
@@ -555,18 +557,29 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                     # Get custom field keys and stage probabilities
                     custom_fields = get_pipedrive_custom_field_keys()
                     stage_probabilities = get_pipedrive_stages()
-                    
-                    for deal in pipeline_deals:
-                        # Get stage ID and check probability
-                        stage_id = deal.get('stage_id')
-                        
-                        # Skip if stage has 0% probability (Early, Qualification in Progress)
-                        if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
-                            continue
-                        
-                        org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
-                        deal_name = deal.get('title', 'Unknown')
-                        deal_value = deal.get('value', 0)
+                else:
+                    st.warning("⚠️ Could not load Pipedrive pipeline deals")
+        else:
+            st.info("ℹ️ Pipedrive API token not configured - Sections 3 & 4 will be empty")
+        
+        # ============================================================
+        # BUILD SECTION 3: PIPELINE DEALS
+        # ============================================================
+        
+        results_section3 = []
+        
+        if pipeline_deals:
+            for deal in pipeline_deals:
+                # Get stage ID and check probability
+                stage_id = deal.get('stage_id')
+                
+                # Skip if stage has 0% probability (Early, Qualification in Progress)
+                if stage_id not in stage_probabilities or stage_probabilities[stage_id] == 0:
+                    continue
+                
+                org_name = deal.get('org_id', {}).get('name', 'Unknown') if isinstance(deal.get('org_id'), dict) else 'Unknown'
+                deal_name = deal.get('title', 'Unknown')
+                deal_value = deal.get('value', 0)
                         
                         # Get start date and duration from custom fields
                         start_date_str = None
@@ -628,10 +641,6 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
                                 row_data[month_label] = 0
                         
                         results_section3.append(row_data)
-                else:
-                    st.warning("⚠️ Could not load Pipedrive pipeline deals")
-        else:
-            st.info("ℹ️ Pipedrive API token not configured - Section 3 will be empty")
         
         results_section3_df = pd.DataFrame(results_section3)
         
@@ -641,7 +650,7 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         
         results_section4 = []
         
-        if PIPEDRIVE_API_TOKEN and pipeline_deals:
+        if pipeline_deals:
             for deal in pipeline_deals:
                 # Get stage ID and probability
                 stage_id = deal.get('stage_id')
