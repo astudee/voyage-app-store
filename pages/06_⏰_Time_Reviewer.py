@@ -527,13 +527,27 @@ if run_review:
                                             total_col = col
                                             break
                                     
+                                    def normalize_project_id(pid):
+                                        """Normalize project ID to string without decimals"""
+                                        if pd.isna(pid) or pid == '' or pid is None:
+                                            return ''
+                                        # Convert to string
+                                        pid_str = str(pid)
+                                        # Remove .0 suffix if present (from float conversion)
+                                        if pid_str.endswith('.0'):
+                                            pid_str = pid_str[:-2]
+                                        # Remove any decimal portion
+                                        if '.' in pid_str:
+                                            pid_str = pid_str.split('.')[0]
+                                        return pid_str.strip()
+                                    
                                     if staff_col and proj_id_col and total_col:
                                         # Convert Total to numeric
                                         assignments_df[total_col] = pd.to_numeric(assignments_df[total_col], errors='coerce').fillna(0)
                                         
                                         for _, row in assignments_df.iterrows():
-                                            staff = row.get(staff_col, '')
-                                            project_id = str(row.get(proj_id_col, ''))
+                                            staff = str(row.get(staff_col, '')).strip()
+                                            project_id = normalize_project_id(row.get(proj_id_col, ''))
                                             total_assigned = row.get(total_col, 0)
                                             
                                             if staff and project_id:
@@ -543,16 +557,21 @@ if run_review:
                                                 else:
                                                     assigned_lookup[key] = total_assigned
                                         
+                                        # Debug: show sample of assigned lookup
+                                        if assigned_lookup:
+                                            sample_keys = list(assigned_lookup.items())[:3]
+                                            st.caption(f"📋 Assignments loaded: {len(assigned_lookup)} staff/project combos (e.g., {sample_keys[0] if sample_keys else 'none'})")
+                                        
                                         # Build set of staff/project combos that had activity THIS WEEK
                                         this_week_combos = set()
                                         for _, row in staff_project_hours.iterrows():
-                                            staff = row['Staff']
+                                            staff = str(row['Staff']).strip()
                                             project = row['Project']
                                             this_week_combos.add((staff, project))
                                         
                                         # Check ONLY staff/project combos that had activity this week
                                         for _, row in lifetime_hours.iterrows():
-                                            staff = row['Staff']
+                                            staff = str(row['Staff']).strip()
                                             client = row['Client']
                                             project = row['Project']
                                             
@@ -560,11 +579,19 @@ if run_review:
                                             if (staff, project) not in this_week_combos:
                                                 continue
                                             
-                                            project_id = str(row.get('Project_ID', '')) if 'Project_ID' in row else ''
+                                            project_id = normalize_project_id(row.get('Project_ID', '')) if 'Project_ID' in row else ''
                                             hours_used = row['Lifetime_Hours_Used']
                                             
                                             # Look up assigned hours
                                             assigned = assigned_lookup.get((staff, project_id), 0)
+                                            
+                                            # Debug first mismatch
+                                            if assigned == 0 and hours_used > 0 and len(issues['project_overruns']) == 0:
+                                                st.caption(f"🔍 Debug - Looking for: staff='{staff}', project_id='{project_id}'")
+                                                # Check if staff exists with any project
+                                                staff_keys = [k for k in assigned_lookup.keys() if k[0] == staff]
+                                                if staff_keys:
+                                                    st.caption(f"   Found staff with project_ids: {[k[1] for k in staff_keys[:3]]}")
                                             
                                             # Check conditions:
                                             # (a) No hours assigned (and has used hours)
@@ -596,6 +623,8 @@ if run_review:
                                                         'Percentage': pct,
                                                         'Issue': f'{int(pct)}% of assigned hours used'
                                                     })
+                                    else:
+                                        st.warning(f"⚠️ Missing columns - staff_col: {staff_col}, proj_id_col: {proj_id_col}, total_col: {total_col}")
                 
                 st.success(f"✅ Checked {len(issues['project_overruns'])} potential project overruns")
             
