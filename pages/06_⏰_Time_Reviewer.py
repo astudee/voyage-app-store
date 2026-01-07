@@ -81,47 +81,8 @@ def check_note_quality_with_ai(note_text, client_name='', max_retries=2):
     if not note_text or len(note_text.strip()) < 10:
         return True, "Note too short (less than 10 characters)"
     
-    note_lower = note_text.lower().strip()
-    
-    # FIRST: Check for billable notes that should be internal/non-billable
-    # These are EGREGIOUS errors that should always be flagged
-    internal_work_patterns = [
-        ('voyage team meeting', 'Internal Voyage meetings should not be included in billing notes'),
-        ('internal meeting', 'Internal meetings should not be included in billing notes'),
-        ('voyage meeting', 'Internal Voyage meetings should not be included in billing notes'),
-        ('all-hands', 'Internal all-hands meetings should not be included in billing notes'),
-        ('all hands', 'Internal all-hands meetings should not be included in billing notes'),
-        ('interview', 'Candidate interviews should not be included in billing notes'),
-        ('interviewing', 'Candidate interviews should not be included in billing notes'),
-        ('recruiting', 'Recruiting work should not be included in billing notes'),
-        ('team outing', 'Social/team events should not be included in billing notes'),
-        ('happy hour', 'Social events should not be included in billing notes'),
-        ('social event', 'Social events should not be included in billing notes'),
-        ('1:1', 'Internal 1:1s should not be included in billing notes'),
-        ('one-on-one', 'Internal 1:1s should not be included in billing notes'),
-        ('1-on-1', 'Internal 1:1s should not be included in billing notes'),
-        ('travel time', 'Travel time should not be included in billing notes'),
-        ('traveling to', 'Travel time should not be included in billing notes'),
-        ('commute', 'Commute time should not be included in billing notes'),
-        ('timesheet', 'Timesheet admin should not be included in billing notes'),
-        ('time sheet', 'Timesheet admin should not be included in billing notes'),
-        ('admin work', 'Administrative work should not be included in billing notes'),
-        ('administrative', 'Administrative work should not be included in billing notes'),
-        ('training', 'Training should not be included in billing notes unless client-provided'),
-        ('voyage training', 'Internal training should not be included in billing notes'),
-        ('internal training', 'Internal training should not be included in billing notes'),
-        ('onboarding', 'Onboarding should not be included in billing notes'),
-    ]
-    
-    for pattern, reason in internal_work_patterns:
-        if pattern in note_lower:
-            return True, f"BILLABLE ERROR - {reason}"
-    
-    # SECOND: Use AI for general quality review (be lenient)
     # Create detailed prompt based on Voyage guidelines
     prompt = f"""You are reviewing a billing note for Voyage Advisory, a consulting firm.
-
-IMPORTANT: Only flag EGREGIOUS violations. Be lenient - most notes should pass.
 
 VOYAGE BILLING NOTE GUIDELINES:
 - Use clear, specific, and action-oriented language
@@ -130,41 +91,36 @@ VOYAGE BILLING NOTE GUIDELINES:
 - Limit to 1-2 sentences (except PayIt client)
 - Emphasize value of work, not just activity
 - Use client-friendly wording (no internal jargon or acronyms)
+- Similar to what a top-tier law firm would write
 
 BILLING NOTE TO REVIEW:
 Client: {client_name}
 Note: "{note_text}"
 
-EVALUATE: Is this note SEVERELY deficient?
+EVALUATE: Does this note meet Voyage's professional standards?
 
-Respond with ONLY:
-- "ACCEPTABLE" (if note is reasonable, even if not perfect)
-- "POOR - [specific issue]" (ONLY if note is truly bad)
+Respond with ONLY one of these formats:
+- "ACCEPTABLE" (if note meets standards)
+- "POOR - [specific issue]" (if note fails)
 
-Only flag notes that are:
-- Extremely vague (e.g., "stuff", "things", one word like "meeting")
-- Completely unprofessional (e.g., "lol", "whatever")
-- Missing all context (e.g., "worked", "research" with no detail)
+Common issues to flag:
+- Too vague (e.g., "worked on stuff", "meeting", "research")
+- Uses discouraged words (ensure, comprehensive, align, strategy)
+- Too short/no context
+- Unprofessional tone
+- Internal jargon
+- Multiple sentences when not needed
 
-DO NOT flag notes for:
-- Minor wording preferences
-- Using "ensured" or "aligned" if note otherwise has substance
-- Being slightly informal but still clear
-- Missing a period at the end
-- Being 3 sentences instead of 2 if detailed
+Examples of POOR notes:
+- "worked on stuff" → POOR - Too vague, no context
+- "ensured alignment with key priorities" → POOR - Uses vague/discouraged words
+- "meeting" → POOR - Too short, no context
+- "research" → POOR - Too vague
 
-Examples of notes to ACCEPT (even if not perfect):
-- "Meeting with client to discuss project status"
-- "Reviewed and updated the requirements document"
-- "Ensured alignment with client on deliverables for next week"
-- "Research on compliance requirements for the project"
-- "Drafted email to stakeholder regarding timeline"
-
-Examples of notes to FLAG as POOR:
-- "stuff" → POOR - Extremely vague
-- "worked on things" → POOR - No context
-- "lol fixed it" → POOR - Unprofessional
-- "meeting" → POOR - Single word, no context
+Examples of ACCEPTABLE notes:
+- "Reviewed contract terms and drafted redline comments for client review."
+- "Analyzed requirements and prepared project plan for stakeholder meeting."
+- "Collaborated with team to verify accuracy of financial model."
 
 YOUR EVALUATION:"""
     
@@ -176,7 +132,7 @@ YOUR EVALUATION:"""
             
             payload = {
                 'contents': [{'parts': [{'text': prompt}]}],
-                'generationConfig': {'temperature': 0.2, 'maxOutputTokens': 100}
+                'generationConfig': {'temperature': 0.1, 'maxOutputTokens': 100}
             }
             
             response = requests.post(url, json=payload, timeout=15)
@@ -228,75 +184,98 @@ YOUR EVALUATION:"""
         # Claude failed too, fall back to heuristics
         pass
     
-    # Fallback to rule-based heuristics - BE LENIENT
+    # Fallback to rule-based heuristics if both AI calls fail
     note_lower = note_text.lower().strip()
     
-    # Only flag EXTREMELY short notes
-    if len(note_text) < 15:
-        return True, "Note extremely short"
+    # Check for very short notes
+    if len(note_text) < 20:
+        return True, "Note too short"
     
-    # Only flag single words
-    if len(note_text.split()) <= 1:
-        return True, "Single word note"
+    # Check for single words or very brief
+    if len(note_text.split()) <= 3:
+        return True, "Note too brief (3 words or less)"
     
-    # Only flag the most egregious vague patterns
-    egregious_patterns = ['stuff', 'things', 'lol', 'haha', 'whatever']
-    for pattern in egregious_patterns:
-        if pattern in note_lower:
-            return True, f"Extremely vague: contains '{pattern}'"
+    # Check for vague/discouraged words from guidelines
+    discouraged_words = [
+        'ensure', 'ensured', 'ensuring',
+        'comprehensive', 'comprehensively',
+        'align', 'aligned', 'alignment',
+        'strategy', 'strategic',
+        'key priorities'
+    ]
+    for word in discouraged_words:
+        if word in note_lower:
+            return True, f"Uses discouraged word: '{word}'"
     
-    # If note is at least 2 words and 15+ chars, accept it
+    # Check for common vague patterns
+    vague_patterns = [
+        'worked on', 'stuff', 'things', 'misc', 'various',
+        'lol', 'haha', 'meeting' if len(note_text.split()) <= 5 else '',
+        'research' if len(note_text.split()) <= 5 else ''
+    ]
+    for pattern in vague_patterns:
+        if pattern and pattern in note_lower:
+            return True, f"Too vague: contains '{pattern}'"
+    
+    # Check for missing periods (professional notes should end with period)
+    if not note_text.strip().endswith('.'):
+        return True, "Missing period at end"
+    
     return False, ""
-
-
 
 
 # ============================================
 # MAIN UI
 # ============================================
 
-# Date selector - Fridays only
-st.sidebar.header("Report Configuration")
+# Date selector - centered at top of page
+st.markdown("---")
 
-# Use date_input with validation instead of hardcoded list
-selected_date = st.sidebar.date_input(
-    "Week Ending Date",
-    value=datetime.now().date(),
-    help="Select a Friday (week ending date)"
-)
-
-# Validate it's a Friday
-if selected_date.weekday() != 4:  # Friday is 4
-    st.sidebar.error("⚠️ Please select a Friday")
-    st.sidebar.info(f"You selected {selected_date.strftime('%A, %B %d, %Y')}")
+def get_fridays_only():
+    """Generate list of Fridays for date picker"""
+    today = datetime.now().date()
+    fridays = []
     
-    # Find nearest Friday
-    days_until_friday = (4 - selected_date.weekday()) % 7
-    if days_until_friday == 0:
-        days_until_friday = 7
-    nearest_friday = selected_date + timedelta(days=days_until_friday)
+    # Go back 90 days and forward 30 days
+    start = today - timedelta(days=90)
+    end = today + timedelta(days=30)
     
-    st.sidebar.info(f"💡 Next Friday: {nearest_friday.strftime('%B %d, %Y')}")
-    st.stop()
+    current = start
+    while current <= end:
+        if current.weekday() == 4:  # Friday is 4
+            fridays.append(current)
+        current += timedelta(days=1)
+    
+    return sorted(fridays, reverse=True)
 
-week_ending = selected_date
-week_starting = week_ending - timedelta(days=6)
+# Get list of Fridays
+fridays = get_fridays_only()
+friday_options = {f.strftime('%Y-%m-%d (Week Ending)'): f for f in fridays}
 
-st.sidebar.write(f"**Report Period:**")
-st.sidebar.write(f"{week_starting.strftime('%A, %B %d, %Y')}")
-st.sidebar.write(f"through")
-st.sidebar.write(f"{week_ending.strftime('%A, %B %d, %Y')}")
+# Find most recent Friday
+most_recent_friday = max(f for f in fridays if f <= datetime.now().date())
+default_index = fridays.index(most_recent_friday)
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Review Options")
+# Center the date selection
+col_left, col_center, col_right = st.columns([1, 2, 1])
 
-review_notes = st.sidebar.checkbox(
-    "Review Billing Notes with AI",
-    value=False,
-    help="Uses Gemini/Claude to check note quality. Can be slow for large datasets."
-)
+with col_center:
+    selected_friday_str = st.selectbox(
+        "📅 Week Ending (Friday)",
+        options=list(friday_options.keys()),
+        index=default_index
+    )
+    
+    week_ending = friday_options[selected_friday_str]
+    week_starting = week_ending - timedelta(days=6)
+    
+    st.caption(f"**Report Period:** {week_starting.strftime('%A, %B %d, %Y')} through {week_ending.strftime('%A, %B %d, %Y')}")
+    
+    run_review = st.button("🔍 Review Timesheets", type="primary", use_container_width=True)
 
-if st.sidebar.button("🔍 Review Timesheets", type="primary"):
+st.markdown("---")
+
+if run_review:
     
     # ============================================================
     # PHASE 1: LOAD CONFIGURATION
@@ -312,24 +291,8 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 st.stop()
             
             # Get list of full-time employees
-            emp_names_raw = staff_df['Staff_Name'].dropna().astype(str).tolist()
-            
-            # Name normalization function (handles "Last, First" vs "First Last")
-            def normalize_name(name):
-                if not isinstance(name, str) or not name:
-                    return ""
-                clean = str(name).strip().lower()
-                # Handle "Last, First" format
-                if ',' in clean:
-                    parts = [p.strip() for p in clean.split(',', 1)]
-                    if len(parts) == 2 and parts[0] and parts[1]:
-                        clean = f"{parts[1]} {parts[0]}"
-                # Remove extra whitespace
-                clean = ' '.join(clean.split())
-                return clean
-            
-            # Create mapping: normalized_name -> display_name
-            employees_norm = {normalize_name(n): n for n in emp_names_raw}
+            employees = set(staff_df['Staff_Name'].tolist())
+            st.success(f"✅ Loaded {len(employees)} employees from config")
             
         except Exception as e:
             st.error(f"❌ Error loading config: {str(e)}")
@@ -344,7 +307,8 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
         'not_submitted': [],
         'under_40': [],
         'non_billable_client_work': [],
-        'poor_notes': []
+        'poor_notes': [],
+        'project_overruns': []
     }
     
     with st.spinner("📡 Fetching timesheet data from BigTime..."):
@@ -361,6 +325,8 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
         if zero_hours_df is None or unsubmitted_df is None or detailed_df is None:
             st.error("❌ Failed to fetch BigTime reports")
             st.stop()
+        
+        st.success(f"✅ Fetched reports: {len(zero_hours_df)} zero-hour entries, {len(unsubmitted_df)} unsubmitted, {len(detailed_df)} time entries")
     
     # ============================================================
     # PHASE 3: ANALYZE ZERO HOURS
@@ -368,57 +334,15 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
-            # CRITICAL: This is a STAFF/RESOURCE report, NOT a time-entry report
-            # BigTime uses 'st*' prefix for staff reports (e.g., stname, sttitle, ststatus)
-            # Different from 'tm*' prefix for time-entry reports
-            
-            STAFF_NAME_CANDIDATES = [
-                'stname',         # ACTUAL column name for staff reports! (st = staff)
-                'staffnm',        # Also common
-                'resourcenm',     # Resource reports
-                'nm',             # Short form
-                'displaynm',      # UI-friendly name
-                'staffname',      # Occasionally used
-                'Name',           # UI label (less likely in API)
-                'tmstaffnm',      # Only in time-entry reports (unlikely here)
-                'Staff_Name',
-                'Staff Member'
-            ]
-            
-            # Find staff column
+            # Find staff name column
             staff_col = None
-            for col in STAFF_NAME_CANDIDATES:
+            for col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name']:
                 if col in zero_hours_df.columns:
                     staff_col = col
                     break
             
-            # Fallback: search for any column with 'name' or 'staff' in it
-            if not staff_col:
-                all_cols = zero_hours_df.columns.tolist()
-                name_like_cols = [c for c in all_cols if any(x in c.lower() for x in ['name', 'staff', 'nm'])]
-                if name_like_cols:
-                    staff_col = name_like_cols[0]
-            
             if staff_col:
-                # Extract and clean names
-                zero_hour_staff = (
-                    zero_hours_df[staff_col]
-                    .dropna()
-                    .astype(str)
-                    .str.strip()
-                    .unique()
-                    .tolist()
-                )
-                # Filter out empty strings
-                issues['zero_hours'] = sorted([name for name in zero_hour_staff if name])
-            else:
-                st.error(f"❌ Could not find staff name column in zero hours report")
-                st.error(f"Available columns: {', '.join(all_cols)}")
-                # Show first few rows for debugging
-                st.write("First 3 rows of data:")
-                st.dataframe(zero_hours_df.head(3))
-        else:
-            st.info("✅ Zero hours report returned no data (everyone has hours)")
+                issues['zero_hours'] = sorted(zero_hours_df[staff_col].unique().tolist())
     
     # ============================================================
     # PHASE 4: ANALYZE UNSUBMITTED TIMESHEETS
@@ -442,60 +366,46 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # CRITICAL FIX: Rename columns FIRST before any checks
-            # The bug was checking for 'Staff' before renaming 'tmstaffnm' to 'Staff'
+            # Map column names
+            col_mapping = {}
+            for standard_name, possible_names in {
+                'Staff': ['Staff Member', 'tmstaffnm'],
+                'Client': ['Client', 'tmclientnm'],
+                'Project': ['Project', 'tmprojectnm'],
+                'Hours': ['Billable', 'tmhrsbill', 'Hours'],
+                'Billable': ['Billable ($)', 'tmchgbillbase'],
+                'Date': ['Date', 'tmdt'],
+                'Notes': ['Notes', 'tmnotes']
+            }.items():
+                for possible in possible_names:
+                    if possible in detailed_df.columns:
+                        col_mapping[standard_name] = possible
+                        break
             
-            # 1. Create Total_Hours from tmhrsin
-            if 'tmhrsin' not in detailed_df.columns:
-                st.error(f"❌ 'tmhrsin' column not found! Columns: {detailed_df.columns.tolist()}")
-                st.stop()
+            # Rename columns
+            detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
             
-            detailed_df['Total_Hours'] = pd.to_numeric(detailed_df['tmhrsin'], errors='coerce').fillna(0)
+            # Convert to numeric
+            if 'Hours' in detailed_df.columns:
+                detailed_df['Hours'] = pd.to_numeric(detailed_df['Hours'], errors='coerce')
+            if 'Billable' in detailed_df.columns:
+                detailed_df['Billable'] = pd.to_numeric(detailed_df['Billable'], errors='coerce')
             
-            # 2. Rename tmstaffnm to Staff FIRST
-            if 'tmstaffnm' not in detailed_df.columns:
-                st.error(f"❌ 'tmstaffnm' column not found! Columns: {detailed_df.columns.tolist()}")
-                st.stop()
+            # Check 1: Under 40 hours (employees only)
+            if 'Staff' in detailed_df.columns and 'Hours' in detailed_df.columns:
+                hours_by_staff = detailed_df.groupby('Staff')['Hours'].sum()
                 
-            detailed_df = detailed_df.rename(columns={'tmstaffnm': 'Staff'})
+                for staff_name, total_hours in hours_by_staff.items():
+                    if staff_name in employees and total_hours < 40:
+                        issues['under_40'].append((staff_name, round(total_hours, 1)))
             
-            # 3. Rename other columns for later use
-            rename_map = {
-                'tmclientnm': 'Client',
-                'tmprojectnm': 'Project', 
-                'tmchgbillbase': 'Billable_Amount',
-                'tmdt': 'Date',
-                'tmnotes': 'Notes'
-            }
-            detailed_df = detailed_df.rename(columns={k: v for k, v in rename_map.items() if k in detailed_df.columns})
-            
-            # 4. Convert billable amount to numeric
-            if 'Billable_Amount' in detailed_df.columns:
-                detailed_df['Billable_Amount'] = pd.to_numeric(detailed_df['Billable_Amount'], errors='coerce').fillna(0)
-            
-            # Check 1: Under 40 hours - NOW THIS WILL ACTUALLY RUN!
-            # Both 'Staff' and 'Total_Hours' are guaranteed to exist now
-            
-            # Aggregate hours by staff
-            hours_by_staff = detailed_df.groupby('Staff')['Total_Hours'].sum().round(1).sort_values(ascending=False)
-            
-            # Split into 40+ and under 40
-            staff_40_plus = hours_by_staff[hours_by_staff >= 40.0]
-            staff_under_40 = hours_by_staff[hours_by_staff < 40.0]
-            
-            # Flag employees under 40 hours
-            for name, hours in staff_under_40.items():
-                norm_name = normalize_name(name)
-                if norm_name in employees_norm:
-                    issues['under_40'].append((employees_norm[norm_name], hours))
-            
-            # Check 2: Non-billable client work - CHECK EVERYONE not just employees
-            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Total_Hours', 'Billable_Amount', 'Date']):
-                # Filter for non-Internal clients with $0 billable
+            # Check 2: Non-billable client work
+            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Hours', 'Billable', 'Date']):
+                # Filter for non-Internal clients
                 non_internal = detailed_df[
                     (~detailed_df['Client'].str.contains('Internal', case=False, na=False)) &
-                    (detailed_df['Billable_Amount'] == 0) &
-                    (detailed_df['Total_Hours'] > 0)
+                    (detailed_df['Billable'].fillna(0) == 0) &
+                    (detailed_df['Hours'] > 0)
                 ]
                 
                 for _, row in non_internal.iterrows():
@@ -504,15 +414,14 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                         'Client': row.get('Client', ''),
                         'Project': row.get('Project', ''),
                         'Date': row.get('Date', ''),
-                        'Hours': round(row.get('Total_Hours', 0), 1)
+                        'Hours': round(row.get('Hours', 0), 1)
                     })
             
-            # Check 3: Poor quality notes - CHECK EVERYONE not just employees
-            if review_notes and all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Total_Hours', 'Billable_Amount', 'Date']):
-                st.info("🤖 AI note review enabled - this may take a few minutes...")
+            # Check 3: Poor quality notes (billable work only)
+            if all(col in detailed_df.columns for col in ['Staff', 'Client', 'Project', 'Notes', 'Hours', 'Billable', 'Date']):
                 billable_entries = detailed_df[
-                    (detailed_df['Billable_Amount'] > 0) &
-                    (detailed_df['Total_Hours'] > 0)
+                    (detailed_df['Billable'].fillna(0) > 0) &
+                    (detailed_df['Hours'] > 0)
                 ]
                 
                 # Check all billable entries (AI calls are rate-limited internally)
@@ -531,18 +440,169 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                             'Client': client,
                             'Project': row.get('Project', ''),
                             'Date': row.get('Date', ''),
-                            'Hours': round(row.get('Total_Hours', 0), 1),
+                            'Hours': round(row.get('Hours', 0), 1),
                             'Note': note,
                             'Reason': reason
                         })
                 
                 progress_text.empty()
-            elif not review_notes:
-                st.info("ℹ️ AI note review skipped (not enabled)")
+    
+    # ============================================================
+    # PHASE 5B: CHECK PROJECT OVERRUNS
+    # ============================================================
+    
+    with st.spinner("🔍 Checking for potential project overruns..."):
+        try:
+            # Load Assignments data
+            assignments_df = sheets.read_config(config_sheet_id, "Assignments")
+            
+            if assignments_df is not None and not assignments_df.empty:
+                # Get all billable hours from BigTime by staff/project
+                # Filter out Internal clients
+                if not detailed_df.empty and 'Client' in detailed_df.columns:
+                    billable_df = detailed_df[
+                        (~detailed_df['Client'].str.contains('Internal', case=False, na=False)) &
+                        (detailed_df.get('Hours', detailed_df.get('Billable', pd.Series([0]))).fillna(0) > 0)
+                    ].copy()
+                    
+                    if not billable_df.empty:
+                        # Get column for hours - try different possible names
+                        hours_col = None
+                        for col in ['Hours', 'Billable', 'tmhrsbill']:
+                            if col in billable_df.columns:
+                                hours_col = col
+                                break
+                        
+                        # Get column for project ID
+                        project_id_col = None
+                        for col in ['Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID']:
+                            if col in billable_df.columns:
+                                project_id_col = col
+                                break
+                        
+                        if hours_col:
+                            # Aggregate total hours by Staff + Project
+                            agg_cols = ['Staff', 'Client', 'Project']
+                            if project_id_col:
+                                agg_cols.append(project_id_col)
+                            
+                            # Group by staff and project to get total hours used
+                            staff_project_hours = billable_df.groupby(agg_cols)[hours_col].sum().reset_index()
+                            staff_project_hours.rename(columns={hours_col: 'Hours_Used'}, inplace=True)
+                            
+                            # Now get ALL-TIME hours from BigTime for these staff/project combos
+                            # We need to fetch a broader date range to get lifetime hours
+                            from datetime import date
+                            all_time_start = date(2020, 1, 1)  # Far enough back
+                            all_time_end = week_ending
+                            
+                            all_time_df = get_bigtime_report(284796, all_time_start, all_time_end)
+                            
+                            if all_time_df is not None and not all_time_df.empty:
+                                # Apply same column mapping
+                                for standard_name, possible_names in {
+                                    'Staff': ['Staff Member', 'tmstaffnm'],
+                                    'Client': ['Client', 'tmclientnm'],
+                                    'Project': ['Project', 'tmprojectnm'],
+                                    'Hours': ['Billable', 'tmhrsbill', 'Hours'],
+                                    'Project_ID': ['Project_ID', 'ProjectID', 'tmprojectsid', 'Project ID']
+                                }.items():
+                                    for possible in possible_names:
+                                        if possible in all_time_df.columns and standard_name not in all_time_df.columns:
+                                            all_time_df.rename(columns={possible: standard_name}, inplace=True)
+                                            break
+                                
+                                # Filter to billable (non-Internal) only
+                                all_time_billable = all_time_df[
+                                    (~all_time_df['Client'].str.contains('Internal', case=False, na=False))
+                                ].copy()
+                                
+                                if not all_time_billable.empty and 'Hours' in all_time_billable.columns:
+                                    # Aggregate all-time hours by Staff + Project
+                                    lifetime_hours = all_time_billable.groupby(['Staff', 'Client', 'Project']).agg({
+                                        'Hours': 'sum',
+                                        'Project_ID': 'first'
+                                    }).reset_index() if 'Project_ID' in all_time_billable.columns else all_time_billable.groupby(['Staff', 'Client', 'Project'])['Hours'].sum().reset_index()
+                                    
+                                    lifetime_hours.rename(columns={'Hours': 'Lifetime_Hours_Used'}, inplace=True)
+                                    
+                                    # Get assigned hours from Assignments
+                                    # Assignments has columns like: Staff, Client, Project_Name, Project_ID, and monthly columns
+                                    # Sum all monthly hours per staff/project
+                                    
+                                    # Find month columns (format like 2024-01, 2025-02, etc.)
+                                    month_cols = [col for col in assignments_df.columns if '-' in str(col) and len(str(col)) == 7]
+                                    
+                                    if month_cols:
+                                        # Sum hours across all months for each staff/project
+                                        assignments_df['Total_Assigned'] = assignments_df[month_cols].sum(axis=1)
+                                        
+                                        # Create lookup for assigned hours
+                                        assigned_lookup = {}
+                                        for _, row in assignments_df.iterrows():
+                                            staff = row.get('Staff', row.get('Staff_Name', ''))
+                                            project_id = str(row.get('Project_ID', row.get('ProjectID', '')))
+                                            total_assigned = row.get('Total_Assigned', 0)
+                                            
+                                            if staff and project_id:
+                                                key = (staff, project_id)
+                                                if key in assigned_lookup:
+                                                    assigned_lookup[key] += total_assigned
+                                                else:
+                                                    assigned_lookup[key] = total_assigned
+                                        
+                                        # Check each staff/project combo
+                                        for _, row in lifetime_hours.iterrows():
+                                            staff = row['Staff']
+                                            client = row['Client']
+                                            project = row['Project']
+                                            project_id = str(row.get('Project_ID', '')) if 'Project_ID' in row else ''
+                                            hours_used = row['Lifetime_Hours_Used']
+                                            
+                                            # Look up assigned hours
+                                            assigned = assigned_lookup.get((staff, project_id), 0)
+                                            
+                                            # Check conditions:
+                                            # (a) No hours assigned (and has used hours)
+                                            # (b) Used more than 90% of assigned hours
+                                            
+                                            if hours_used > 0:
+                                                if assigned == 0:
+                                                    # No hours assigned
+                                                    issues['project_overruns'].append({
+                                                        'Staff': staff,
+                                                        'Client': client,
+                                                        'Project': project,
+                                                        'Project_ID': project_id,
+                                                        'Hours_Used': round(hours_used, 1),
+                                                        'Hours_Assigned': 0,
+                                                        'Percentage': None,
+                                                        'Issue': 'No hours assigned'
+                                                    })
+                                                elif (hours_used / assigned) >= 0.90:
+                                                    # Over 90% used
+                                                    pct = round((hours_used / assigned) * 100, 0)
+                                                    issues['project_overruns'].append({
+                                                        'Staff': staff,
+                                                        'Client': client,
+                                                        'Project': project,
+                                                        'Project_ID': project_id,
+                                                        'Hours_Used': round(hours_used, 1),
+                                                        'Hours_Assigned': round(assigned, 1),
+                                                        'Percentage': pct,
+                                                        'Issue': f'{int(pct)}% of assigned hours used'
+                                                    })
+                
+                st.success(f"✅ Checked {len(issues['project_overruns'])} potential project overruns")
+            
+        except Exception as e:
+            st.warning(f"⚠️ Could not check project overruns: {str(e)}")
     
     # ============================================================
     # PHASE 6: GENERATE REPORT
     # ============================================================
+    
+    st.success("✅ Analysis complete!")
     
     st.header(f"📊 Hours Reviewer Report")
     st.subheader(f"Week Ending {week_ending.strftime('%A, %B %d, %Y')}")
@@ -564,65 +624,6 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     # Issue sections
     st.divider()
-    
-    # Debug section
-    with st.expander("🔧 Debug Information", expanded=False):
-        st.write("**Employee Configuration**")
-        st.write(f"• Loaded {len(employees_norm)} employees from config")
-        with st.expander("View employee list", expanded=False):
-            st.write(sorted(employees_norm.values()))
-        
-        st.write("\n**BigTime Reports Fetched**")
-        st.write(f"• Zero hours report: {len(zero_hours_df)} entries")
-        st.write(f"• Unsubmitted report: {len(unsubmitted_df)} entries")
-        st.write(f"• Detailed time report: {len(detailed_df)} entries")
-        
-        st.write("\n**Zero Hours Report**")
-        if not zero_hours_df.empty:
-            all_cols = zero_hours_df.columns.tolist()
-            st.write(f"• Columns ({len(all_cols)}): {', '.join(all_cols)}")
-            st.write(f"• Staff column used: 'stname'")
-            st.write(f"• People with zero hours: {len(issues['zero_hours'])}")
-            if issues['zero_hours']:
-                st.write(f"• Names: {', '.join(issues['zero_hours'])}")
-        
-        st.write("\n**Detailed Time Report**")
-        st.write(f"• Total time entries: {len(detailed_df)}")
-        st.write(f"• BigTime columns: {len(detailed_df.columns)}")
-        with st.expander("View column list", expanded=False):
-            st.code(', '.join(detailed_df.columns.tolist()), language=None)
-        
-        st.write("\n**Hours Aggregation**")
-        st.write(f"• Created Total_Hours from tmhrsin")
-        st.write(f"• Total hours sum: {hours_by_staff.sum():.1f}")
-        st.write(f"• People with time entries: {len(hours_by_staff)}")
-        st.write(f"• Renamed tmstaffnm → Staff")
-        
-        st.write("\n**Hours Breakdown (All Staff)**")
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.success(f"✅ Staff with 40+ hours ({len(staff_40_plus)})")
-            for name, hours in staff_40_plus.items():
-                st.write(f"  • {name}: {hours} hours")
-        
-        with col2:
-            st.warning(f"⚠️ Staff with under 40 hours ({len(staff_under_40)})")
-            for name, hours in staff_under_40.items():
-                st.write(f"  • {name}: {hours} hours")
-        
-        st.write("\n**Employee Matching**")
-        st.write(f"• Employees in config: {len(employees_norm)}")
-        st.write(f"• Staff with 40+ hours: {len(staff_40_plus)}")
-        st.write(f"• Staff with under 40 hours: {len(staff_under_40)}")
-        st.write(f"• Employees flagged for under 40: {len(issues['under_40'])}")
-        
-        st.write("\n**AI Note Review**")
-        if review_notes:
-            st.write(f"• AI note review: Enabled")
-            st.write(f"• Poor notes found: {len(issues['poor_notes'])}")
-        else:
-            st.write(f"• AI note review: Not enabled (skipped)")
     
     # 1. Zero Hours
     with st.expander(f"❌ Zero Hours Reported ({len(issues['zero_hours'])})", expanded=len(issues['zero_hours']) > 0):
@@ -662,9 +663,7 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
     
     # 5. Poor Quality Notes
     with st.expander(f"📝 Poor Quality Notes ({len(issues['poor_notes'])})", expanded=len(issues['poor_notes']) > 0):
-        if not review_notes:
-            st.info("ℹ️ AI note review was not enabled for this report. Enable it in the sidebar to check billing notes.")
-        elif issues['poor_notes']:
+        if issues['poor_notes']:
             st.write("The following billable notes do not appear to meet Voyage guidelines:")
             for issue in issues['poor_notes']:
                 st.write(f"**{issue['Staff']}** - {issue['Client']}, {issue['Project']}, {issue['Date']}, {issue['Hours']} hours")
@@ -673,6 +672,18 @@ if st.sidebar.button("🔍 Review Timesheets", type="primary"):
                 st.write("")
         else:
             st.success("✅ All notes meet quality standards")
+    
+    # 6. Potential Project Overruns
+    with st.expander(f"🚨 Potential Project Overruns ({len(issues['project_overruns'])})", expanded=len(issues['project_overruns']) > 0):
+        if issues['project_overruns']:
+            st.write("The following staff/project combinations have used 90%+ of assigned hours or have no hours assigned:")
+            for issue in sorted(issues['project_overruns'], key=lambda x: (x['Staff'], x['Client'])):
+                if issue['Hours_Assigned'] == 0:
+                    st.write(f"- **{issue['Staff']}** - {issue['Client']} - {issue['Project']} - {issue['Project_ID']} - {issue['Hours_Used']} hours used, 0 hours assigned")
+                else:
+                    st.write(f"- **{issue['Staff']}** - {issue['Client']} - {issue['Project']} - {issue['Project_ID']} - {issue['Hours_Used']} hours out of {issue['Hours_Assigned']} assigned used ({int(issue['Percentage'])}%)")
+        else:
+            st.success("✅ No potential project overruns detected")
     
     # ============================================================
     # PHASE 7: EXPORT OPTIONS
@@ -734,6 +745,16 @@ Total Issues Found: {total_issues}
     else:
         report_text += "   ✓ None\n"
     
+    report_text += f"\n6. POTENTIAL PROJECT OVERRUNS ({len(issues['project_overruns'])})\n"
+    if issues['project_overruns']:
+        for issue in sorted(issues['project_overruns'], key=lambda x: (x['Staff'], x['Client'])):
+            if issue['Hours_Assigned'] == 0:
+                report_text += f"   - {issue['Staff']} - {issue['Client']} - {issue['Project']} - {issue['Project_ID']} - {issue['Hours_Used']} hours used, 0 hours assigned\n"
+            else:
+                report_text += f"   - {issue['Staff']} - {issue['Client']} - {issue['Project']} - {issue['Project_ID']} - {issue['Hours_Used']} hours out of {issue['Hours_Assigned']} assigned used ({int(issue['Percentage'])}%)\n"
+    else:
+        report_text += "   ✓ None\n"
+    
     report_text += f"\n---\nGenerated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
     
     # Store for email
@@ -763,14 +784,16 @@ Total Issues Found: {total_issues}
                         'Not Submitted',
                         'Under 40 Hours',
                         'Non-Billable Client Work',
-                        'Poor Quality Notes'
+                        'Poor Quality Notes',
+                        'Potential Project Overruns'
                     ],
                     'Count': [
                         len(issues['zero_hours']),
                         len(issues['not_submitted']),
                         len(issues['under_40']),
                         len(issues['non_billable_client_work']),
-                        len(issues['poor_notes'])
+                        len(issues['poor_notes']),
+                        len(issues['project_overruns'])
                     ]
                 }
                 pd.DataFrame(summary_data).to_excel(writer, sheet_name='Summary', index=False)
@@ -790,6 +813,9 @@ Total Issues Found: {total_issues}
                 
                 if issues['poor_notes']:
                     pd.DataFrame(issues['poor_notes']).to_excel(writer, sheet_name='Poor_Notes', index=False)
+                
+                if issues['project_overruns']:
+                    pd.DataFrame(issues['project_overruns']).to_excel(writer, sheet_name='Project_Overruns', index=False)
             
             excel_data = output.getvalue()
             st.session_state.time_review_data['excel_file'] = excel_data
@@ -807,7 +833,7 @@ Total Issues Found: {total_issues}
     st.info("📧 To email this report, use the 'Email Report' section in the sidebar →")
 
 else:
-    st.info("👈 Select a week ending date and click 'Review Timesheets'")
+    st.info("☝️ Select a week ending date above and click 'Review Timesheets'")
     
     with st.expander("ℹ️ How it works"):
         st.markdown("""
@@ -819,12 +845,13 @@ else:
         3. **Under 40 Hours** - Full-time employees with less than 40 hours
         4. **Non-Billable Client Work** - Client work marked as non-billable
         5. **Poor Notes** - Billing notes that don't meet professional standards
+        6. **Project Overruns** - Staff/projects with 90%+ hours used or no hours assigned
         
         **Data Sources:**
         - BigTime Report 284828 (Unsubmitted Status)
         - BigTime Report 284796 (Detailed Time Report)
         - BigTime Report 288578 (Zero Hours Audit)
-        - Voyage_Global_Config (Employee list)
+        - Voyage_Global_Config (Employee list, Assignments)
         
         **AI Note Review:**
         Uses Gemini AI to check if billing notes are professional and clear.
