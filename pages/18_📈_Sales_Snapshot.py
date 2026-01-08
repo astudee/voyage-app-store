@@ -200,7 +200,7 @@ col_left, col_center, col_right = st.columns([1, 2, 1])
 with col_center:
     date_option = st.selectbox(
         "📅 Expected Close Date Range",
-        ["This Quarter", "Next Quarter", "This Year", "Last Year", "All Dates", "Custom"],
+        ["This Quarter", "Last Quarter", "Next Quarter", "This Year", "Last Year", "All Dates", "Custom"],
         index=0
     )
     
@@ -210,6 +210,13 @@ with col_center:
     
     if date_option == "This Quarter":
         start_date, end_date = get_quarter_dates(current_year, current_quarter)
+    elif date_option == "Last Quarter":
+        last_quarter = current_quarter - 1
+        last_quarter_year = current_year
+        if last_quarter < 1:
+            last_quarter = 4
+            last_quarter_year -= 1
+        start_date, end_date = get_quarter_dates(last_quarter_year, last_quarter)
     elif date_option == "Next Quarter":
         next_quarter = current_quarter + 1
         next_year = current_year
