@@ -26,12 +26,12 @@ st.markdown("Pipeline report by deal stage with probability factoring")
 # ============================================================
 
 try:
-    PIPEDRIVE_API_KEY = st.secrets.get("PIPEDRIVE_API_KEY")
+    PIPEDRIVE_API_KEY = st.secrets.get("PIPEDRIVE_API_TOKEN") or st.secrets.get("PIPEDRIVE_API_KEY")
 except:
     PIPEDRIVE_API_KEY = None
 
 if not PIPEDRIVE_API_KEY:
-    st.error("❌ Pipedrive API key not configured. Please add PIPEDRIVE_API_KEY to secrets.")
+    st.error("❌ Pipedrive API token not configured. Please add PIPEDRIVE_API_TOKEN to secrets.")
     st.stop()
 
 PIPEDRIVE_BASE_URL = "https://api.pipedrive.com/v1"
