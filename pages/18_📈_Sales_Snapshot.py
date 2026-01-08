@@ -912,67 +912,76 @@ if 'sales_snapshot_data' in st.session_state:
                 msg['To'] = email_to
                 msg['Subject'] = f"Sales Snapshot Report - {rd['report_date'].strftime('%B %d, %Y')}"
                 
-                # Try to generate chart image for email
+                # Try to generate chart image for email using matplotlib (doesn't need Chrome)
                 chart_cid = None
                 chart_image_data = None
                 try:
-                    # Recreate the chart for email
-                    email_fig = make_subplots(specs=[[{"secondary_y": True}]])
+                    import matplotlib
+                    matplotlib.use('Agg')  # Non-interactive backend
+                    import matplotlib.pyplot as plt
+                    import numpy as np
                     
-                    email_fig.add_trace(
-                        go.Bar(
-                            name="$ Pipeline",
-                            x=rd['chart_stages'],
-                            y=rd['chart_values'],
-                            marker_color="#4472C4",
-                            text=[f"${v:,.0f}" for v in rd['chart_values']],
-                            textposition="outside"
-                        ),
-                        secondary_y=False
-                    )
+                    # Create figure with dual y-axes
+                    fig_mpl, ax1 = plt.subplots(figsize=(12, 5))
                     
-                    email_fig.add_trace(
-                        go.Bar(
-                            name="$ Pipeline (Factored)",
-                            x=rd['chart_stages'],
-                            y=rd['chart_factored'],
-                            marker_color="#70AD47",
-                            text=[f"${v:,.0f}" for v in rd['chart_factored']],
-                            textposition="outside"
-                        ),
-                        secondary_y=False
-                    )
+                    x = np.arange(len(rd['chart_stages']))
+                    width = 0.35
                     
-                    email_fig.add_trace(
-                        go.Scatter(
-                            name="# Deals",
-                            x=rd['chart_stages'],
-                            y=rd['chart_counts'],
-                            mode="lines+markers+text",
-                            line=dict(color="#ED7D31", width=3),
-                            marker=dict(size=10),
-                            text=rd['chart_counts'],
-                            textposition="top center"
-                        ),
-                        secondary_y=True
-                    )
+                    # Bar charts
+                    bars1 = ax1.bar(x - width/2, rd['chart_values'], width, label='$ Pipeline', color='#4472C4')
+                    bars2 = ax1.bar(x + width/2, rd['chart_factored'], width, label='$ Pipeline (Factored)', color='#70AD47')
                     
-                    email_fig.update_layout(
-                        barmode="group",
-                        height=400,
-                        width=900,
-                        title=f"Sales Pipeline by Stage - {rd['report_date'].strftime('%B %d, %Y')}",
-                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                        margin=dict(l=50, r=50, t=80, b=50),
-                        plot_bgcolor='white'
-                    )
+                    ax1.set_xlabel('Stage')
+                    ax1.set_ylabel('$ Value')
+                    ax1.set_xticks(x)
+                    ax1.set_xticklabels(rd['chart_stages'], rotation=45, ha='right')
+                    ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda val, p: f'${val:,.0f}'))
                     
-                    email_fig.update_yaxes(title_text="$ Value", secondary_y=False, tickformat="$,.0f")
-                    email_fig.update_yaxes(title_text="# Deals", secondary_y=True)
+                    # Add data labels on bars
+                    for bar in bars1:
+                        height = bar.get_height()
+                        if height > 0:
+                            ax1.annotate(f'${height:,.0f}',
+                                xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 3), textcoords="offset points",
+                                ha='center', va='bottom', fontsize=7, rotation=90)
                     
-                    # Generate PNG image
-                    chart_image_data = email_fig.to_image(format='png', width=900, height=400, scale=2)
+                    for bar in bars2:
+                        height = bar.get_height()
+                        if height > 0:
+                            ax1.annotate(f'${height:,.0f}',
+                                xy=(bar.get_x() + bar.get_width() / 2, height),
+                                xytext=(0, 3), textcoords="offset points",
+                                ha='center', va='bottom', fontsize=7, rotation=90)
+                    
+                    # Line chart on secondary axis
+                    ax2 = ax1.twinx()
+                    line = ax2.plot(x, rd['chart_counts'], color='#ED7D31', marker='o', linewidth=2, label='# Deals')
+                    ax2.set_ylabel('# Deals')
+                    
+                    # Add data labels on line
+                    for i, count in enumerate(rd['chart_counts']):
+                        ax2.annotate(str(count), (x[i], count), textcoords="offset points",
+                                    xytext=(0, 10), ha='center', fontsize=9, color='#ED7D31')
+                    
+                    # Title and legend
+                    plt.title(f"Sales Pipeline by Stage - {rd['report_date'].strftime('%B %d, %Y')}", pad=20)
+                    
+                    # Combine legends
+                    lines1, labels1 = ax1.get_legend_handles_labels()
+                    lines2, labels2 = ax2.get_legend_handles_labels()
+                    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+                    
+                    plt.tight_layout()
+                    
+                    # Save to bytes
+                    img_buffer = BytesIO()
+                    plt.savefig(img_buffer, format='png', dpi=150, bbox_inches='tight', 
+                               facecolor='white', edgecolor='none')
+                    img_buffer.seek(0)
+                    chart_image_data = img_buffer.getvalue()
                     chart_cid = "chart_image"
+                    plt.close(fig_mpl)
                 except Exception as chart_error:
                     st.sidebar.warning(f"Chart image not available: {chart_error}")
                 
