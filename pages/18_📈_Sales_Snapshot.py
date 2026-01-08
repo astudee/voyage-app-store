@@ -88,7 +88,9 @@ def get_pipedrive_users():
                 for user in data["data"]:
                     user_id = user.get("id")
                     user_name = user.get("name", "Unknown")
+                    # Store with both int and string keys for flexible lookup
                     users[user_id] = user_name
+                    users[str(user_id)] = user_name
                 return users
         return {}
     except Exception as e:
@@ -289,15 +291,33 @@ if run_report:
         status = deal.get("status", "open")  # open, won, lost
         stage_id = deal.get("stage_id")
         
-        # Get owner - Pipedrive returns owner_id as dict with id and name
+        # Get owner - Pipedrive API v1 returns owner_id as dict with id and name
+        # API v2 returns just the id
         owner_data = deal.get("owner_id")
+        owner_name = "Unknown"
+        
         if isinstance(owner_data, dict):
-            owner_name = owner_data.get("name", "Unknown")
+            # v1 API returns object with name
+            owner_name = owner_data.get("name") or owner_data.get("email") or "Unknown"
         elif owner_data:
-            # If it's just an ID, look it up
-            owner_name = users.get(owner_data, "Unknown")
-        else:
-            owner_name = "Unknown"
+            # v2 API returns just ID - look up in users dict
+            owner_name = users.get(owner_data, users.get(str(owner_data), "Unknown"))
+        
+        # Also try user_id field as fallback
+        if owner_name == "Unknown":
+            user_id = deal.get("user_id")
+            if isinstance(user_id, dict):
+                owner_name = user_id.get("name") or user_id.get("email") or "Unknown"
+            elif user_id:
+                owner_name = users.get(user_id, users.get(str(user_id), "Unknown"))
+        
+        # Also try creator_user_id as another fallback
+        if owner_name == "Unknown":
+            creator = deal.get("creator_user_id")
+            if isinstance(creator, dict):
+                owner_name = creator.get("name") or creator.get("email") or "Unknown"
+            elif creator:
+                owner_name = users.get(creator, users.get(str(creator), "Unknown"))
         
         # Get organization/client name
         org = deal.get("org_id", {})
