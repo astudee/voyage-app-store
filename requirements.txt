@@ -9,3 +9,4 @@ openpyxl
 reportlab
 PyPDF2
 python-docx
+plotly
