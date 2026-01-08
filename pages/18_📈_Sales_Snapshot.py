@@ -288,10 +288,16 @@ if run_report:
         value = deal.get("value", 0) or 0
         status = deal.get("status", "open")  # open, won, lost
         stage_id = deal.get("stage_id")
-        owner_id = deal.get("owner_id", {})
-        if isinstance(owner_id, dict):
-            owner_id = owner_id.get("id")
-        owner_name = users.get(owner_id, "Unknown")
+        
+        # Get owner - Pipedrive returns owner_id as dict with id and name
+        owner_data = deal.get("owner_id")
+        if isinstance(owner_data, dict):
+            owner_name = owner_data.get("name", "Unknown")
+        elif owner_data:
+            # If it's just an ID, look it up
+            owner_name = users.get(owner_data, "Unknown")
+        else:
+            owner_name = "Unknown"
         
         # Get organization/client name
         org = deal.get("org_id", {})
@@ -345,19 +351,32 @@ if run_report:
             stage_totals[stage_id]["value"] += value
             stage_totals[stage_id]["factored"] += factored_value
     
-    # Sort deals: by stage order, then by value descending, with Lost deals last
+    # Sort deals: Won first, then by stage (Forecast -> Proposal -> Qualified -> Qualification -> Early), Lost last
+    # Within each stage, sort by value descending
     def deal_sort_key(row):
-        # Get stage order
-        stage_order_num = 999
-        for idx, (sid, sinfo) in enumerate(ordered_stages):
-            if sid == row["Stage_ID"]:
-                stage_order_num = idx
-                break
+        stage_name = row["Stage"].lower()
+        status = row["Status"]
         
-        # Lost deals go last (status == 'lost')
-        is_lost = 1 if row["Status"] == "lost" else 0
+        # Define custom sort order
+        if status == "won" or "won" in stage_name:
+            stage_priority = 0
+        elif "forecast" in stage_name:
+            stage_priority = 1
+        elif "proposal" in stage_name or "sow" in stage_name or "resourcing" in stage_name:
+            stage_priority = 2
+        elif stage_name == "qualified":
+            stage_priority = 3
+        elif "qualification" in stage_name:
+            stage_priority = 4
+        elif "early" in stage_name:
+            stage_priority = 5
+        elif status == "lost" or "lost" in stage_name:
+            stage_priority = 99  # Lost always last
+        else:
+            stage_priority = 50  # Unknown stages in middle
         
-        return (is_lost, stage_order_num, -row["Value"])
+        # Secondary sort by value descending (negative for descending)
+        return (stage_priority, -row["Value"])
     
     deal_rows.sort(key=deal_sort_key)
     
@@ -490,6 +509,10 @@ if run_report:
     st.subheader("📊 Summary by Stage")
     
     summary_data = []
+    total_deals = 0
+    total_pipeline = 0
+    total_factored = 0
+    
     for stage_id, stage_info in ordered_stages:
         totals = stage_totals.get(stage_id, {"count": 0, "value": 0, "factored": 0})
         summary_data.append({
@@ -499,6 +522,18 @@ if run_report:
             "$ Pipeline": totals["value"],
             "$ Pipeline (Factored)": totals["factored"]
         })
+        total_deals += totals["count"]
+        total_pipeline += totals["value"]
+        total_factored += totals["factored"]
+    
+    # Add total row
+    summary_data.append({
+        "Stage": "TOTAL",
+        "% Factor": "",
+        "# Deals": total_deals,
+        "$ Pipeline": total_pipeline,
+        "$ Pipeline (Factored)": total_factored
+    })
     
     summary_df = pd.DataFrame(summary_data)
     
@@ -537,7 +572,7 @@ if run_report:
             if deal["Stage_ID"] == stage_id or (deal["Status"] == "lost" and "lost" in stage_name.lower()):
                 row[stage_name] = deal["Value"]
             else:
-                row[stage_name] = None
+                row[stage_name] = ""  # Empty string instead of None
         
         row["Total"] = deal["Value"]
         display_rows.append(row)
@@ -547,15 +582,42 @@ if run_report:
     # Get stage column names for formatting
     stage_cols = [stage_info["name"] for _, stage_info in ordered_stages]
     
-    # Format the dataframe
-    format_dict = {col: "${:,.0f}" for col in stage_cols}
-    format_dict["Total"] = "${:,.0f}"
+    # Create custom formatting function that shows dash for empty/zero in stage columns
+    def format_currency(val, col):
+        if col in stage_cols:
+            if val == "" or val is None or (isinstance(val, (int, float)) and val == 0):
+                return "—"
+            return f"${val:,.0f}"
+        elif col == "Total":
+            return f"${val:,.0f}"
+        return val
+    
+    # Apply formatting
+    styled_df = display_df.copy()
+    for col in stage_cols:
+        styled_df[col] = styled_df[col].apply(lambda x: "—" if x == "" or x is None else f"${x:,.0f}" if isinstance(x, (int, float)) else x)
+    styled_df["Total"] = styled_df["Total"].apply(lambda x: f"${x:,.0f}" if isinstance(x, (int, float)) else x)
+    
+    # Calculate column widths - equal width for stage columns and Total
+    num_stage_cols = len(stage_cols) + 1  # +1 for Total
+    stage_col_width = 100  # pixels
+    
+    # Create column config for equal widths on stage columns
+    column_config = {
+        "Client": st.column_config.TextColumn("Client", width="medium"),
+        "Deal": st.column_config.TextColumn("Deal", width="medium"),
+        "Owner": st.column_config.TextColumn("Owner", width="small"),
+    }
+    for col in stage_cols:
+        column_config[col] = st.column_config.TextColumn(col, width=stage_col_width)
+    column_config["Total"] = st.column_config.TextColumn("Total", width=stage_col_width)
     
     st.dataframe(
-        display_df.style.format(format_dict, na_rep=""),
+        styled_df,
         use_container_width=True,
         hide_index=True,
-        height=500
+        height=500,
+        column_config=column_config
     )
     
     # ============================================================
