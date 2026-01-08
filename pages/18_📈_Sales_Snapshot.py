@@ -522,47 +522,61 @@ if run_report:
         st.metric("$ Pipeline (Factored)", f"${qualified_factored:,.0f}")
     
     # ============================================================
-    # STAGE SUMMARY TABLE
+    # STAGE SUMMARY TABLE (Transposed - stages as columns)
     # ============================================================
     
     st.markdown("---")
     st.subheader("📊 Summary by Stage")
     
-    summary_data = []
+    # Build transposed summary with stages as columns
+    # Rows: % Factor, # Deals, $ Pipeline, $ Pipeline (Factored)
+    
+    transposed_data = {
+        "Metric": ["% Factor", "# Deals", "$ Pipeline", "$ Pipeline (Factored)"]
+    }
+    
     total_deals = 0
     total_pipeline = 0
     total_factored = 0
     
     for stage_id, stage_info in ordered_stages:
         totals = stage_totals.get(stage_id, {"count": 0, "value": 0, "factored": 0})
-        summary_data.append({
-            "Stage": stage_info["name"],
-            "% Factor": f"{int(stage_info['probability'] * 100)}%",
-            "# Deals": totals["count"],
-            "$ Pipeline": totals["value"],
-            "$ Pipeline (Factored)": totals["factored"]
-        })
+        stage_name = stage_info["name"]
+        
+        transposed_data[stage_name] = [
+            f"{int(stage_info['probability'] * 100)}%",
+            totals["count"],
+            totals["value"],
+            totals["factored"]
+        ]
+        
         total_deals += totals["count"]
         total_pipeline += totals["value"]
         total_factored += totals["factored"]
     
-    # Add total row
-    summary_data.append({
-        "Stage": "TOTAL",
-        "% Factor": "",
-        "# Deals": total_deals,
-        "$ Pipeline": total_pipeline,
-        "$ Pipeline (Factored)": total_factored
-    })
+    # Add Total column
+    transposed_data["Total"] = [
+        "",
+        total_deals,
+        total_pipeline,
+        total_factored
+    ]
     
-    summary_df = pd.DataFrame(summary_data)
+    summary_df = pd.DataFrame(transposed_data)
     
-    # Format currency columns
+    # Create a styled version for display
+    styled_summary = summary_df.copy()
+    
+    # Format currency rows
+    stage_cols_with_total = [stage_info["name"] for _, stage_info in ordered_stages] + ["Total"]
+    for col in stage_cols_with_total:
+        styled_summary[col] = styled_summary.apply(
+            lambda row: f"${row[col]:,.0f}" if row["Metric"] in ["$ Pipeline", "$ Pipeline (Factored)"] and isinstance(row[col], (int, float)) else row[col],
+            axis=1
+        )
+    
     st.dataframe(
-        summary_df.style.format({
-            "$ Pipeline": "${:,.0f}",
-            "$ Pipeline (Factored)": "${:,.0f}"
-        }),
+        styled_summary,
         use_container_width=True,
         hide_index=True
     )
@@ -664,11 +678,17 @@ if run_report:
     col1, col2 = st.columns(2)
     
     with col1:
-        # Excel export
+        # Excel export with chart
         try:
             output = BytesIO()
+            
+            # Save chart as image for Excel
+            chart_image = BytesIO()
+            fig.write_image(chart_image, format='png', width=1200, height=500, scale=2)
+            chart_image.seek(0)
+            
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # Summary sheet
+                # Summary sheet (transposed)
                 summary_df.to_excel(writer, sheet_name='Summary', index=False)
                 
                 # Details sheet
@@ -685,6 +705,19 @@ if run_report:
                              qualified_count, qualified_value, qualified_factored]
                 }
                 pd.DataFrame(metrics_data).to_excel(writer, sheet_name='Metrics', index=False)
+                
+                # Chart sheet - add empty df then insert image
+                pd.DataFrame().to_excel(writer, sheet_name='Chart', index=False)
+                
+                # Get the workbook and chart worksheet
+                workbook = writer.book
+                chart_sheet = workbook['Chart']
+                
+                # Insert the chart image
+                from openpyxl.drawing.image import Image as XLImage
+                img = XLImage(chart_image)
+                img.anchor = 'A1'
+                chart_sheet.add_image(img)
             
             excel_data = output.getvalue()
             st.session_state.sales_snapshot_data['excel_file'] = excel_data
@@ -698,6 +731,35 @@ if run_report:
             )
         except Exception as e:
             st.error(f"Excel export error: {e}")
+            # Fallback without chart if image export fails
+            try:
+                output = BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    summary_df.to_excel(writer, sheet_name='Summary', index=False)
+                    display_df.to_excel(writer, sheet_name='Deal_Details', index=False)
+                    metrics_data = {
+                        "Metric": ["Report Date", "Date Range", "All Deals - Count", "All Deals - $ Pipeline", 
+                                  "All Deals - $ Factored", "Qualified Pipeline - Count", 
+                                  "Qualified Pipeline - $ Pipeline", "Qualified Pipeline - $ Factored"],
+                        "Value": [date.today().strftime("%Y-%m-%d"), 
+                                 f"{start_date} to {end_date}" if start_date else "All Dates",
+                                 all_deals_count, all_deals_value, all_deals_factored,
+                                 qualified_count, qualified_value, qualified_factored]
+                    }
+                    pd.DataFrame(metrics_data).to_excel(writer, sheet_name='Metrics', index=False)
+                
+                excel_data = output.getvalue()
+                st.session_state.sales_snapshot_data['excel_file'] = excel_data
+                
+                st.download_button(
+                    label="📥 Download Excel (no chart)",
+                    data=excel_data,
+                    file_name=f"sales_snapshot_{date.today().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            except Exception as e2:
+                st.error(f"Excel export failed: {e2}")
     
     with col2:
         # Text report
@@ -717,8 +779,11 @@ $ Pipeline (Factored): ${qualified_factored:,.0f}
 
 === SUMMARY BY STAGE ===
 """
-        for _, row in summary_df.iterrows():
-            report_text += f"\n{row['Stage']} ({row['% Factor']}): {row['# Deals']} deals, ${row['$ Pipeline']:,.0f} (${row['$ Pipeline (Factored)']:,.0f} factored)"
+        # Build summary from stage totals
+        for stage_id, stage_info in ordered_stages:
+            totals = stage_totals.get(stage_id, {"count": 0, "value": 0, "factored": 0})
+            report_text += f"\n{stage_info['name']} ({int(stage_info['probability'] * 100)}%): {totals['count']} deals, ${totals['value']:,.0f} (${totals['factored']:,.0f} factored)"
+        report_text += f"\nTOTAL: {total_deals} deals, ${total_pipeline:,.0f} (${total_factored:,.0f} factored)"
         
         report_text += "\n\n=== DEAL DETAILS ===\n"
         for deal in deal_rows:
