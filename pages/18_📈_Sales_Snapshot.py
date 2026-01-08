@@ -721,6 +721,7 @@ if run_report:
                 # Create a bar chart using openpyxl
                 from openpyxl.chart import BarChart, LineChart, Reference
                 from openpyxl.chart.series import SeriesLabel
+                from openpyxl.chart.label import DataLabelList
                 
                 # Create bar chart for $ Pipeline and $ Factored
                 bar_chart = BarChart()
@@ -728,6 +729,7 @@ if run_report:
                 bar_chart.grouping = "clustered"
                 bar_chart.title = "Sales Pipeline by Stage"
                 bar_chart.y_axis.title = "$ Value"
+                bar_chart.y_axis.numFmt = '$#,##0'
                 bar_chart.x_axis.title = "Stage"
                 bar_chart.width = 20
                 bar_chart.height = 12
@@ -752,6 +754,12 @@ if run_report:
                 bar_chart.series[0].graphicalProperties.solidFill = "4472C4"  # Blue
                 bar_chart.series[1].graphicalProperties.solidFill = "70AD47"  # Green
                 
+                # Add data labels to bar series
+                for series in bar_chart.series:
+                    series.dLbls = DataLabelList()
+                    series.dLbls.showVal = True
+                    series.dLbls.numFmt = '$#,##0'
+                
                 # Create line chart for # Deals (secondary axis)
                 line_chart = LineChart()
                 line_chart.y_axis.axId = 200
@@ -765,6 +773,10 @@ if run_report:
                 # Style the line
                 line_chart.series[0].graphicalProperties.line.solidFill = "ED7D31"  # Orange
                 line_chart.series[0].graphicalProperties.line.width = 25000  # Line width
+                
+                # Add data labels to line series
+                line_chart.series[0].dLbls = DataLabelList()
+                line_chart.series[0].dLbls.showVal = True
                 
                 # Combine charts
                 bar_chart.y_axis.crosses = "min"
