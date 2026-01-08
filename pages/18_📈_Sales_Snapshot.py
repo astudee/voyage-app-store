@@ -678,14 +678,9 @@ if run_report:
     col1, col2 = st.columns(2)
     
     with col1:
-        # Excel export with chart
+        # Excel export with native Excel chart
         try:
             output = BytesIO()
-            
-            # Save chart as image for Excel
-            chart_image = BytesIO()
-            fig.write_image(chart_image, format='png', width=1200, height=500, scale=2)
-            chart_image.seek(0)
             
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 # Summary sheet (transposed)
@@ -706,18 +701,77 @@ if run_report:
                 }
                 pd.DataFrame(metrics_data).to_excel(writer, sheet_name='Metrics', index=False)
                 
-                # Chart sheet - add empty df then insert image
-                pd.DataFrame().to_excel(writer, sheet_name='Chart', index=False)
+                # Chart data sheet - structured for Excel charting
+                chart_data = {
+                    "Stage": chart_stages,
+                    "# Deals": chart_counts,
+                    "$ Pipeline": chart_values,
+                    "$ Pipeline (Factored)": chart_factored
+                }
+                chart_df = pd.DataFrame(chart_data)
+                chart_df.to_excel(writer, sheet_name='Chart_Data', index=False)
                 
-                # Get the workbook and chart worksheet
+                # Get workbook and chart data worksheet
                 workbook = writer.book
-                chart_sheet = workbook['Chart']
+                chart_sheet = workbook['Chart_Data']
                 
-                # Insert the chart image
-                from openpyxl.drawing.image import Image as XLImage
-                img = XLImage(chart_image)
-                img.anchor = 'A1'
-                chart_sheet.add_image(img)
+                # Create a new sheet for the chart
+                chart_display_sheet = workbook.create_sheet('Chart')
+                
+                # Create a bar chart using openpyxl
+                from openpyxl.chart import BarChart, LineChart, Reference
+                from openpyxl.chart.series import SeriesLabel
+                
+                # Create bar chart for $ Pipeline and $ Factored
+                bar_chart = BarChart()
+                bar_chart.type = "col"
+                bar_chart.grouping = "clustered"
+                bar_chart.title = "Sales Pipeline by Stage"
+                bar_chart.y_axis.title = "$ Value"
+                bar_chart.x_axis.title = "Stage"
+                bar_chart.width = 20
+                bar_chart.height = 12
+                
+                # Data references (rows are stages, columns are metrics)
+                num_stages = len(chart_stages)
+                
+                # Categories (stage names) - column A, rows 2 to num_stages+1
+                categories = Reference(chart_sheet, min_col=1, min_row=2, max_row=num_stages + 1)
+                
+                # $ Pipeline data - column C
+                pipeline_data = Reference(chart_sheet, min_col=3, min_row=1, max_row=num_stages + 1)
+                bar_chart.add_data(pipeline_data, titles_from_data=True)
+                
+                # $ Pipeline (Factored) data - column D
+                factored_data = Reference(chart_sheet, min_col=4, min_row=1, max_row=num_stages + 1)
+                bar_chart.add_data(factored_data, titles_from_data=True)
+                
+                bar_chart.set_categories(categories)
+                
+                # Style the bars
+                bar_chart.series[0].graphicalProperties.solidFill = "4472C4"  # Blue
+                bar_chart.series[1].graphicalProperties.solidFill = "70AD47"  # Green
+                
+                # Create line chart for # Deals (secondary axis)
+                line_chart = LineChart()
+                line_chart.y_axis.axId = 200
+                line_chart.y_axis.title = "# Deals"
+                
+                # # Deals data - column B
+                deals_data = Reference(chart_sheet, min_col=2, min_row=1, max_row=num_stages + 1)
+                line_chart.add_data(deals_data, titles_from_data=True)
+                line_chart.set_categories(categories)
+                
+                # Style the line
+                line_chart.series[0].graphicalProperties.line.solidFill = "ED7D31"  # Orange
+                line_chart.series[0].graphicalProperties.line.width = 25000  # Line width
+                
+                # Combine charts
+                bar_chart.y_axis.crosses = "min"
+                bar_chart += line_chart
+                
+                # Add chart to the Chart sheet
+                chart_display_sheet.add_chart(bar_chart, "A1")
             
             excel_data = output.getvalue()
             st.session_state.sales_snapshot_data['excel_file'] = excel_data
@@ -731,35 +785,6 @@ if run_report:
             )
         except Exception as e:
             st.error(f"Excel export error: {e}")
-            # Fallback without chart if image export fails
-            try:
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    summary_df.to_excel(writer, sheet_name='Summary', index=False)
-                    display_df.to_excel(writer, sheet_name='Deal_Details', index=False)
-                    metrics_data = {
-                        "Metric": ["Report Date", "Date Range", "All Deals - Count", "All Deals - $ Pipeline", 
-                                  "All Deals - $ Factored", "Qualified Pipeline - Count", 
-                                  "Qualified Pipeline - $ Pipeline", "Qualified Pipeline - $ Factored"],
-                        "Value": [date.today().strftime("%Y-%m-%d"), 
-                                 f"{start_date} to {end_date}" if start_date else "All Dates",
-                                 all_deals_count, all_deals_value, all_deals_factored,
-                                 qualified_count, qualified_value, qualified_factored]
-                    }
-                    pd.DataFrame(metrics_data).to_excel(writer, sheet_name='Metrics', index=False)
-                
-                excel_data = output.getvalue()
-                st.session_state.sales_snapshot_data['excel_file'] = excel_data
-                
-                st.download_button(
-                    label="📥 Download Excel (no chart)",
-                    data=excel_data,
-                    file_name=f"sales_snapshot_{date.today().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
-            except Exception as e2:
-                st.error(f"Excel export failed: {e2}")
     
     with col2:
         # Text report
