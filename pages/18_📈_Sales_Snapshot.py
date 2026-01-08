@@ -423,6 +423,11 @@ if run_report:
     qualified_value = sum(d["Value"] for d in qualified_deals)
     qualified_factored = sum(d["Factored_Value"] for d in qualified_deals)
     
+    # Booked Deals (Won deals)
+    booked_deals = [d for d in deal_rows if d["Status"] == "won"]
+    booked_count = len(booked_deals)
+    booked_value = sum(d["Value"] for d in booked_deals)
+    
     # ============================================================
     # CREATE CHART
     # ============================================================
@@ -507,7 +512,7 @@ if run_report:
     # SUMMARY METRICS TABLE
     # ============================================================
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.markdown("**All Deals**")
@@ -520,6 +525,11 @@ if run_report:
         st.metric("Deals", qualified_count)
         st.metric("$ Pipeline", f"${qualified_value:,.0f}")
         st.metric("$ Pipeline (Factored)", f"${qualified_factored:,.0f}")
+    
+    with col3:
+        st.markdown("**Booked Deals**")
+        st.metric("Deals", booked_count)
+        st.metric("$ Pipeline", f"${booked_value:,.0f}")
     
     # ============================================================
     # STAGE SUMMARY TABLE (Transposed - stages as columns)
@@ -676,7 +686,9 @@ if run_report:
         "chart_stages": chart_stages,
         "chart_counts": chart_counts,
         "chart_values": chart_values,
-        "chart_factored": chart_factored
+        "chart_factored": chart_factored,
+        "booked_count": booked_count,
+        "booked_value": booked_value
     }
     
     col1, col2 = st.columns(2)
@@ -697,11 +709,13 @@ if run_report:
                 metrics_data = {
                     "Metric": ["Report Date", "Date Range", "All Deals - Count", "All Deals - $ Pipeline", 
                               "All Deals - $ Factored", "Qualified Pipeline - Count", 
-                              "Qualified Pipeline - $ Pipeline", "Qualified Pipeline - $ Factored"],
+                              "Qualified Pipeline - $ Pipeline", "Qualified Pipeline - $ Factored",
+                              "Booked Deals - Count", "Booked Deals - $ Pipeline"],
                     "Value": [date.today().strftime("%Y-%m-%d"), 
                              f"{start_date} to {end_date}" if start_date else "All Dates",
                              all_deals_count, all_deals_value, all_deals_factored,
-                             qualified_count, qualified_value, qualified_factored]
+                             qualified_count, qualified_value, qualified_factored,
+                             booked_count, booked_value]
                 }
                 pd.DataFrame(metrics_data).to_excel(writer, sheet_name='Metrics', index=False)
                 
@@ -1009,6 +1023,11 @@ if 'sales_snapshot_data' in st.session_state:
                                 <p style="margin: 5px 0;"><strong>$ Pipeline:</strong> ${rd['qualified_value']:,.0f}</p>
                                 <p style="margin: 5px 0;"><strong>$ Pipeline (Factored):</strong> ${rd['qualified_factored']:,.0f}</p>
                             </td>
+                            <td style="padding: 10px 0 10px 30px; vertical-align: top; border-left: 1px solid #ddd;">
+                                <h3 style="color: #ED7D31; margin-bottom: 10px;">Booked Deals</h3>
+                                <p style="margin: 5px 0;"><strong>Total Deals:</strong> {rd['booked_count']}</p>
+                                <p style="margin: 5px 0;"><strong>$ Pipeline:</strong> ${rd['booked_value']:,.0f}</p>
+                            </td>
                         </tr>
                     </table>
                     
@@ -1040,6 +1059,10 @@ QUALIFIED OR LATER PIPELINE
 - Total Deals: {rd['qualified_count']}
 - $ Pipeline: ${rd['qualified_value']:,.0f}
 - $ Pipeline (Factored): ${rd['qualified_factored']:,.0f}
+
+BOOKED DEALS
+- Total Deals: {rd['booked_count']}
+- $ Pipeline: ${rd['booked_value']:,.0f}
 
 See attached file for full details.
 
