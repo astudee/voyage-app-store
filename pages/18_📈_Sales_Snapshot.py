@@ -672,7 +672,11 @@ if run_report:
         "qualified_value": qualified_value,
         "qualified_factored": qualified_factored,
         "summary_df": summary_df,
-        "display_df": display_df
+        "display_df": display_df,
+        "chart_stages": chart_stages,
+        "chart_counts": chart_counts,
+        "chart_values": chart_values,
+        "chart_factored": chart_factored
     }
     
     col1, col2 = st.columns(2)
@@ -889,6 +893,7 @@ if 'sales_snapshot_data' in st.session_state:
                 from email.mime.multipart import MIMEMultipart
                 from email.mime.base import MIMEBase
                 from email.mime.text import MIMEText
+                from email.mime.image import MIMEImage
                 from email import encoders
                 
                 rd = st.session_state.sales_snapshot_data
@@ -901,12 +906,118 @@ if 'sales_snapshot_data' in st.session_state:
                 
                 gmail = build('gmail', 'v1', credentials=creds)
                 
-                msg = MIMEMultipart()
+                # Create multipart message with HTML
+                msg = MIMEMultipart('related')
                 msg['From'] = 'astudee@voyageadvisory.com'
                 msg['To'] = email_to
                 msg['Subject'] = f"Sales Snapshot Report - {rd['report_date'].strftime('%B %d, %Y')}"
                 
-                body = f"""Sales Snapshot Report
+                # Try to generate chart image for email
+                chart_cid = None
+                chart_image_data = None
+                try:
+                    # Recreate the chart for email
+                    email_fig = make_subplots(specs=[[{"secondary_y": True}]])
+                    
+                    email_fig.add_trace(
+                        go.Bar(
+                            name="$ Pipeline",
+                            x=rd['chart_stages'],
+                            y=rd['chart_values'],
+                            marker_color="#4472C4",
+                            text=[f"${v:,.0f}" for v in rd['chart_values']],
+                            textposition="outside"
+                        ),
+                        secondary_y=False
+                    )
+                    
+                    email_fig.add_trace(
+                        go.Bar(
+                            name="$ Pipeline (Factored)",
+                            x=rd['chart_stages'],
+                            y=rd['chart_factored'],
+                            marker_color="#70AD47",
+                            text=[f"${v:,.0f}" for v in rd['chart_factored']],
+                            textposition="outside"
+                        ),
+                        secondary_y=False
+                    )
+                    
+                    email_fig.add_trace(
+                        go.Scatter(
+                            name="# Deals",
+                            x=rd['chart_stages'],
+                            y=rd['chart_counts'],
+                            mode="lines+markers+text",
+                            line=dict(color="#ED7D31", width=3),
+                            marker=dict(size=10),
+                            text=rd['chart_counts'],
+                            textposition="top center"
+                        ),
+                        secondary_y=True
+                    )
+                    
+                    email_fig.update_layout(
+                        barmode="group",
+                        height=400,
+                        width=900,
+                        title=f"Sales Pipeline by Stage - {rd['report_date'].strftime('%B %d, %Y')}",
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        margin=dict(l=50, r=50, t=80, b=50),
+                        plot_bgcolor='white'
+                    )
+                    
+                    email_fig.update_yaxes(title_text="$ Value", secondary_y=False, tickformat="$,.0f")
+                    email_fig.update_yaxes(title_text="# Deals", secondary_y=True)
+                    
+                    # Generate PNG image
+                    chart_image_data = email_fig.to_image(format='png', width=900, height=400, scale=2)
+                    chart_cid = "chart_image"
+                except Exception as chart_error:
+                    st.sidebar.warning(f"Chart image not available: {chart_error}")
+                
+                # Build HTML email body
+                html_body = f"""
+                <html>
+                <body style="font-family: Arial, sans-serif; color: #333;">
+                    <h2 style="color: #2c3e50;">Sales Snapshot Report</h2>
+                    <p><strong>Generated:</strong> {rd['report_date'].strftime('%B %d, %Y')}<br>
+                    <strong>Date Range:</strong> {rd['date_range']}</p>
+                    
+                    {"<img src='cid:chart_image' style='max-width: 100%; height: auto; margin: 20px 0;'>" if chart_cid else ""}
+                    
+                    <table style="border-collapse: collapse; margin: 20px 0;">
+                        <tr>
+                            <td style="padding: 10px 30px 10px 0; vertical-align: top;">
+                                <h3 style="color: #4472C4; margin-bottom: 10px;">All Deals</h3>
+                                <p style="margin: 5px 0;"><strong>Total Deals:</strong> {rd['all_deals_count']}</p>
+                                <p style="margin: 5px 0;"><strong>$ Pipeline:</strong> ${rd['all_deals_value']:,.0f}</p>
+                                <p style="margin: 5px 0;"><strong>$ Pipeline (Factored):</strong> ${rd['all_deals_factored']:,.0f}</p>
+                            </td>
+                            <td style="padding: 10px 0 10px 30px; vertical-align: top; border-left: 1px solid #ddd;">
+                                <h3 style="color: #70AD47; margin-bottom: 10px;">Qualified or Later Pipeline</h3>
+                                <p style="margin: 5px 0;"><strong>Total Deals:</strong> {rd['qualified_count']}</p>
+                                <p style="margin: 5px 0;"><strong>$ Pipeline:</strong> ${rd['qualified_value']:,.0f}</p>
+                                <p style="margin: 5px 0;"><strong>$ Pipeline (Factored):</strong> ${rd['qualified_factored']:,.0f}</p>
+                            </td>
+                        </tr>
+                    </table>
+                    
+                    <p style="color: #666; font-size: 12px; margin-top: 30px;">
+                        See attached Excel file for full deal details.<br><br>
+                        Best regards,<br>
+                        <strong>Voyage Advisory</strong>
+                    </p>
+                </body>
+                </html>
+                """
+                
+                # Create alternative part for HTML
+                msg_alternative = MIMEMultipart('alternative')
+                msg.attach(msg_alternative)
+                
+                # Plain text fallback
+                plain_body = f"""Sales Snapshot Report
 
 Generated: {rd['report_date'].strftime('%B %d, %Y')}
 Date Range: {rd['date_range']}
@@ -927,7 +1038,15 @@ Best regards,
 Voyage Advisory
 """
                 
-                msg.attach(MIMEText(body, 'plain'))
+                msg_alternative.attach(MIMEText(plain_body, 'plain'))
+                msg_alternative.attach(MIMEText(html_body, 'html'))
+                
+                # Attach chart image if available
+                if chart_image_data and chart_cid:
+                    img_part = MIMEImage(chart_image_data)
+                    img_part.add_header('Content-ID', f'<{chart_cid}>')
+                    img_part.add_header('Content-Disposition', 'inline', filename='chart.png')
+                    msg.attach(img_part)
                 
                 # Attach Excel if available
                 if 'excel_file' in rd:
