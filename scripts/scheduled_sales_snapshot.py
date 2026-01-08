@@ -30,6 +30,7 @@ from email import encoders
 PIPEDRIVE_API_KEY = os.environ.get("PIPEDRIVE_API_TOKEN")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
 EMAIL_TO = "sales@voyageadvisory.com"
+EMAIL_CC = "astudee@voyageadvisory.com"  # CC the sender so they receive it too
 EMAIL_FROM = "astudee@voyageadvisory.com"
 
 PIPEDRIVE_BASE_URL = "https://api.pipedrive.com/v1"
@@ -491,6 +492,7 @@ def send_email(rd, excel_data, chart_image_data):
     msg = MIMEMultipart('related')
     msg['From'] = EMAIL_FROM
     msg['To'] = EMAIL_TO
+    msg['Cc'] = EMAIL_CC
     msg['Subject'] = f"Sales Snapshot Report - {rd['report_date'].strftime('%B %d, %Y')}"
     
     # HTML body
