@@ -1,0 +1,42 @@
+name: Sales Snapshot Report
+
+on:
+  schedule:
+    # Fridays at 9 AM CT (3 PM UTC in winter, 2 PM UTC in summer)
+    # Using 3 PM UTC to cover standard time
+    - cron: '0 15 * * 5'
+    
+    # Fridays at 2 PM CT (8 PM UTC in winter, 7 PM UTC in summer)  
+    # Using 8 PM UTC to cover standard time
+    - cron: '0 20 * * 5'
+    
+    # 1st of every month at 9 AM CT
+    - cron: '0 15 1 * *'
+  
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas openpyxl matplotlib google-api-python-client google-auth
+      
+      - name: Run Sales Snapshot Report
+        env:
+          PIPEDRIVE_API_TOKEN: ${{ secrets.PIPEDRIVE_API_TOKEN }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+        run: |
+          python scripts/scheduled_sales_snapshot.py
