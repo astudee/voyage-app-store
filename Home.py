@@ -329,6 +329,21 @@ apps = [
         'status': '✅ Available'
     },
     {
+        'icon': '📈',
+        'name': 'Sales Snapshot',
+        'page': '18_📈_Sales_Snapshot',
+        'description': 'Pipeline report by deal stage with probability factoring',
+        'features': [
+            'Filter by expected close date (This Quarter, Next Quarter, etc.)',
+            'Deals organized by pipeline stage',
+            'Probability-factored values from Pipedrive stage settings',
+            'Chart visualization of pipeline by stage',
+            'Summary metrics for all deals and qualified pipeline',
+            'Excel and email export'
+        ],
+        'status': '✅ Available'
+    },
+    {
         'icon': '🔑',
         'name': 'QuickBooks Token Refresh',
         'page': '99_🔑_QuickBooks_Token_Refresh',
