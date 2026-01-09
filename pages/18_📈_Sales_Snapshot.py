@@ -672,6 +672,69 @@ if run_report:
     )
     
     # ============================================================
+    # OWNER DETAILS TABLE
+    # ============================================================
+    
+    st.markdown("---")
+    st.subheader("👤 Owner Details")
+    
+    # Aggregate deals by owner and stage
+    owner_stage_data = {}  # {owner: {stage_id: {"value": X, "count": Y}}}
+    
+    for deal in deal_rows:
+        owner = deal["Owner"]
+        stage_id = deal["Stage_ID"]
+        value = deal["Value"]
+        
+        if owner not in owner_stage_data:
+            owner_stage_data[owner] = {}
+        
+        if stage_id not in owner_stage_data[owner]:
+            owner_stage_data[owner][stage_id] = {"value": 0, "count": 0}
+        
+        owner_stage_data[owner][stage_id]["value"] += value
+        owner_stage_data[owner][stage_id]["count"] += 1
+    
+    # Build owner summary rows
+    owner_rows = []
+    for owner in sorted(owner_stage_data.keys()):
+        row = {"Owner": owner}
+        owner_total_value = 0
+        owner_total_count = 0
+        
+        for stage_id, stage_info in ordered_stages:
+            stage_name = stage_info["name"]
+            stage_data = owner_stage_data[owner].get(stage_id, {"value": 0, "count": 0})
+            
+            if stage_data["value"] > 0:
+                row[stage_name] = f"${stage_data['value']:,.0f} ({stage_data['count']} deal{'s' if stage_data['count'] != 1 else ''})"
+                owner_total_value += stage_data["value"]
+                owner_total_count += stage_data["count"]
+            else:
+                row[stage_name] = "—"
+        
+        row["Total"] = f"${owner_total_value:,.0f} ({owner_total_count} deal{'s' if owner_total_count != 1 else ''})"
+        owner_rows.append(row)
+    
+    owner_df = pd.DataFrame(owner_rows)
+    
+    # Column config for owner details
+    owner_column_config = {
+        "Owner": st.column_config.TextColumn("Owner", width="medium"),
+    }
+    for col in stage_cols:
+        owner_column_config[col] = st.column_config.TextColumn(col, width=130)
+    owner_column_config["Total"] = st.column_config.TextColumn("Total", width=130)
+    
+    st.dataframe(
+        owner_df,
+        use_container_width=True,
+        hide_index=True,
+        height=400,
+        column_config=owner_column_config
+    )
+    
+    # ============================================================
     # EXPORT OPTIONS
     # ============================================================
     
@@ -690,6 +753,7 @@ if run_report:
         "qualified_factored": qualified_factored,
         "summary_df": summary_df,
         "display_df": display_df,
+        "owner_df": owner_df,
         "chart_stages": chart_stages,
         "chart_counts": chart_counts,
         "chart_values": chart_values,
@@ -711,6 +775,9 @@ if run_report:
                 
                 # Details sheet
                 display_df.to_excel(writer, sheet_name='Deal_Details', index=False)
+                
+                # Owner Details sheet
+                owner_df.to_excel(writer, sheet_name='Owner_Details', index=False)
                 
                 # Metrics sheet
                 metrics_data = {
