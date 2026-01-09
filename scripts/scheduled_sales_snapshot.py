@@ -335,6 +335,22 @@ def generate_report():
         total_pipeline += totals["value"]
         total_factored += totals["factored"]
     
+    # Build owner details
+    owner_stage_data = {}
+    for deal in deal_rows:
+        owner = deal["Owner"]
+        stage_id = deal["Stage_ID"]
+        value = deal["Value"]
+        
+        if owner not in owner_stage_data:
+            owner_stage_data[owner] = {}
+        
+        if stage_id not in owner_stage_data[owner]:
+            owner_stage_data[owner][stage_id] = {"value": 0, "count": 0}
+        
+        owner_stage_data[owner][stage_id]["value"] += value
+        owner_stage_data[owner][stage_id]["count"] += 1
+    
     return {
         "report_date": date.today(),
         "date_range": f"{start_date} to {end_date}",
@@ -357,7 +373,8 @@ def generate_report():
         "total_factored": total_factored,
         "deal_rows": deal_rows,
         "ordered_stages": ordered_stages,
-        "stage_totals": stage_totals
+        "stage_totals": stage_totals,
+        "owner_stage_data": owner_stage_data
     }
 
 
@@ -392,6 +409,29 @@ def generate_excel(rd):
             row["Total"] = deal["Value"]
             display_rows.append(row)
         pd.DataFrame(display_rows).to_excel(writer, sheet_name='Deal_Details', index=False)
+        
+        # Owner details
+        owner_rows = []
+        for owner in sorted(rd['owner_stage_data'].keys()):
+            row = {"Owner": owner}
+            owner_total_value = 0
+            owner_total_count = 0
+            
+            for stage_id, stage_info in rd['ordered_stages']:
+                stage_name = stage_info["name"]
+                stage_data = rd['owner_stage_data'][owner].get(stage_id, {"value": 0, "count": 0})
+                
+                if stage_data["value"] > 0:
+                    row[stage_name] = f"${stage_data['value']:,.0f} ({stage_data['count']} deal{'s' if stage_data['count'] != 1 else ''})"
+                    owner_total_value += stage_data["value"]
+                    owner_total_count += stage_data["count"]
+                else:
+                    row[stage_name] = "—"
+            
+            row["Total"] = f"${owner_total_value:,.0f} ({owner_total_count} deal{'s' if owner_total_count != 1 else ''})"
+            owner_rows.append(row)
+        
+        pd.DataFrame(owner_rows).to_excel(writer, sheet_name='Owner_Details', index=False)
         
         # Metrics
         metrics_data = {
