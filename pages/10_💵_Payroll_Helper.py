@@ -90,14 +90,32 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
     
     with st.spinner("📡 Pulling time data from BigTime..."):
         # Get BigTime report for payroll period
-        # Note: get_time_report takes a year parameter, so we'll pull the full year and filter
-        bt_full = bigtime.get_time_report(start_date.year)
+        # Handle year boundary - if start and end dates are in different years, pull both
+        if start_date.year != end_date.year:
+            # Year boundary - need to pull both years and combine
+            bt_start_year = bigtime.get_time_report(start_date.year)
+            bt_end_year = bigtime.get_time_report(end_date.year)
+            
+            if bt_start_year is not None and not bt_start_year.empty:
+                if bt_end_year is not None and not bt_end_year.empty:
+                    bt_full = pd.concat([bt_start_year, bt_end_year], ignore_index=True)
+                else:
+                    bt_full = bt_start_year
+            elif bt_end_year is not None and not bt_end_year.empty:
+                bt_full = bt_end_year
+            else:
+                bt_full = None
+            
+            debug_log.append(f"📅 Year boundary detected: pulling {start_date.year} and {end_date.year}")
+        else:
+            # Same year - just pull that year
+            bt_full = bigtime.get_time_report(start_date.year)
         
         if bt_full is None or bt_full.empty:
             st.error("❌ No BigTime data available")
             st.stop()
         
-        debug_log.append(f"✅ Pulled {len(bt_full)} BigTime entries for full year")
+        debug_log.append(f"✅ Pulled {len(bt_full)} BigTime entries for full year(s)")
         debug_log.append(f"📋 BigTime columns: {', '.join(bt_full.columns.tolist())}")
         
         # Find date column and filter to payroll period
@@ -115,11 +133,13 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
             ].copy()
             
             # Also get YTD data for policy checks
-            year_start = pd.Timestamp(start_date.year, 1, 1)
+            # Use end_date.year for YTD since that's the year we're calculating limits for
+            year_start = pd.Timestamp(end_date.year, 1, 1)
             bt_ytd = bt_full[
                 (bt_full['Date'] >= year_start) & 
                 (bt_full['Date'] <= pd.Timestamp(end_date))
             ].copy()
+            debug_log.append(f"📅 YTD calculated for {end_date.year} (Jan 1 to {end_date.strftime('%m/%d')})")
         else:
             st.error("❌ Could not find date column in BigTime data")
             st.stop()
