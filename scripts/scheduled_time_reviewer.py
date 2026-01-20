@@ -172,17 +172,35 @@ def generate_report():
     print(f"  Zero hours report rows: {len(zero_hours_df)}")
     if not zero_hours_df.empty:
         print(f"  Zero hours sample data (first 2 rows): {zero_hours_df.head(2).to_dict()}")
-        # Find staff name column - check various possible names
+        # Find staff name column
         staff_col = None
-        possible_staff_cols = ['Staff', 'Staff Member', 'tmstaffnm', 'Name', 'StaffMember', 'Staff_Member', 'Employee', 'EmployeeName', 'staff', 'name']
-        for col in zero_hours_df.columns:
-            if col in possible_staff_cols or 'staff' in col.lower() or 'name' in col.lower() or 'employee' in col.lower():
+        # Priority 1: Exact matches for known name columns
+        for col in ['stname', 'Name', 'Staff', 'Staff Member', 'tmstaffnm', 'staffnm', 'EmployeeName']:
+            if col in zero_hours_df.columns:
                 staff_col = col
                 break
 
+        # Priority 2: Columns containing "name" (but not "name_id" or "name_sort")
+        if staff_col is None:
+            for col in zero_hours_df.columns:
+                col_lower = col.lower()
+                if 'name' in col_lower and '_id' not in col_lower and '_sort' not in col_lower:
+                    staff_col = col
+                    break
+
+        # Priority 3: Fallback to first column if it contains string names
+        if staff_col is None and len(zero_hours_df.columns) > 0:
+            first_col = zero_hours_df.columns[0]
+            first_val = zero_hours_df[first_col].iloc[0] if len(zero_hours_df) > 0 else ""
+            if isinstance(first_val, str) and ' ' in first_val:
+                staff_col = first_col
+
         print(f"  Matched staff column: {staff_col}")
         if staff_col:
-            issues['zero_hours'] = sorted(zero_hours_df[staff_col].unique().tolist())
+            # Filter out totals rows (like "OVERALL TOTALS")
+            names = zero_hours_df[staff_col].dropna().unique().tolist()
+            names = [n for n in names if n and 'TOTAL' not in str(n).upper()]
+            issues['zero_hours'] = sorted(names)
 
     # Analyze Unsubmitted
     print("Analyzing unsubmitted timesheets...")

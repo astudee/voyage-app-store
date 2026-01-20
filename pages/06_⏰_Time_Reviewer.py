@@ -347,25 +347,28 @@ if run_review:
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
             st.write(f"📋 **Zero hours sample:** {zero_hours_df.head(1).to_dict()}")
-            # Find staff name column - try the first column as fallback (often the name column)
+            # Find staff name column
             staff_col = None
-            # Check explicit matches first
-            for col in zero_hours_df.columns:
-                col_lower = col.lower()
-                if col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name', 'staffnm']:
-                    staff_col = col
-                    break
-                if 'staff' in col_lower or 'name' in col_lower or 'employee' in col_lower:
+            # Priority 1: Exact matches for known name columns
+            for col in ['stname', 'Name', 'Staff', 'Staff Member', 'tmstaffnm', 'staffnm', 'EmployeeName']:
+                if col in zero_hours_df.columns:
                     staff_col = col
                     break
 
-            # Fallback: use first column if it looks like names (contains spaces typically)
+            # Priority 2: Columns containing "name" (but not "name_id" or "name_sort")
+            if staff_col is None:
+                for col in zero_hours_df.columns:
+                    col_lower = col.lower()
+                    if 'name' in col_lower and '_id' not in col_lower and '_sort' not in col_lower:
+                        staff_col = col
+                        break
+
+            # Priority 3: Fallback to first column if it contains string names
             if staff_col is None and len(zero_hours_df.columns) > 0:
                 first_col = zero_hours_df.columns[0]
                 first_val = zero_hours_df[first_col].iloc[0] if len(zero_hours_df) > 0 else ""
                 if isinstance(first_val, str) and ' ' in first_val:
                     staff_col = first_col
-                    st.write(f"📋 **Using first column as fallback:** {staff_col}")
 
             st.write(f"📋 **Matched staff column:** {staff_col}")
             if staff_col:
