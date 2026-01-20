@@ -1,0 +1,39 @@
+name: Time Reviewer Report
+
+on:
+  schedule:
+    # Mondays at 7 AM CT (13:00 UTC in winter/standard time)
+    - cron: '0 13 * * 1'
+
+    # Tuesdays at 7 AM CT (13:00 UTC in winter/standard time)
+    - cron: '0 13 * * 2'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas openpyxl google-api-python-client google-auth
+
+      - name: Run Time Reviewer Report
+        env:
+          BIGTIME_API_KEY: ${{ secrets.BIGTIME_API_KEY }}
+          BIGTIME_FIRM_ID: ${{ secrets.BIGTIME_FIRM_ID }}
+          GOOGLE_SERVICE_ACCOUNT_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+          SHEET_CONFIG_ID: ${{ secrets.SHEET_CONFIG_ID }}
+        run: |
+          python scripts/scheduled_time_reviewer.py
