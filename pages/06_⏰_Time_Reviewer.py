@@ -330,22 +330,50 @@ if run_review:
             st.stop()
         
         st.success(f"✅ Fetched reports: {len(zero_hours_df)} zero-hour entries, {len(unsubmitted_df)} unsubmitted, {len(detailed_df)} time entries")
-    
+
+    # DEBUG: Zero hours report info (VERY VISIBLE)
+    st.warning(f"🔍 DEBUG - Zero hours report columns: {list(zero_hours_df.columns)}")
+    st.warning(f"🔍 DEBUG - Zero hours report has {len(zero_hours_df)} rows")
+    if not zero_hours_df.empty:
+        st.warning(f"🔍 DEBUG - Sample: {zero_hours_df.head(1).to_dict()}")
+
     # ============================================================
     # PHASE 3: ANALYZE ZERO HOURS
     # ============================================================
-    
+
+    # Show zero hours report columns for debugging
+    st.write(f"📋 **Zero hours report columns:** {list(zero_hours_df.columns)}")
+
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
-            # Find staff name column
+            st.write(f"📋 **Zero hours sample:** {zero_hours_df.head(1).to_dict()}")
+            # Find staff name column - try the first column as fallback (often the name column)
             staff_col = None
-            for col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name']:
-                if col in zero_hours_df.columns:
+            # Check explicit matches first
+            for col in zero_hours_df.columns:
+                col_lower = col.lower()
+                if col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name', 'staffnm']:
                     staff_col = col
                     break
-            
+                if 'staff' in col_lower or 'name' in col_lower or 'employee' in col_lower:
+                    staff_col = col
+                    break
+
+            # Fallback: use first column if it looks like names (contains spaces typically)
+            if staff_col is None and len(zero_hours_df.columns) > 0:
+                first_col = zero_hours_df.columns[0]
+                first_val = zero_hours_df[first_col].iloc[0] if len(zero_hours_df) > 0 else ""
+                if isinstance(first_val, str) and ' ' in first_val:
+                    staff_col = first_col
+                    st.write(f"📋 **Using first column as fallback:** {staff_col}")
+
+            st.write(f"📋 **Matched staff column:** {staff_col}")
             if staff_col:
-                issues['zero_hours'] = sorted(zero_hours_df[staff_col].unique().tolist())
+                # Filter out totals rows (like "OVERALL TOTALS")
+                names = zero_hours_df[staff_col].dropna().unique().tolist()
+                names = [n for n in names if n and 'TOTAL' not in str(n).upper()]
+                issues['zero_hours'] = sorted(names)
+                st.write(f"📋 **Found {len(issues['zero_hours'])} people with zero hours:** {issues['zero_hours']}")
     
     # ============================================================
     # PHASE 4: ANALYZE UNSUBMITTED TIMESHEETS

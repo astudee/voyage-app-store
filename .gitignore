@@ -5,3 +5,6 @@ token_vault.json
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
+
+# Upload folder for sharing files with Claude
+uploads/

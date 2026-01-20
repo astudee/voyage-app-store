@@ -168,13 +168,19 @@ def generate_report():
 
     # Analyze Zero Hours
     print("Analyzing zero hours...")
+    print(f"  Zero hours report columns: {list(zero_hours_df.columns)}")
+    print(f"  Zero hours report rows: {len(zero_hours_df)}")
     if not zero_hours_df.empty:
+        print(f"  Zero hours sample data (first 2 rows): {zero_hours_df.head(2).to_dict()}")
+        # Find staff name column - check various possible names
         staff_col = None
-        for col in ['Staff', 'Staff Member', 'tmstaffnm', 'Name']:
-            if col in zero_hours_df.columns:
+        possible_staff_cols = ['Staff', 'Staff Member', 'tmstaffnm', 'Name', 'StaffMember', 'Staff_Member', 'Employee', 'EmployeeName', 'staff', 'name']
+        for col in zero_hours_df.columns:
+            if col in possible_staff_cols or 'staff' in col.lower() or 'name' in col.lower() or 'employee' in col.lower():
                 staff_col = col
                 break
 
+        print(f"  Matched staff column: {staff_col}")
         if staff_col:
             issues['zero_hours'] = sorted(zero_hours_df[staff_col].unique().tolist())
 
