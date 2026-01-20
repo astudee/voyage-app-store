@@ -331,22 +331,12 @@ if run_review:
         
         st.success(f"✅ Fetched reports: {len(zero_hours_df)} zero-hour entries, {len(unsubmitted_df)} unsubmitted, {len(detailed_df)} time entries")
 
-    # DEBUG: Zero hours report info (VERY VISIBLE)
-    st.warning(f"🔍 DEBUG - Zero hours report columns: {list(zero_hours_df.columns)}")
-    st.warning(f"🔍 DEBUG - Zero hours report has {len(zero_hours_df)} rows")
-    if not zero_hours_df.empty:
-        st.warning(f"🔍 DEBUG - Sample: {zero_hours_df.head(1).to_dict()}")
-
     # ============================================================
     # PHASE 3: ANALYZE ZERO HOURS
     # ============================================================
 
-    # Show zero hours report columns for debugging
-    st.write(f"📋 **Zero hours report columns:** {list(zero_hours_df.columns)}")
-
     with st.spinner("🔍 Checking for zero hours..."):
         if not zero_hours_df.empty:
-            st.write(f"📋 **Zero hours sample:** {zero_hours_df.head(1).to_dict()}")
             # Find staff name column
             staff_col = None
             # Priority 1: Exact matches for known name columns
@@ -370,13 +360,11 @@ if run_review:
                 if isinstance(first_val, str) and ' ' in first_val:
                     staff_col = first_col
 
-            st.write(f"📋 **Matched staff column:** {staff_col}")
             if staff_col:
                 # Filter out totals rows (like "OVERALL TOTALS")
                 names = zero_hours_df[staff_col].dropna().unique().tolist()
                 names = [n for n in names if n and 'TOTAL' not in str(n).upper()]
                 issues['zero_hours'] = sorted(names)
-                st.write(f"📋 **Found {len(issues['zero_hours'])} people with zero hours:** {issues['zero_hours']}")
     
     # ============================================================
     # PHASE 4: ANALYZE UNSUBMITTED TIMESHEETS
@@ -400,9 +388,6 @@ if run_review:
     
     with st.spinner("🔍 Analyzing time entries..."):
         if not detailed_df.empty:
-            # Debug: show ALL detailed report columns
-            st.caption(f"📋 Detailed report ALL columns: {list(detailed_df.columns)}")
-            
             # Map column names
             # 'Hours' = TOTAL hours (tmhrsin/Input column) - used for under 40 check
             # 'Billable' = billable hours - used for project overrun check
@@ -422,9 +407,7 @@ if run_review:
                     if possible in detailed_df.columns:
                         col_mapping[standard_name] = possible
                         break
-            
-            st.caption(f"📋 Column mapping: {col_mapping}")
-            
+
             # Rename columns
             detailed_df = detailed_df.rename(columns={v: k for k, v in col_mapping.items()})
             
@@ -470,9 +453,6 @@ if run_review:
             assignments_df = sheets.read_config(config_sheet_id, "Assignments")
             
             if assignments_df is not None and not assignments_df.empty:
-                # Debug: show columns
-                st.caption(f"📋 Assignments columns: {list(assignments_df.columns)[:10]}")
-                
                 # Get all billable hours from BigTime by staff/project
                 # Filter out Internal clients
                 if not detailed_df.empty and 'Client' in detailed_df.columns:
@@ -515,9 +495,6 @@ if run_review:
                             all_time_df = get_bigtime_report(284796, all_time_start, all_time_end)
                             
                             if all_time_df is not None and not all_time_df.empty:
-                                # Debug: show BigTime columns
-                                st.caption(f"📋 BigTime columns: {list(all_time_df.columns)[:15]}")
-                                
                                 # Apply same column mapping
                                 for standard_name, possible_names in {
                                     'Staff': ['Staff Member', 'tmstaffnm', 'Staff'],
@@ -602,12 +579,7 @@ if run_review:
                                                     assigned_lookup[key] += total_assigned
                                                 else:
                                                     assigned_lookup[key] = total_assigned
-                                        
-                                        # Debug: show sample of assigned lookup
-                                        if assigned_lookup:
-                                            sample_keys = list(assigned_lookup.items())[:3]
-                                            st.caption(f"📋 Assignments loaded: {len(assigned_lookup)} staff/project combos (e.g., {sample_keys[0] if sample_keys else 'none'})")
-                                        
+
                                         # Build set of staff/project combos that had activity THIS WEEK
                                         this_week_combos = set()
                                         for _, row in staff_project_hours.iterrows():
@@ -630,15 +602,7 @@ if run_review:
                                             
                                             # Look up assigned hours
                                             assigned = assigned_lookup.get((staff, project_id), 0)
-                                            
-                                            # Debug first mismatch
-                                            if assigned == 0 and hours_used > 0 and len(issues['project_overruns']) == 0:
-                                                st.caption(f"🔍 Debug - Looking for: staff='{staff}', project_id='{project_id}'")
-                                                # Check if staff exists with any project
-                                                staff_keys = [k for k in assigned_lookup.keys() if k[0] == staff]
-                                                if staff_keys:
-                                                    st.caption(f"   Found staff with project_ids: {[k[1] for k in staff_keys[:3]]}")
-                                            
+
                                             # Check conditions:
                                             # (a) No hours assigned (and has used hours)
                                             # (b) Used more than 90% of assigned hours
@@ -948,8 +912,96 @@ Total Issues Found: {total_issues}
             )
         except Exception as e:
             st.error(f"Excel export error: {str(e)}")
-    
-    st.info("📧 To email this report, use the 'Email Report' section in the sidebar →")
+
+    # Email section
+    st.divider()
+    st.subheader("📧 Email Report")
+
+    email_col1, email_col2 = st.columns([3, 1])
+    with email_col1:
+        email_to = st.text_input(
+            "Send to:",
+            placeholder="email@example.com",
+            key="time_review_email"
+        )
+    with email_col2:
+        st.write("")  # Spacer for alignment
+        send_clicked = st.button("📧 Send Email", type="primary", use_container_width=True, key="send_time_review")
+
+    if send_clicked:
+        if not email_to:
+            st.error("Enter an email address")
+        else:
+            try:
+                from googleapiclient.discovery import build
+                from google.oauth2 import service_account
+                import base64
+                from email.mime.multipart import MIMEMultipart
+                from email.mime.base import MIMEBase
+                from email.mime.text import MIMEText
+                from email import encoders
+
+                rd = st.session_state.time_review_data
+
+                creds = service_account.Credentials.from_service_account_info(
+                    st.secrets["SERVICE_ACCOUNT_KEY"],
+                    scopes=['https://www.googleapis.com/auth/gmail.send'],
+                    subject='astudee@voyageadvisory.com'
+                )
+
+                gmail = build('gmail', 'v1', credentials=creds)
+
+                msg = MIMEMultipart()
+                msg['From'] = 'astudee@voyageadvisory.com'
+                msg['To'] = email_to
+                msg['Subject'] = f"Time Review - Week Ending {rd['week_ending'].strftime('%b %d, %Y')}"
+
+                body = f"""Hours Reviewer Report
+
+Week Ending: {rd['week_ending'].strftime('%A, %B %d, %Y')}
+Period: {rd['week_starting'].strftime('%B %d')} - {rd['week_ending'].strftime('%B %d, %Y')}
+
+Total Issues Found: {rd['total_issues']}
+
+Summary:
+- Zero Hours: {len(rd['issues']['zero_hours'])}
+- Not Submitted: {len(rd['issues']['not_submitted'])}
+- Under 40 Hours: {len(rd['issues']['under_40'])}
+- Non-Billable Client Work: {len(rd['issues']['non_billable_client_work'])}
+- Poor Quality Notes: {len(rd['issues']['poor_notes'])}
+
+See attached file for full details.
+
+Best regards,
+Voyage Advisory
+"""
+
+                msg.attach(MIMEText(body, 'plain'))
+
+                # Attach Excel if available, otherwise text
+                if 'excel_file' in rd:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(rd['excel_file'])
+                    encoders.encode_base64(part)
+                    filename = f"time_review_{rd['week_ending'].strftime('%Y%m%d')}.xlsx"
+                    part.add_header('Content-Disposition', f'attachment; filename={filename}')
+                else:
+                    part = MIMEBase('text', 'plain')
+                    part.set_payload(rd['report_text'].encode('utf-8'))
+                    encoders.encode_base64(part)
+                    filename = f"time_review_{rd['week_ending'].strftime('%Y%m%d')}.txt"
+                    part.add_header('Content-Disposition', f'attachment; filename={filename}')
+
+                msg.attach(part)
+
+                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
+                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
+
+                st.success(f"✅ Sent to {email_to}!")
+
+            except Exception as e:
+                st.error(f"❌ {type(e).__name__}")
+                st.code(str(e))
 
 else:
     st.info("☝️ Select a week ending date above and click 'Review Timesheets'")
@@ -975,91 +1027,3 @@ else:
         **AI Note Review (Optional):**
         Check the box to enable AI-powered review of billing notes. Uses Gemini/Claude AI to check if notes meet Voyage professional standards. This takes a few minutes to run.
         """)
-
-# Email functionality
-if 'time_review_data' in st.session_state:
-    st.sidebar.markdown("---")
-    st.sidebar.subheader("📧 Email Report")
-    
-    email_to = st.sidebar.text_input(
-        "Send to:",
-        placeholder="email@example.com",
-        key="time_review_email"
-    )
-    
-    send_clicked = st.sidebar.button("Send Email", type="primary", use_container_width=True, key="send_time_review")
-    
-    if send_clicked:
-        if not email_to:
-            st.sidebar.error("Enter an email address")
-        else:
-            try:
-                from googleapiclient.discovery import build
-                from google.oauth2 import service_account
-                import base64
-                from email.mime.multipart import MIMEMultipart
-                from email.mime.base import MIMEBase
-                from email.mime.text import MIMEText
-                from email import encoders
-                
-                rd = st.session_state.time_review_data
-                
-                creds = service_account.Credentials.from_service_account_info(
-                    st.secrets["SERVICE_ACCOUNT_KEY"],
-                    scopes=['https://www.googleapis.com/auth/gmail.send'],
-                    subject='astudee@voyageadvisory.com'
-                )
-                
-                gmail = build('gmail', 'v1', credentials=creds)
-                
-                msg = MIMEMultipart()
-                msg['From'] = 'astudee@voyageadvisory.com'
-                msg['To'] = email_to
-                msg['Subject'] = f"Time Review - Week Ending {rd['week_ending'].strftime('%b %d, %Y')}"
-                
-                body = f"""Hours Reviewer Report
-
-Week Ending: {rd['week_ending'].strftime('%A, %B %d, %Y')}
-Period: {rd['week_starting'].strftime('%B %d')} - {rd['week_ending'].strftime('%B %d, %Y')}
-
-Total Issues Found: {rd['total_issues']}
-
-Summary:
-- Zero Hours: {len(rd['issues']['zero_hours'])}
-- Not Submitted: {len(rd['issues']['not_submitted'])}
-- Under 40 Hours: {len(rd['issues']['under_40'])}
-- Non-Billable Client Work: {len(rd['issues']['non_billable_client_work'])}
-- Poor Quality Notes: {len(rd['issues']['poor_notes'])}
-
-See attached file for full details.
-
-Best regards,
-Voyage Advisory
-"""
-                
-                msg.attach(MIMEText(body, 'plain'))
-                
-                # Attach Excel if available, otherwise text
-                if 'excel_file' in rd:
-                    part = MIMEBase('application', 'octet-stream')
-                    part.set_payload(rd['excel_file'])
-                    encoders.encode_base64(part)
-                    filename = f"time_review_{rd['week_ending'].strftime('%Y%m%d')}.xlsx"
-                    part.add_header('Content-Disposition', f'attachment; filename={filename}')
-                else:
-                    part = MIMEBase('text', 'plain')
-                    part.set_payload(rd['report_text'].encode('utf-8'))
-                    encoders.encode_base64(part)
-                    filename = f"time_review_{rd['week_ending'].strftime('%Y%m%d')}.txt"
-                    part.add_header('Content-Disposition', f'attachment; filename={filename}')
-                
-                msg.attach(part)
-                
-                raw = base64.urlsafe_b64encode(msg.as_bytes()).decode('utf-8')
-                result = gmail.users().messages().send(userId='me', body={'raw': raw}).execute()
-                
-                st.sidebar.success(f"✅ Sent to {email_to}!")
-                
-            except Exception as e:
-                st.sidebar.error(f"❌ {type(e).__name__}")
-                st.sidebar.code(str(e))

@@ -168,10 +168,7 @@ def generate_report():
 
     # Analyze Zero Hours
     print("Analyzing zero hours...")
-    print(f"  Zero hours report columns: {list(zero_hours_df.columns)}")
-    print(f"  Zero hours report rows: {len(zero_hours_df)}")
     if not zero_hours_df.empty:
-        print(f"  Zero hours sample data (first 2 rows): {zero_hours_df.head(2).to_dict()}")
         # Find staff name column
         staff_col = None
         # Priority 1: Exact matches for known name columns
@@ -195,12 +192,12 @@ def generate_report():
             if isinstance(first_val, str) and ' ' in first_val:
                 staff_col = first_col
 
-        print(f"  Matched staff column: {staff_col}")
         if staff_col:
             # Filter out totals rows (like "OVERALL TOTALS")
             names = zero_hours_df[staff_col].dropna().unique().tolist()
             names = [n for n in names if n and 'TOTAL' not in str(n).upper()]
             issues['zero_hours'] = sorted(names)
+            print(f"  Found {len(issues['zero_hours'])} people with zero hours")
 
     # Analyze Unsubmitted
     print("Analyzing unsubmitted timesheets...")
