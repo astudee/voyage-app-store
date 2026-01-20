@@ -8,6 +8,7 @@ import requests
 import sys
 from datetime import datetime
 import pandas as pd
+import snowflake.connector
 
 # Authentication check - shared session state from Home page
 if 'authenticated' not in st.session_state or not st.session_state.authenticated:
@@ -572,6 +573,77 @@ def check_pipedrive():
             'details': str(e)
         }
 
+def check_snowflake():
+    """Test Snowflake database connection"""
+    try:
+        snowflake_config = st.secrets.get("snowflake")
+        if not snowflake_config:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'snowflake config not found in secrets',
+                'details': 'Missing [snowflake] section in secrets'
+            }
+
+        # Check required fields
+        required_fields = ['account', 'user', 'password', 'warehouse', 'database', 'schema']
+        missing = [f for f in required_fields if not snowflake_config.get(f)]
+        if missing:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': f'Missing config fields: {", ".join(missing)}',
+                'details': 'Check [snowflake] section in secrets'
+            }
+
+        # Try to connect
+        conn = snowflake.connector.connect(
+            account=snowflake_config["account"],
+            user=snowflake_config["user"],
+            password=snowflake_config["password"],
+            warehouse=snowflake_config["warehouse"],
+            database=snowflake_config["database"],
+            schema=snowflake_config["schema"]
+        )
+
+        # Run a simple query to verify connection
+        cursor = conn.cursor()
+        cursor.execute("SELECT CURRENT_VERSION()")
+        version = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+
+        return {
+            'status': 'success',
+            'icon': '✅',
+            'message': 'Connected successfully',
+            'details': f'Snowflake version: {version}'
+        }
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if 'authentication' in error_msg or 'password' in error_msg:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'Authentication failed',
+                'details': 'Check user/password in secrets'
+            }
+        elif 'account' in error_msg:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': 'Invalid account',
+                'details': 'Check account identifier in secrets'
+            }
+        else:
+            return {
+                'status': 'error',
+                'icon': '❌',
+                'message': f'Connection failed: {type(e).__name__}',
+                'details': str(e)
+            }
+
 # Run all checks
 if st.button("🔍 Run Health Check", type="primary"):
     st.session_state.health_results = {}
@@ -601,7 +673,11 @@ if st.button("🔍 Run Health Check", type="primary"):
     
     with st.spinner("Checking Pipedrive API..."):
         st.session_state.health_results['Pipedrive'] = check_pipedrive()
-    
+
+    # Database
+    with st.spinner("Checking Snowflake..."):
+        st.session_state.health_results['Snowflake'] = check_snowflake()
+
     st.rerun()
 
 # Display results
@@ -680,6 +756,14 @@ if st.session_state.health_results:
                     3. Copy the "API token" value and add to secrets
                     4. Verify the token hasn't been revoked
                     """)
+                elif service_name == 'Snowflake':
+                    st.markdown("""
+                    **Fix:**
+                    1. Check `[snowflake]` section in Streamlit secrets
+                    2. Verify account, user, password, warehouse, database, schema are set
+                    3. Confirm credentials are correct and user has access
+                    4. Check that warehouse is running and not suspended
+                    """)
     
     st.divider()
     
@@ -713,4 +797,7 @@ else:
     
     **CRM:**
     - ✅ Pipedrive - Deal pipeline and lead tracking
+
+    **Database:**
+    - ✅ Snowflake - Data warehouse
     """)
