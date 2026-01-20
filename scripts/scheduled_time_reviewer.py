@@ -32,6 +32,7 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
 SHEET_CONFIG_ID = os.environ.get("SHEET_CONFIG_ID")
 
 EMAIL_TO = "hello@voyageadvisory.com"
+EMAIL_CC = "astudee@voyageadvisory.com"
 EMAIL_FROM = "astudee@voyageadvisory.com"
 
 # ============================================================
@@ -521,6 +522,7 @@ def send_email(rd, report_text, excel_data):
     msg = MIMEMultipart()
     msg['From'] = EMAIL_FROM
     msg['To'] = EMAIL_TO
+    msg['Cc'] = EMAIL_CC
     msg['Subject'] = f"Time Review Report - Week Ending {rd['week_ending'].strftime('%b %d, %Y')}"
 
     body = f"""Hours Reviewer Report
