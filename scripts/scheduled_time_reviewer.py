@@ -26,10 +26,10 @@ from email import encoders
 # CONFIGURATION - Set via GitHub Secrets
 # ============================================================
 
-BIGTIME_API_KEY = os.environ.get("BIGTIME_API_KEY")
-BIGTIME_FIRM_ID = os.environ.get("BIGTIME_FIRM_ID")
+BIGTIME_API_KEY = (os.environ.get("BIGTIME_API_KEY") or "").strip()
+BIGTIME_FIRM_ID = (os.environ.get("BIGTIME_FIRM_ID") or "").strip()
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
-SHEET_CONFIG_ID = os.environ.get("SHEET_CONFIG_ID")
+SHEET_CONFIG_ID = (os.environ.get("SHEET_CONFIG_ID") or "").strip()
 
 EMAIL_TO = "hello@voyageadvisory.com"
 EMAIL_CC = "astudee@voyageadvisory.com"
