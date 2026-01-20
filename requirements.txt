@@ -12,3 +12,4 @@ python-docx
 plotly
 kaleido
 matplotlib
+snowflake-connector-python
