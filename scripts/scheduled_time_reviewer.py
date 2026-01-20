@@ -31,7 +31,7 @@ BIGTIME_FIRM_ID = os.environ.get("BIGTIME_FIRM_ID")
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
 SHEET_CONFIG_ID = os.environ.get("SHEET_CONFIG_ID")
 
-EMAIL_TO = "astudee@voyageadvisory.com"
+EMAIL_TO = "hello@voyageadvisory.com"
 EMAIL_FROM = "astudee@voyageadvisory.com"
 
 # ============================================================
