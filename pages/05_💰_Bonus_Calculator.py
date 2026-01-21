@@ -100,33 +100,24 @@ st.sidebar.write(f"{start_date.strftime('%B %d, %Y')} to {as_of_date.strftime('%
 def load_staff_config():
     """Load staff configuration from Voyage_Global_Config"""
     try:
-        import gspread
-        from google.oauth2 import service_account
-        
-        service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
+        from functions import sheets
+
         spreadsheet_id = st.secrets.get("SHEET_CONFIG_ID")
-        
-        if service_account_info and spreadsheet_id:
-            credentials = service_account.Credentials.from_service_account_info(
-                service_account_info,
-                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
-            )
-            gc = gspread.authorize(credentials)
-            
-            sh = gc.open_by_key(spreadsheet_id)
-            worksheet = sh.worksheet('Staff')
-            data = worksheet.get_all_records()
-            staff_df = pd.DataFrame(data)
-            
-            # Convert Start_Date to datetime
-            staff_df['Start_Date'] = pd.to_datetime(staff_df['Start_Date'])
-            
-            st.success(f"✅ Loaded {len(staff_df)} employees from config")
-            return staff_df
-        else:
-            st.error("Missing configuration")
+        if not spreadsheet_id:
+            st.error("Missing SHEET_CONFIG_ID configuration")
             return None
-            
+
+        staff_df = sheets.read_config(spreadsheet_id, "Staff")
+        if staff_df is None or staff_df.empty:
+            st.error("Could not load staff configuration")
+            return None
+
+        # Convert Start_Date to datetime
+        staff_df['Start_Date'] = pd.to_datetime(staff_df['Start_Date'])
+
+        st.success(f"✅ Loaded {len(staff_df)} employees from config")
+        return staff_df
+
     except Exception as e:
         st.error(f"Error loading staff config: {str(e)}")
         return None

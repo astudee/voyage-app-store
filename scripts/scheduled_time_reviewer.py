@@ -31,6 +31,14 @@ BIGTIME_FIRM_ID = (os.environ.get("BIGTIME_FIRM_ID") or "").strip()
 GOOGLE_SERVICE_ACCOUNT_JSON = os.environ.get("GOOGLE_SERVICE_ACCOUNT_KEY")
 SHEET_CONFIG_ID = (os.environ.get("SHEET_CONFIG_ID") or "").strip()
 
+# Snowflake credentials (optional - enables Snowflake data source)
+SNOWFLAKE_ACCOUNT = (os.environ.get("SNOWFLAKE_ACCOUNT") or "").strip()
+SNOWFLAKE_USER = (os.environ.get("SNOWFLAKE_USER") or "").strip()
+SNOWFLAKE_PASSWORD = (os.environ.get("SNOWFLAKE_PASSWORD") or "").strip()
+SNOWFLAKE_WAREHOUSE = (os.environ.get("SNOWFLAKE_WAREHOUSE") or "").strip()
+SNOWFLAKE_DATABASE = (os.environ.get("SNOWFLAKE_DATABASE") or "").strip()
+USE_SNOWFLAKE = all([SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE])
+
 EMAIL_TO = "hello@voyageadvisory.com"
 EMAIL_CC = "astudee@voyageadvisory.com"
 EMAIL_FROM = "astudee@voyageadvisory.com"
@@ -109,6 +117,65 @@ def read_google_sheet(sheet_id, tab_name):
     return pd.DataFrame(padded_data, columns=headers)
 
 
+def read_config_data(tab_name):
+    """
+    Read configuration data from Snowflake (if configured) or Google Sheets.
+    Provides dual-mode support for gradual migration.
+    """
+    if USE_SNOWFLAKE:
+        try:
+            # Add parent directory to path for imports
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from functions.snowflake_db import query_snowflake
+
+            # Map tab names to Snowflake tables and column mappings
+            table_map = {
+                'Staff': ('VC_STAFF', {
+                    'STAFF_NAME': 'Staff_Name',
+                    'START_DATE': 'Start_Date',
+                    'STAFF_TYPE': 'Type',
+                }),
+                'Assignments': None,  # Special handling needed
+            }
+
+            if tab_name == 'Assignments':
+                # Pivot assignments from normalized form
+                query = """
+                SELECT
+                    a.PROJECT_ID as "Project ID",
+                    p.CLIENT_NAME as "Client",
+                    p.PROJECT_NAME as "Project Name",
+                    a.STAFF_NAME as "Staff Member",
+                    a.BILL_RATE as "Bill Rate",
+                    SUM(a.ALLOCATED_HOURS) as "Total"
+                FROM VC_STAFF_ASSIGNMENTS a
+                JOIN VC_PROJECTS p ON a.PROJECT_ID = p.PROJECT_ID
+                GROUP BY a.PROJECT_ID, p.CLIENT_NAME, p.PROJECT_NAME, a.STAFF_NAME, a.BILL_RATE
+                """
+                df = query_snowflake(query)
+                print(f"  Loaded {len(df)} assignment records from Snowflake")
+                return df
+
+            if tab_name in table_map and table_map[tab_name]:
+                table_name, column_map = table_map[tab_name]
+                df = query_snowflake(f"SELECT * FROM {table_name}")
+                # Rename columns to match Google Sheets format
+                rename_dict = {k: v for k, v in column_map.items() if k in df.columns}
+                df = df.rename(columns=rename_dict)
+                print(f"  Loaded {len(df)} records from Snowflake ({table_name})")
+                return df
+
+            # Fall through to Google Sheets for unsupported tabs
+            print(f"  Tab '{tab_name}' not configured for Snowflake, using Google Sheets")
+
+        except Exception as e:
+            print(f"  Warning: Snowflake read failed for '{tab_name}': {e}")
+            print(f"  Falling back to Google Sheets...")
+
+    # Default: Read from Google Sheets
+    return read_google_sheet(SHEET_CONFIG_ID, tab_name)
+
+
 def snap_to_friday(selected_date):
     """Snap a date to the nearest Friday"""
     weekday = selected_date.weekday()
@@ -136,8 +203,8 @@ def generate_report():
     print(f"Report period: {week_starting} to {week_ending}")
 
     # Load employee list
-    print("Loading employee list from Google Sheets...")
-    staff_df = read_google_sheet(SHEET_CONFIG_ID, "Staff")
+    print("Loading employee list...")
+    staff_df = read_config_data("Staff")
 
     if staff_df is None or staff_df.empty:
         raise Exception("Could not load Staff configuration")
@@ -268,7 +335,7 @@ def generate_report():
     # Check project overruns
     print("Checking project overruns...")
     try:
-        assignments_df = read_google_sheet(SHEET_CONFIG_ID, "Assignments")
+        assignments_df = read_config_data("Assignments")
 
         if assignments_df is not None and not assignments_df.empty and not detailed_df.empty:
             if 'Client' in detailed_df.columns:
@@ -608,9 +675,15 @@ def main():
         print("ERROR: GOOGLE_SERVICE_ACCOUNT_KEY not set")
         sys.exit(1)
 
-    if not SHEET_CONFIG_ID:
-        print("ERROR: SHEET_CONFIG_ID not set")
+    if not SHEET_CONFIG_ID and not USE_SNOWFLAKE:
+        print("ERROR: SHEET_CONFIG_ID not set (required when Snowflake is not configured)")
         sys.exit(1)
+
+    # Show data source
+    if USE_SNOWFLAKE:
+        print("Data source: Snowflake (with Google Sheets fallback)")
+    else:
+        print("Data source: Google Sheets")
 
     try:
         # Generate report

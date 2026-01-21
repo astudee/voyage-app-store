@@ -517,42 +517,26 @@ def get_month_columns(start_date, end_date):
 def load_active_employees():
     """Load active employees from Voyage_Global_Config Staff tab"""
     try:
-        # Try Google Sheets first if available
-        try:
-            import gspread
-            from google.oauth2 import service_account
-            
-            # Get credentials from Streamlit secrets
-            service_account_info = st.secrets.get("SERVICE_ACCOUNT_KEY")
-            spreadsheet_id = st.secrets.get("SHEET_CONFIG_ID")
-            
-            if service_account_info and spreadsheet_id:
-                credentials = service_account.Credentials.from_service_account_info(
-                    service_account_info,
-                    scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
-                )
-                gc = gspread.authorize(credentials)
-                
-                # Open the spreadsheet
-                sh = gc.open_by_key(spreadsheet_id)
-                worksheet = sh.worksheet('Staff')
-                data = worksheet.get_all_records()
-                staff_df = pd.DataFrame(data)
+        # Use shared sheets module (supports both Google Sheets and Snowflake)
+        from functions import sheets
+
+        spreadsheet_id = st.secrets.get("SHEET_CONFIG_ID")
+        if spreadsheet_id:
+            staff_df = sheets.read_config(spreadsheet_id, "Staff")
+            if staff_df is not None and not staff_df.empty:
                 active_employees = set(staff_df['Staff_Name'].tolist())
-                st.success(f"✅ Loaded {len(active_employees)} active employees from Google Sheets")
+                st.success(f"✅ Loaded {len(active_employees)} active employees")
                 return active_employees
-        except Exception as e:
-            st.warning(f"Could not load from Google Sheets: {str(e)}")
-            # Fall through to file uploader
-        
-        # Fallback to uploaded file
+
+        # Fallback to uploaded file if sheets module fails
+        st.warning("Could not load from config. Please upload file.")
         uploaded_file = st.file_uploader(
             "Upload Voyage_Global_Config.xlsx",
             type=['xlsx'],
             key='config_uploader',
             help="Upload the Excel file containing the Staff tab"
         )
-        
+
         if uploaded_file:
             staff_df = pd.read_excel(uploaded_file, sheet_name='Staff')
             active_employees = set(staff_df['Staff_Name'].tolist())
@@ -561,7 +545,7 @@ def load_active_employees():
         else:
             st.warning("⚠️ Please upload Voyage_Global_Config.xlsx to continue")
             st.stop()
-            
+
     except Exception as e:
         st.error(f"Error loading staff configuration: {str(e)}")
         return set()
