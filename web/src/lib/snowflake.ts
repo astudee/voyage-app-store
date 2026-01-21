@@ -1,139 +1,73 @@
-import jwt from "jsonwebtoken";
-import crypto from "crypto";
+import snowflake from "snowflake-sdk";
 
 interface SnowflakeConfig {
   account: string;
-  user: string;
-  privateKey?: string;
-  password?: string;
+  username: string;
+  password: string;
   warehouse: string;
   database: string;
   schema: string;
 }
 
 function getConfig(): SnowflakeConfig {
-  // Handle private key - convert literal \n to actual newlines
-  let privateKey = process.env.SNOWFLAKE_PRIVATE_KEY;
-  if (privateKey) {
-    // Replace literal \n with actual newlines (Vercel stores multi-line as escaped)
-    privateKey = privateKey.replace(/\\n/g, "\n");
-  }
-
   return {
     account: process.env.SNOWFLAKE_ACCOUNT || "",
-    user: process.env.SNOWFLAKE_USER || "",
-    privateKey,
-    password: process.env.SNOWFLAKE_PASSWORD,
+    username: process.env.SNOWFLAKE_USER || "",
+    password: process.env.SNOWFLAKE_PASSWORD || "",
     warehouse: process.env.SNOWFLAKE_WAREHOUSE || "",
     database: process.env.SNOWFLAKE_DATABASE || "",
     schema: process.env.SNOWFLAKE_SCHEMA || "",
   };
 }
 
-function getAccountIdentifier(account: string): string {
-  // Extract account identifier (e.g., "sf18359" from "sf18359.us-central1.gcp")
-  return account.split(".")[0].toUpperCase();
-}
-
-function generateJWT(config: SnowflakeConfig): string {
-  if (!config.privateKey) {
-    throw new Error(
-      "SNOWFLAKE_PRIVATE_KEY is required for Snowflake SQL API authentication. " +
-      "Please set up key-pair authentication in Snowflake and provide the private key."
-    );
-  }
-
-  const accountId = getAccountIdentifier(config.account);
-  const qualifiedUsername = `${accountId}.${config.user.toUpperCase()}`;
-
-  // Create public key fingerprint
-  const privateKeyObj = crypto.createPrivateKey(config.privateKey);
-  const publicKey = crypto.createPublicKey(privateKeyObj);
-  const publicKeyDer = publicKey.export({ type: "spki", format: "der" });
-  const fingerprint = crypto
-    .createHash("sha256")
-    .update(publicKeyDer)
-    .digest("base64");
-
-  const now = Math.floor(Date.now() / 1000);
-  const payload = {
-    iss: `${qualifiedUsername}.SHA256:${fingerprint}`,
-    sub: qualifiedUsername,
-    iat: now,
-    exp: now + 3600, // 1 hour expiry
-  };
-
-  return jwt.sign(payload, config.privateKey, { algorithm: "RS256" });
+function createConnection(): snowflake.Connection {
+  const config = getConfig();
+  return snowflake.createConnection({
+    account: config.account,
+    username: config.username,
+    password: config.password,
+    warehouse: config.warehouse,
+    database: config.database,
+    schema: config.schema,
+  });
 }
 
 async function executeStatement(
   sqlText: string,
   binds: (string | number | boolean | null)[] = []
-): Promise<{ data: Record<string, unknown>[][]; rowType: { name: string }[] }> {
-  const config = getConfig();
+): Promise<Record<string, unknown>[]> {
+  const connection = createConnection();
 
-  // For development/testing without key-pair auth, throw a helpful error
-  if (!config.privateKey) {
-    console.warn(
-      "Snowflake SQL API requires key-pair authentication. " +
-      "Falling back to mock data for development."
-    );
-    // Return empty result for now
-    return { data: [], rowType: [] };
-  }
+  return new Promise((resolve, reject) => {
+    connection.connect((err) => {
+      if (err) {
+        console.error("Snowflake connection error:", err);
+        reject(new Error(`Failed to connect to Snowflake: ${err.message}`));
+        return;
+      }
 
-  const token = generateJWT(config);
-  const accountId = getAccountIdentifier(config.account);
+      connection.execute({
+        sqlText,
+        binds: binds as snowflake.Binds,
+        complete: (err, stmt, rows) => {
+          // Destroy connection after query completes
+          connection.destroy((destroyErr) => {
+            if (destroyErr) {
+              console.warn("Error destroying connection:", destroyErr);
+            }
+          });
 
-  // Snowflake SQL API endpoint
-  const url = `https://${config.account}.snowflakecomputing.com/api/v2/statements`;
+          if (err) {
+            console.error("Snowflake query error:", err);
+            reject(new Error(`Snowflake query failed: ${err.message}`));
+            return;
+          }
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}`,
-      "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
-    },
-    body: JSON.stringify({
-      statement: sqlText,
-      timeout: 60,
-      database: config.database,
-      schema: config.schema,
-      warehouse: config.warehouse,
-      bindings: binds.reduce((acc, val, idx) => {
-        acc[(idx + 1).toString()] = { type: "TEXT", value: String(val) };
-        return acc;
-      }, {} as Record<string, { type: string; value: string }>),
-    }),
-  });
-
-  if (!response.ok) {
-    const error = await response.text();
-    console.error("Snowflake API error:", response.status, error);
-    throw new Error(`Snowflake API error (${response.status}): ${error}`);
-  }
-
-  const result = await response.json();
-
-  // Handle async execution if needed
-  if (result.statementStatusUrl) {
-    // Poll for results
-    let status = result;
-    while (status.statementStatusUrl && !status.data) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const statusResponse = await fetch(status.statementStatusUrl, {
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "X-Snowflake-Authorization-Token-Type": "KEYPAIR_JWT",
+          resolve((rows as Record<string, unknown>[]) || []);
         },
       });
-      status = await statusResponse.json();
-    }
-    return status;
-  }
-
-  return result;
+    });
+  });
 }
 
 export async function query<T = Record<string, unknown>>(
@@ -141,21 +75,8 @@ export async function query<T = Record<string, unknown>>(
   binds: (string | number | boolean | null)[] = []
 ): Promise<T[]> {
   try {
-    const result = await executeStatement(sqlText, binds);
-
-    if (!result.data || result.data.length === 0) {
-      return [];
-    }
-
-    // Transform array data to objects using rowType
-    const columns = result.rowType?.map((col) => col.name) || [];
-    return result.data.map((row) => {
-      const obj: Record<string, unknown> = {};
-      row.forEach((value, idx) => {
-        obj[columns[idx]] = value;
-      });
-      return obj as T;
-    });
+    const rows = await executeStatement(sqlText, binds);
+    return rows as T[];
   } catch (error) {
     console.error("Snowflake query error:", error);
     throw error;
@@ -166,8 +87,8 @@ export async function execute(
   sqlText: string,
   binds: (string | number | boolean | null)[] = []
 ): Promise<{ rowsAffected: number }> {
-  const result = await executeStatement(sqlText, binds);
-  return { rowsAffected: result.data?.length || 0 };
+  const rows = await executeStatement(sqlText, binds);
+  return { rowsAffected: rows.length };
 }
 
 export async function getAll<T = Record<string, unknown>>(
