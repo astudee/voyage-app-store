@@ -4,6 +4,8 @@ token_vault.json
 *.json
 !web/package.json
 !web/package-lock.json
+!web/tsconfig.json
+!web/components.json
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
