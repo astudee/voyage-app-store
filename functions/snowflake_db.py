@@ -21,9 +21,21 @@ except ImportError:
 
 def get_snowflake_connection():
     """
-    Get a Snowflake connection using Streamlit secrets or environment variables.
+    Get a Snowflake connection using environment variables or Streamlit secrets.
 
-    For Streamlit apps, expects secrets structure:
+    Priority:
+    1. Environment variables (SNOWFLAKE_*) - for scripts/GitHub Actions/CLI
+    2. Streamlit secrets - for Streamlit apps
+
+    Environment variables:
+        SNOWFLAKE_ACCOUNT
+        SNOWFLAKE_USER
+        SNOWFLAKE_PASSWORD
+        SNOWFLAKE_WAREHOUSE
+        SNOWFLAKE_DATABASE
+        SNOWFLAKE_SCHEMA (optional, defaults to PUBLIC)
+
+    Streamlit secrets structure:
         [snowflake]
         account = "sf18359.us-central1.gcp"
         user = "VOYAGE_APP_STORE_USER"
@@ -32,44 +44,19 @@ def get_snowflake_connection():
         database = "VOYAGE_APP_STORE"
         schema = "PUBLIC"
 
-    For scripts/GitHub Actions, expects environment variables:
-        SNOWFLAKE_ACCOUNT
-        SNOWFLAKE_USER
-        SNOWFLAKE_PASSWORD
-        SNOWFLAKE_WAREHOUSE
-        SNOWFLAKE_DATABASE
-        SNOWFLAKE_SCHEMA (optional, defaults to PUBLIC)
-
     Returns:
         snowflake.connector.connection.SnowflakeConnection
     """
-    if IN_STREAMLIT:
-        # Use Streamlit secrets
-        sf_config = st.secrets["snowflake"]
-        return snowflake.connector.connect(
-            account=sf_config["account"],
-            user=sf_config["user"],
-            password=sf_config["password"],
-            warehouse=sf_config["warehouse"],
-            database=sf_config["database"],
-            schema=sf_config["schema"]
-        )
-    else:
-        # Use environment variables for scripts
-        account = os.environ.get("SNOWFLAKE_ACCOUNT")
-        user = os.environ.get("SNOWFLAKE_USER")
-        password = os.environ.get("SNOWFLAKE_PASSWORD")
-        warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE")
-        database = os.environ.get("SNOWFLAKE_DATABASE")
-        schema = os.environ.get("SNOWFLAKE_SCHEMA", "PUBLIC")
+    # Check for environment variables first (preferred for scripts/CLI)
+    account = os.environ.get("SNOWFLAKE_ACCOUNT")
+    user = os.environ.get("SNOWFLAKE_USER")
+    password = os.environ.get("SNOWFLAKE_PASSWORD")
+    warehouse = os.environ.get("SNOWFLAKE_WAREHOUSE")
+    database = os.environ.get("SNOWFLAKE_DATABASE")
+    schema = os.environ.get("SNOWFLAKE_SCHEMA", "PUBLIC")
 
-        if not all([account, user, password, warehouse, database]):
-            raise RuntimeError(
-                "Snowflake connection requires environment variables: "
-                "SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, SNOWFLAKE_PASSWORD, "
-                "SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE"
-            )
-
+    if all([account, user, password, warehouse, database]):
+        # Use environment variables
         return snowflake.connector.connect(
             account=account.strip(),
             user=user.strip(),
@@ -78,6 +65,28 @@ def get_snowflake_connection():
             database=database.strip(),
             schema=schema.strip()
         )
+
+    # Fall back to Streamlit secrets if available
+    if IN_STREAMLIT:
+        try:
+            sf_config = st.secrets["snowflake"]
+            return snowflake.connector.connect(
+                account=sf_config["account"],
+                user=sf_config["user"],
+                password=sf_config["password"],
+                warehouse=sf_config["warehouse"],
+                database=sf_config["database"],
+                schema=sf_config["schema"]
+            )
+        except Exception:
+            pass  # Fall through to error
+
+    raise RuntimeError(
+        "Snowflake connection requires either:\n"
+        "1. Environment variables: SNOWFLAKE_ACCOUNT, SNOWFLAKE_USER, "
+        "SNOWFLAKE_PASSWORD, SNOWFLAKE_WAREHOUSE, SNOWFLAKE_DATABASE\n"
+        "2. Streamlit secrets: [snowflake] section in secrets.toml"
+    )
 
 
 def query_snowflake(query, params=None):
