@@ -9,36 +9,38 @@ const settingsSections = [
     title: "Staff",
     description: "Manage staff members, salaries, and benefits",
     href: "/settings/staff",
+    count: null,
   },
   {
     title: "Benefits",
     description: "Configure benefit plans and costs",
     href: "/settings/benefits",
+    count: null,
   },
   {
     title: "Commission Rules",
     description: "Set up commission rates and rules",
     href: "/settings/rules",
+    count: null,
   },
   {
     title: "Offsets",
     description: "Manage commission offsets",
     href: "/settings/offsets",
+    count: null,
   },
 ];
 
-export default function HomePage() {
+export default function SettingsPage() {
   return (
     <AppLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-gray-500">
-            Manage your Voyage Consulting configuration
-          </p>
+          <h1 className="text-3xl font-bold">Settings</h1>
+          <p className="text-gray-500">Manage your configuration data</p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2">
           {settingsSections.map((section) => (
             <Link key={section.href} href={section.href}>
               <Card className="h-full transition-shadow hover:shadow-lg">
