@@ -2,6 +2,8 @@ credentials.py
 service_account_key.json
 token_vault.json
 *.json
+!web/package.json
+!web/package-lock.json
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
