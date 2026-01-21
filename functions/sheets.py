@@ -218,12 +218,15 @@ def _get_snowflake_enabled():
     if not IN_STREAMLIT:
         return False
     try:
-        # st.secrets uses bracket notation, not .get()
+        value = None
+        # Check top-level first
         if "use_snowflake" in st.secrets:
             value = st.secrets["use_snowflake"]
-        elif "USE_SNOWFLAKE" in st.secrets:
-            value = st.secrets["USE_SNOWFLAKE"]
-        else:
+        # Check inside [snowflake] section (TOML nesting)
+        elif "snowflake" in st.secrets and "use_snowflake" in st.secrets["snowflake"]:
+            value = st.secrets["snowflake"]["use_snowflake"]
+
+        if value is None:
             return False
         # Handle string "true"/"false" values
         if isinstance(value, str):
