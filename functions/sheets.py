@@ -218,7 +218,17 @@ def _get_snowflake_enabled():
     if not IN_STREAMLIT:
         return False
     try:
-        return st.secrets.get("use_snowflake", False)
+        # Try different ways to access the secret
+        value = st.secrets.get("use_snowflake", None)
+        if value is None:
+            # Try bracket notation as fallback
+            value = st.secrets.get("USE_SNOWFLAKE", None)
+        if value is None:
+            return False
+        # Handle string "true"/"false" values
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes")
+        return bool(value)
     except Exception:
         return False
 
