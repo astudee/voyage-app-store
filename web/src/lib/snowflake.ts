@@ -12,10 +12,17 @@ interface SnowflakeConfig {
 }
 
 function getConfig(): SnowflakeConfig {
+  // Handle private key - convert literal \n to actual newlines
+  let privateKey = process.env.SNOWFLAKE_PRIVATE_KEY;
+  if (privateKey) {
+    // Replace literal \n with actual newlines (Vercel stores multi-line as escaped)
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+
   return {
     account: process.env.SNOWFLAKE_ACCOUNT || "",
     user: process.env.SNOWFLAKE_USER || "",
-    privateKey: process.env.SNOWFLAKE_PRIVATE_KEY,
+    privateKey,
     password: process.env.SNOWFLAKE_PASSWORD,
     warehouse: process.env.SNOWFLAKE_WAREHOUSE || "",
     database: process.env.SNOWFLAKE_DATABASE || "",
@@ -103,7 +110,8 @@ async function executeStatement(
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Snowflake API error: ${error}`);
+    console.error("Snowflake API error:", response.status, error);
+    throw new Error(`Snowflake API error (${response.status}): ${error}`);
   }
 
   const result = await response.json();
@@ -132,21 +140,26 @@ export async function query<T = Record<string, unknown>>(
   sqlText: string,
   binds: (string | number | boolean | null)[] = []
 ): Promise<T[]> {
-  const result = await executeStatement(sqlText, binds);
+  try {
+    const result = await executeStatement(sqlText, binds);
 
-  if (!result.data || result.data.length === 0) {
-    return [];
-  }
+    if (!result.data || result.data.length === 0) {
+      return [];
+    }
 
-  // Transform array data to objects using rowType
-  const columns = result.rowType?.map((col) => col.name) || [];
-  return result.data.map((row) => {
-    const obj: Record<string, unknown> = {};
-    row.forEach((value, idx) => {
-      obj[columns[idx]] = value;
+    // Transform array data to objects using rowType
+    const columns = result.rowType?.map((col) => col.name) || [];
+    return result.data.map((row) => {
+      const obj: Record<string, unknown> = {};
+      row.forEach((value, idx) => {
+        obj[columns[idx]] = value;
+      });
+      return obj as T;
     });
-    return obj as T;
-  });
+  } catch (error) {
+    console.error("Snowflake query error:", error);
+    throw error;
+  }
 }
 
 export async function execute(
