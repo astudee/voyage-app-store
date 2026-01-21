@@ -83,7 +83,11 @@ if st.button("🚀 Generate Payroll Report", type="primary"):
         # Filter out inactive staff (those without a start date or with old start dates might be inactive)
         # Assuming if someone is in the sheet, they're active
         debug_log.append(f"✅ Loaded {len(staff_df)} staff members")
-    
+        if sheets.should_use_snowflake():
+            debug_log.append("❄️ Config: Snowflake")
+        else:
+            debug_log.append("📊 Config: Google Sheets")
+
     # ============================================================
     # PHASE 2: PULL BIGTIME DATA
     # ============================================================

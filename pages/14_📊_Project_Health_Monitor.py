@@ -259,7 +259,11 @@ if st.button("📊 Generate Project Health Report", type="primary"):
             st.stop()
         
         st.success(f"✅ Loaded {len(assignments_df)} assignment rows")
-    
+        if sheets.should_use_snowflake():
+            st.success("❄️ Config: Snowflake")
+        else:
+            st.info("📊 Config: Google Sheets")
+
     # ============================================================
     # PHASE 3: LOAD BIGTIME ACTUALS
     # ============================================================

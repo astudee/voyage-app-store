@@ -223,6 +223,17 @@ def _get_snowflake_enabled():
         return False
 
 
+def should_use_snowflake():
+    """
+    Public function to check if Snowflake is the active data source.
+    Use this to display data source indicators in apps.
+
+    Returns:
+        bool: True if Snowflake is enabled, False if using Google Sheets
+    """
+    return _get_snowflake_enabled()
+
+
 def _rename_snowflake_columns(df, table_name):
     """Rename Snowflake columns to match Google Sheets format."""
     if table_name in SNOWFLAKE_COLUMN_MAP:

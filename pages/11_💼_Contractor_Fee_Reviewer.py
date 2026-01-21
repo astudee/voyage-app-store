@@ -181,7 +181,11 @@ if st.button("🚀 Review Contractor Fees", type="primary"):
             employee_names = []
         else:
             employee_names = staff_df['Staff_Name'].tolist()
-        
+            if sheets.should_use_snowflake():
+                st.success("❄️ Config: Snowflake")
+            else:
+                st.info("📊 Config: Google Sheets")
+
         # Find column names for time data
         staff_col = None
         for col in ['Staff Member', 'Staff_Member', 'tmstaffnm']:

@@ -63,6 +63,10 @@ if st.button("🚀 Calculate Commissions", type="primary"):
         ))
         
         debug_log.append(f"✅ Loaded {len(rules_df)} rules, {len(offsets_df)} offsets, {len(client_name_map)} mappings")
+        if sheets.should_use_snowflake():
+            debug_log.append("❄️ Config: Snowflake")
+        else:
+            debug_log.append("📊 Config: Google Sheets")
     
     # ============================================================
     # PHASE 2: PULL API DATA

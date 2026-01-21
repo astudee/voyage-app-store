@@ -116,7 +116,12 @@ if st.button("🚀 Generate Forecast", type="primary"):
             employee_names = []
         else:
             employee_names = staff_df['Staff_Name'].tolist()
-    
+
+        if sheets.should_use_snowflake():
+            st.success("❄️ Config: Snowflake")
+        else:
+            st.info("📊 Config: Google Sheets")
+
     # ============================================================
     # PROCESS ASSIGNMENTS DATA
     # ============================================================

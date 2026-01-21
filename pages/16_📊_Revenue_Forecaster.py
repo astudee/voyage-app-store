@@ -322,7 +322,12 @@ if st.button("📊 Generate Revenue Forecast", type="primary"):
         else:
             st.warning("⚠️ No FixedFee data found - Section 2 will match Section 1")
             fixedfee_df = pd.DataFrame()
-    
+
+        if sheets.should_use_snowflake():
+            st.success("❄️ Config: Snowflake")
+        else:
+            st.info("📊 Config: Google Sheets")
+
     # ============================================================
     # PHASE 2: LOAD BIGTIME ACTUALS (for past months)
     # ============================================================

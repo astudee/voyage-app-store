@@ -526,6 +526,10 @@ def load_active_employees():
             if staff_df is not None and not staff_df.empty:
                 active_employees = set(staff_df['Staff_Name'].tolist())
                 st.success(f"✅ Loaded {len(active_employees)} active employees")
+                if sheets.should_use_snowflake():
+                    st.success("❄️ Config: Snowflake")
+                else:
+                    st.info("📊 Config: Google Sheets")
                 return active_employees
 
         # Fallback to uploaded file if sheets module fails

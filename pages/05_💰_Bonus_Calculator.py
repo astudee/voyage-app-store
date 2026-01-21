@@ -116,6 +116,10 @@ def load_staff_config():
         staff_df['Start_Date'] = pd.to_datetime(staff_df['Start_Date'])
 
         st.success(f"✅ Loaded {len(staff_df)} employees from config")
+        if sheets.should_use_snowflake():
+            st.success("❄️ Config: Snowflake")
+        else:
+            st.info("📊 Config: Google Sheets")
         return staff_df
 
     except Exception as e:

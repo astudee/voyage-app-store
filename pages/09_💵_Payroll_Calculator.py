@@ -49,6 +49,10 @@ if benefits_df is None or benefits_df.empty:
     st.stop()
 
 st.success(f"✅ Loaded {len(staff_df)} staff members and {len(benefits_df)} benefit options")
+if sheets.should_use_snowflake():
+    st.success("❄️ Config: Snowflake")
+else:
+    st.info("📊 Config: Google Sheets")
 
 # -------------------------
 # Helper functions (copied from Benefits Calculator)

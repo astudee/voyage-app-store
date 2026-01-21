@@ -296,7 +296,11 @@ if run_review:
             # Get list of full-time employees
             employees = set(staff_df['Staff_Name'].tolist())
             st.success(f"✅ Loaded {len(employees)} employees from config")
-            
+            if sheets.should_use_snowflake():
+                st.success("❄️ Config: Snowflake")
+            else:
+                st.info("📊 Config: Google Sheets")
+
         except Exception as e:
             st.error(f"❌ Error loading config: {str(e)}")
             st.stop()

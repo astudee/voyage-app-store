@@ -232,11 +232,12 @@ def check_google_sheets():
                 'details': 'Check service account permissions'
             }
         else:
+            source = "❄️ Snowflake" if sheets.should_use_snowflake() else "📊 Google Sheets"
             return {
                 'status': 'success',
                 'icon': '✅',
                 'message': 'Connected successfully',
-                'details': f'Found {len(staff_df)} staff members in config'
+                'details': f'Found {len(staff_df)} staff members ({source})'
             }
     except Exception as e:
         return {

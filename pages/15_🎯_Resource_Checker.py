@@ -92,7 +92,11 @@ if st.button("🎯 Run Resource Check", type="primary"):
             st.stop()
         
         st.success(f"✅ Loaded {len(assignments_df)} assignment rows")
-    
+        if sheets.should_use_snowflake():
+            st.success("❄️ Config: Snowflake")
+        else:
+            st.info("📊 Config: Google Sheets")
+
     # ============================================================
     # PHASE 2: LOAD BIGTIME ACTUALS
     # ============================================================
