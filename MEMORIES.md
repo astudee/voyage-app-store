@@ -1,4 +1,4 @@
-# Voyage App Store - Project Memories
+please# Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
 > **Last updated:** 2026-01-22 (Final session update - all Phase 2 work complete)

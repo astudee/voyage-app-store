@@ -72,10 +72,7 @@ const navigation = [
   {
     section: "Health",
     items: [
-      { name: "Snowflake Test", href: "/health/snowflake" },
-      { name: "BigTime Client Lookup", href: "/health/bigtime-lookup" },
-      { name: "QuickBooks Token Refresh", href: "/health/quickbooks-token" },
-      { name: "Connection Health", href: "/health/connections" },
+      { name: "Connection Health", href: "/settings/health" },
     ],
   },
 ];
