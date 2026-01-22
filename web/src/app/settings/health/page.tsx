@@ -29,7 +29,8 @@ const serviceIcons: { [key: string]: string } = {
   QuickBooks: "📗",
   Pipedrive: "🔵",
   "Google Drive": "📁",
-  "Google Sheets": "📊",
+  "Google Docs": "📄",
+  "Config Data": "⚙️",
   Gmail: "📧",
   "Claude API": "🤖",
   "Gemini API": "✨",
@@ -41,7 +42,8 @@ const serviceDescriptions: { [key: string]: string } = {
   QuickBooks: "Financial data - invoices and revenue",
   Pipedrive: "CRM - deals, pipeline, and bookings",
   "Google Drive": "File storage - vault folders and documents",
-  "Google Sheets": "Configuration data (now in Snowflake)",
+  "Google Docs": "Contract standards template for AI review",
+  "Config Data": "Staff, benefits, rules (migrated from Sheets)",
   Gmail: "Email notifications and reports",
   "Claude API": "AI analysis and document review",
   "Gemini API": "AI vault processing (cost-effective)",
@@ -301,8 +303,9 @@ export default function HealthCheckPage() {
                 <h3 className="font-semibold text-slate-700 text-sm">Data & Storage</h3>
                 <ul className="text-sm text-slate-500 space-y-1">
                   <li>❄️ Snowflake</li>
-                  <li>📁 Google Drive</li>
-                  <li>📊 Google Sheets</li>
+                  <li>📁 Google Drive (5 folders)</li>
+                  <li>📄 Google Docs</li>
+                  <li>⚙️ Config Data</li>
                 </ul>
               </div>
               <div className="space-y-2">

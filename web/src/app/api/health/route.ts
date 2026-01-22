@@ -377,7 +377,8 @@ async function checkGoogleDrive(): Promise<HealthResult> {
     "To-File Inbox": process.env.FOLDER_TO_FILE,
     "Archive - Contracts": process.env.FOLDER_ARCHIVE_CONTRACTS,
     "Archive - Docs": process.env.FOLDER_ARCHIVE_DOCS,
-    Reports: process.env.REPORTS_FOLDER_ID,
+    "Programs Root": process.env.FOLDER_PROGRAMS_ROOT,
+    "Reports": process.env.REPORTS_FOLDER_ID,
   };
 
   // Filter out undefined
@@ -451,9 +452,78 @@ async function checkGoogleDrive(): Promise<HealthResult> {
   }
 }
 
-// Check Google Sheets (Snowflake config)
-async function checkGoogleSheets(): Promise<HealthResult> {
-  // Since we migrated to Snowflake, we just verify Snowflake has config data
+// Check Google Docs (Contract Standards template)
+async function checkGoogleDocs(): Promise<HealthResult> {
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  const docId = process.env.CONTRACT_STANDARDS_DOC_ID;
+
+  if (!serviceAccountKey) {
+    return {
+      status: "not_configured",
+      message: "Google APIs not configured",
+      details: "Add GOOGLE_SERVICE_ACCOUNT_KEY to environment variables",
+    };
+  }
+
+  if (!docId) {
+    return {
+      status: "not_configured",
+      message: "CONTRACT_STANDARDS_DOC_ID not configured",
+      details: "Add CONTRACT_STANDARDS_DOC_ID to environment variables",
+    };
+  }
+
+  try {
+    const authResult = getGoogleAuthClient([
+      "https://www.googleapis.com/auth/drive.readonly",
+    ]);
+    if (!authResult) {
+      return {
+        status: "error",
+        message: "Invalid service account key",
+        details: "Could not parse GOOGLE_SERVICE_ACCOUNT_KEY JSON",
+      };
+    }
+
+    const { auth, credentials } = authResult as { auth: InstanceType<typeof google.auth.GoogleAuth>; credentials: { client_email: string } };
+    const drive = google.drive({ version: "v3", auth });
+
+    const response = await drive.files.get({
+      fileId: docId,
+      fields: "id,name,mimeType",
+      supportsAllDrives: true,
+    });
+
+    return {
+      status: "success",
+      message: "Connected successfully",
+      details: `Can access: ${response.data.name}`,
+    };
+  } catch (e) {
+    const error = e as { code?: number; message?: string };
+    if (error.code === 404) {
+      return {
+        status: "error",
+        message: "Document not found",
+        details: "Check CONTRACT_STANDARDS_DOC_ID is correct",
+      };
+    } else if (error.code === 403) {
+      return {
+        status: "error",
+        message: "Permission denied",
+        details: "Service account needs access to this document",
+      };
+    }
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error.message || "Unknown error",
+    };
+  }
+}
+
+// Check Config Data (Snowflake - migrated from Google Sheets)
+async function checkConfigData(): Promise<HealthResult> {
   try {
     const result = await query<{ COUNT: number }>(
       "SELECT COUNT(*) as COUNT FROM VC_STAFF"
@@ -615,7 +685,8 @@ export async function GET(request: Request) {
     claude,
     gemini,
     googleDrive,
-    googleSheets,
+    googleDocs,
+    configData,
     gmail,
   ] = await Promise.all([
     checkSnowflake(),
@@ -625,7 +696,8 @@ export async function GET(request: Request) {
     checkClaude(),
     checkGemini(),
     checkGoogleDrive(),
-    checkGoogleSheets(),
+    checkGoogleDocs(),
+    checkConfigData(),
     checkGmail(sendTestEmail),
   ]);
 
@@ -635,7 +707,8 @@ export async function GET(request: Request) {
   results["QuickBooks"] = quickbooks;
   results["Pipedrive"] = pipedrive;
   results["Google Drive"] = googleDrive;
-  results["Google Sheets"] = googleSheets;
+  results["Google Docs"] = googleDocs;
+  results["Config Data"] = configData;
   results["Gmail"] = gmail;
   results["Claude API"] = claude;
   results["Gemini API"] = gemini;
