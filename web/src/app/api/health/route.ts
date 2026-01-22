@@ -265,6 +265,54 @@ async function checkClaude(): Promise<HealthResult> {
   }
 }
 
+// Check ChatGPT/OpenAI API
+async function checkChatGPT(): Promise<HealthResult> {
+  const apiKey = process.env.CHATGPT_API_KEY;
+  if (!apiKey) {
+    return {
+      status: "not_configured",
+      message: "CHATGPT_API_KEY not configured",
+      details: "Add CHATGPT_API_KEY to environment variables",
+    };
+  }
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/models", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+    });
+
+    if (response.status === 200) {
+      const data = await response.json();
+      const modelCount = data.data?.length || 0;
+      return {
+        status: "success",
+        message: "Connected successfully",
+        details: `Access to ${modelCount} models`,
+      };
+    } else if (response.status === 401) {
+      return {
+        status: "error",
+        message: "Authentication failed",
+        details: "API key invalid or expired",
+      };
+    }
+    return {
+      status: "error",
+      message: `API returned ${response.status}`,
+      details: (await response.text()).substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
 // Check Gemini API
 async function checkGemini(): Promise<HealthResult> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -683,6 +731,7 @@ export async function GET(request: Request) {
     bigtime,
     quickbooks,
     claude,
+    chatgpt,
     gemini,
     googleDrive,
     googleDocs,
@@ -694,6 +743,7 @@ export async function GET(request: Request) {
     checkBigTime(),
     checkQuickBooks(),
     checkClaude(),
+    checkChatGPT(),
     checkGemini(),
     checkGoogleDrive(),
     checkGoogleDocs(),
@@ -711,6 +761,7 @@ export async function GET(request: Request) {
   results["Config Data"] = configData;
   results["Gmail"] = gmail;
   results["Claude API"] = claude;
+  results["ChatGPT API"] = chatgpt;
   results["Gemini API"] = gemini;
 
   // Calculate summary

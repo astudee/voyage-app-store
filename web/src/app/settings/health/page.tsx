@@ -33,6 +33,7 @@ const serviceIcons: { [key: string]: string } = {
   "Config Data": "⚙️",
   Gmail: "📧",
   "Claude API": "🤖",
+  "ChatGPT API": "💬",
   "Gemini API": "✨",
 };
 
@@ -46,6 +47,7 @@ const serviceDescriptions: { [key: string]: string } = {
   "Config Data": "Staff, benefits, rules (migrated from Sheets)",
   Gmail: "Email notifications and reports",
   "Claude API": "AI analysis and document review",
+  "ChatGPT API": "OpenAI GPT models",
   "Gemini API": "AI vault processing (cost-effective)",
 };
 
@@ -320,6 +322,7 @@ export default function HealthCheckPage() {
                 <h3 className="font-semibold text-slate-700 text-sm">AI & Comms</h3>
                 <ul className="text-sm text-slate-500 space-y-1">
                   <li>🤖 Claude API</li>
+                  <li>💬 ChatGPT API</li>
                   <li>✨ Gemini API</li>
                   <li>📧 Gmail</li>
                 </ul>
