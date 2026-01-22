@@ -1,21 +1,22 @@
-please# Voyage App Store - Project Memories
+# Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Final session update - all Phase 2 work complete)
+> **Last updated:** 2026-01-22 (Phase 3 started - first app migrated)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 ready to begin.
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (1/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
 - Vercel/Next.js app at https://apps.voyage.xyz with 7 settings pages (full CRUD)
 - Pipedrive API integration for booking validation
 - All config management tools working
+- **Connection Health Checker** (app 99) migrated to `/settings/health`
 
-**What's Next (Phase 3):** Migrate 22 Streamlit apps to Vercel. See "Streamlit Apps Inventory" section below for full list. Start with high-priority apps:
+**What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Priority order:
 1. Commission Calculator - needs BigTime + QuickBooks APIs
 2. Billable Hours Report - needs BigTime API
 3. Time Reviewer - needs BigTime API
@@ -373,6 +374,17 @@ This is where reference files are uploaded for Claude to review:
   - Add Month button disabled when validation fails
 - Committed and pushed: `ed16832`
 - **PHASE 2 COMPLETE** - All config tools working
+
+### 2026-01-22 - Phase 3 Started (Streamlit Migration)
+- Started migrating Streamlit apps to Vercel
+- **First app migrated: Connection Health Checker (app 99)**
+  - Created `/api/health` - tests all API connections in parallel
+  - Created `/settings/health` page with status cards and detailed results
+  - Tests: Snowflake, Pipedrive, BigTime, QuickBooks, Claude, Gemini, Google APIs
+  - Shows success/warning/error/not_configured status for each service
+- Simplified sidebar Health section (removed placeholder links)
+- Fixed `.gitignore` to exclude `.env` file (was accidentally committed briefly)
+- Deleted accidentally created "web" project from Vercel via API
 
 ---
 
