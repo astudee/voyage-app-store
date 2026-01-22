@@ -13,4 +13,5 @@ __pycache__/
 # Upload folder for sharing files with Claude
 uploads/
 .vercel
+.env
 .env*.local
