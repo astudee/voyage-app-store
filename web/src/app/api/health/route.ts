@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/snowflake";
+import { google } from "googleapis";
 
 interface HealthResult {
   status: "success" | "warning" | "error" | "not_configured";
@@ -35,7 +36,7 @@ async function checkSnowflake(): Promise<HealthResult> {
     }
     return {
       status: "error",
-      message: `Connection failed: ${error instanceof Error ? error.constructor.name : "Unknown"}`,
+      message: `Connection failed`,
       details: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -89,7 +90,7 @@ async function checkPipedrive(): Promise<HealthResult> {
   } catch (error) {
     return {
       status: "error",
-      message: `Connection failed: ${error instanceof Error ? error.constructor.name : "Unknown"}`,
+      message: `Connection failed`,
       details: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -142,7 +143,7 @@ async function checkBigTime(): Promise<HealthResult> {
   } catch (error) {
     return {
       status: "error",
-      message: `Connection failed: ${error instanceof Error ? error.constructor.name : "Unknown"}`,
+      message: `Connection failed`,
       details: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -153,22 +154,62 @@ async function checkQuickBooks(): Promise<HealthResult> {
   const refreshToken = process.env.QB_REFRESH_TOKEN;
   const clientId = process.env.QB_CLIENT_ID;
   const clientSecret = process.env.QB_CLIENT_SECRET;
+  const realmId = process.env.QB_REALM_ID;
 
-  if (!refreshToken || !clientId || !clientSecret) {
+  if (!refreshToken || !clientId || !clientSecret || !realmId) {
     return {
       status: "not_configured",
       message: "QuickBooks API not configured",
-      details: "Add QB_REFRESH_TOKEN, QB_CLIENT_ID, QB_CLIENT_SECRET to environment variables",
+      details: "Add QB_REFRESH_TOKEN, QB_CLIENT_ID, QB_CLIENT_SECRET, QB_REALM_ID",
     };
   }
 
-  // For now, just report as configured but not tested
-  // Full OAuth flow would require refreshing token
-  return {
-    status: "warning",
-    message: "Configured but not tested",
-    details: "QuickBooks requires OAuth token refresh to verify",
-  };
+  try {
+    // Try to refresh the token to verify credentials
+    const tokenResponse = await fetch(
+      "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Authorization: `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`,
+        },
+        body: `grant_type=refresh_token&refresh_token=${refreshToken}`,
+      }
+    );
+
+    if (tokenResponse.status === 200) {
+      const tokenData = await tokenResponse.json();
+      if (tokenData.access_token) {
+        return {
+          status: "success",
+          message: "Connected successfully",
+          details: `Token valid. Realm ID: ${realmId}`,
+        };
+      }
+    }
+
+    const errorText = await tokenResponse.text();
+    if (errorText.includes("invalid_grant")) {
+      return {
+        status: "error",
+        message: "Token expired",
+        details: "Refresh token is expired. Use QuickBooks Token Refresh utility.",
+      };
+    }
+
+    return {
+      status: "error",
+      message: `Token refresh failed (${tokenResponse.status})`,
+      details: errorText.substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: `Connection failed`,
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
 
 // Check Claude API
@@ -218,7 +259,7 @@ async function checkClaude(): Promise<HealthResult> {
   } catch (error) {
     return {
       status: "error",
-      message: `Connection failed: ${error instanceof Error ? error.constructor.name : "Unknown"}`,
+      message: `Connection failed`,
       details: error instanceof Error ? error.message : "Unknown error",
     };
   }
@@ -236,7 +277,7 @@ async function checkGemini(): Promise<HealthResult> {
   }
 
   try {
-    // First, list available models
+    // List available models
     const listResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`
     );
@@ -278,19 +319,50 @@ async function checkGemini(): Promise<HealthResult> {
     return {
       status: "success",
       message: "Connected successfully",
-      details: `Available model: ${targetModel}`,
+      details: `Using model: ${targetModel}`,
     };
   } catch (error) {
     return {
       status: "error",
-      message: `Connection failed: ${error instanceof Error ? error.constructor.name : "Unknown"}`,
+      message: `Connection failed`,
       details: error instanceof Error ? error.message : "Unknown error",
     };
   }
 }
 
-// Check Google APIs (Drive, Sheets, Gmail)
-async function checkGoogleAPIs(): Promise<HealthResult> {
+// Helper to get Google auth client
+function getGoogleAuthClient(scopes: string[], impersonateEmail?: string) {
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!serviceAccountKey) {
+    return null;
+  }
+
+  try {
+    const credentials = JSON.parse(serviceAccountKey);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes,
+    });
+
+    if (impersonateEmail) {
+      // For domain-wide delegation (Gmail)
+      const client = new google.auth.JWT({
+        email: credentials.client_email,
+        key: credentials.private_key,
+        scopes,
+        subject: impersonateEmail,
+      });
+      return { client, credentials };
+    }
+
+    return { auth, credentials };
+  } catch {
+    return null;
+  }
+}
+
+// Check Google Drive
+async function checkGoogleDrive(): Promise<HealthResult> {
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   if (!serviceAccountKey) {
     return {
@@ -300,21 +372,237 @@ async function checkGoogleAPIs(): Promise<HealthResult> {
     };
   }
 
-  // For now, just report as configured
-  // Full verification would require parsing the key and making API calls
-  return {
-    status: "warning",
-    message: "Configured but not fully tested",
-    details: "Service account key present. Full verification requires API calls.",
+  // Get folder IDs to test
+  const folderConfigs: { [key: string]: string | undefined } = {
+    "To-File Inbox": process.env.FOLDER_TO_FILE,
+    "Archive - Contracts": process.env.FOLDER_ARCHIVE_CONTRACTS,
+    "Archive - Docs": process.env.FOLDER_ARCHIVE_DOCS,
+    Reports: process.env.REPORTS_FOLDER_ID,
   };
+
+  // Filter out undefined
+  const folders = Object.entries(folderConfigs).filter(([, v]) => v);
+
+  if (folders.length === 0) {
+    return {
+      status: "warning",
+      message: "No folder IDs configured",
+      details: "Service account key present but no FOLDER_* env vars set",
+    };
+  }
+
+  try {
+    const authResult = getGoogleAuthClient([
+      "https://www.googleapis.com/auth/drive.readonly",
+    ]);
+    if (!authResult) {
+      return {
+        status: "error",
+        message: "Invalid service account key",
+        details: "Could not parse GOOGLE_SERVICE_ACCOUNT_KEY JSON",
+      };
+    }
+
+    const { auth, credentials } = authResult as { auth: InstanceType<typeof google.auth.GoogleAuth>; credentials: { client_email: string } };
+    const drive = google.drive({ version: "v3", auth });
+
+    const accessible: string[] = [];
+    const inaccessible: string[] = [];
+
+    for (const [name, folderId] of folders) {
+      try {
+        const response = await drive.files.get({
+          fileId: folderId,
+          fields: "id,name",
+          supportsAllDrives: true,
+        });
+        accessible.push(`${name} (${response.data.name})`);
+      } catch (e) {
+        const error = e as { code?: number };
+        if (error.code === 404) {
+          inaccessible.push(`${name}: Not found`);
+        } else if (error.code === 403) {
+          inaccessible.push(`${name}: Permission denied`);
+        } else {
+          inaccessible.push(`${name}: Error`);
+        }
+      }
+    }
+
+    if (inaccessible.length > 0) {
+      return {
+        status: "error",
+        message: `Cannot access ${inaccessible.length} folder(s)`,
+        details: `SA: ${credentials.client_email}\nAccessible: ${accessible.join(", ") || "None"}\nInaccessible: ${inaccessible.join(", ")}`,
+      };
+    }
+
+    return {
+      status: "success",
+      message: "Connected successfully",
+      details: `Service account can access ${accessible.length} folders`,
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+// Check Google Sheets (Snowflake config)
+async function checkGoogleSheets(): Promise<HealthResult> {
+  // Since we migrated to Snowflake, we just verify Snowflake has config data
+  try {
+    const result = await query<{ COUNT: number }>(
+      "SELECT COUNT(*) as COUNT FROM VC_STAFF"
+    );
+    const count = result[0]?.COUNT || 0;
+
+    if (count > 0) {
+      return {
+        status: "success",
+        message: "Config loaded from Snowflake",
+        details: `Found ${count} staff members in VC_STAFF`,
+      };
+    }
+
+    return {
+      status: "warning",
+      message: "No config data found",
+      details: "VC_STAFF table is empty",
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Could not read config",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
+// Check Gmail (sends actual test email)
+async function checkGmail(sendTestEmail: boolean = false): Promise<HealthResult> {
+  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!serviceAccountKey) {
+    return {
+      status: "not_configured",
+      message: "Google APIs not configured",
+      details: "Add GOOGLE_SERVICE_ACCOUNT_KEY to environment variables",
+    };
+  }
+
+  const notificationEmail = process.env.NOTIFICATION_EMAIL || "astudee@voyageadvisory.com";
+  const impersonateEmail = process.env.GMAIL_IMPERSONATE_EMAIL || "astudee@voyageadvisory.com";
+
+  try {
+    const authResult = getGoogleAuthClient(
+      ["https://www.googleapis.com/auth/gmail.send"],
+      impersonateEmail
+    );
+
+    if (!authResult) {
+      return {
+        status: "error",
+        message: "Invalid service account key",
+        details: "Could not parse GOOGLE_SERVICE_ACCOUNT_KEY JSON",
+      };
+    }
+
+    const { client, credentials } = authResult as { client: InstanceType<typeof google.auth.JWT>; credentials: { client_email: string; client_id: string } };
+
+    if (!sendTestEmail) {
+      // Just verify we can authenticate
+      try {
+        await client.authorize();
+        return {
+          status: "success",
+          message: "Configured (test email not sent)",
+          details: `Service account: ${credentials.client_email}. Click "Send Test Email" to verify delivery.`,
+        };
+      } catch (authError) {
+        const errorMsg = authError instanceof Error ? authError.message : "";
+        if (errorMsg.includes("delegation") || errorMsg.includes("unauthorized")) {
+          return {
+            status: "error",
+            message: "Domain-wide delegation issue",
+            details: `Verify Client ID ${credentials.client_id} is authorized in Workspace Admin with gmail.send scope`,
+          };
+        }
+        return {
+          status: "error",
+          message: "Authentication failed",
+          details: errorMsg,
+        };
+      }
+    }
+
+    // Send actual test email
+    const gmail = google.gmail({ version: "v1", auth: client });
+
+    const timestamp = new Date().toISOString();
+    const emailContent = [
+      `To: ${notificationEmail}`,
+      `From: ${impersonateEmail}`,
+      "Subject: Voyage App Store - Gmail Health Check",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      `This is an automated health check test.`,
+      "",
+      `Timestamp: ${timestamp}`,
+      `Service Account: ${credentials.client_email}`,
+      "",
+      "If you received this, Gmail API is working correctly!",
+      "",
+      "You can safely delete this email.",
+    ].join("\r\n");
+
+    const encodedMessage = Buffer.from(emailContent)
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    await gmail.users.messages.send({
+      userId: "me",
+      requestBody: {
+        raw: encodedMessage,
+      },
+    });
+
+    return {
+      status: "success",
+      message: "Test email sent!",
+      details: `Email sent to ${notificationEmail}. Check inbox to confirm delivery.`,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "";
+    if (errorMsg.includes("delegation") || errorMsg.includes("unauthorized") || errorMsg.includes("insufficient")) {
+      return {
+        status: "error",
+        message: "Domain-wide delegation issue",
+        details: "Verify service account Client ID is authorized in Workspace Admin with gmail.send scope",
+      };
+    }
+    return {
+      status: "error",
+      message: "Failed to send email",
+      details: errorMsg || "Unknown error",
+    };
+  }
 }
 
 // GET /api/health - Run all health checks
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
   if (!session) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Check if we should send test email
+  const url = new URL(request.url);
+  const sendTestEmail = url.searchParams.get("sendTestEmail") === "true";
 
   const results: HealthResults = {};
 
@@ -326,7 +614,9 @@ export async function GET() {
     quickbooks,
     claude,
     gemini,
-    google,
+    googleDrive,
+    googleSheets,
+    gmail,
   ] = await Promise.all([
     checkSnowflake(),
     checkPipedrive(),
@@ -334,16 +624,21 @@ export async function GET() {
     checkQuickBooks(),
     checkClaude(),
     checkGemini(),
-    checkGoogleAPIs(),
+    checkGoogleDrive(),
+    checkGoogleSheets(),
+    checkGmail(sendTestEmail),
   ]);
 
+  // Order matters for display
   results["Snowflake"] = snowflake;
-  results["Pipedrive"] = pipedrive;
   results["BigTime"] = bigtime;
   results["QuickBooks"] = quickbooks;
+  results["Pipedrive"] = pipedrive;
+  results["Google Drive"] = googleDrive;
+  results["Google Sheets"] = googleSheets;
+  results["Gmail"] = gmail;
   results["Claude API"] = claude;
   results["Gemini API"] = gemini;
-  results["Google APIs"] = google;
 
   // Calculate summary
   const total = Object.keys(results).length;

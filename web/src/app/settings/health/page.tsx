@@ -23,176 +23,304 @@ interface HealthResponse {
   timestamp: string;
 }
 
-const statusIcons: { [key: string]: string } = {
-  success: "✅",
-  warning: "⚠️",
-  error: "❌",
-  not_configured: "⚙️",
+const serviceIcons: { [key: string]: string } = {
+  Snowflake: "❄️",
+  BigTime: "⏱️",
+  QuickBooks: "📗",
+  Pipedrive: "🔵",
+  "Google Drive": "📁",
+  "Google Sheets": "📊",
+  Gmail: "📧",
+  "Claude API": "🤖",
+  "Gemini API": "✨",
 };
 
-const statusColors: { [key: string]: string } = {
-  success: "bg-green-50 border-green-200",
-  warning: "bg-yellow-50 border-yellow-200",
-  error: "bg-red-50 border-red-200",
-  not_configured: "bg-gray-50 border-gray-200",
-};
-
-const statusTextColors: { [key: string]: string } = {
-  success: "text-green-700",
-  warning: "text-yellow-700",
-  error: "text-red-700",
-  not_configured: "text-gray-500",
+const serviceDescriptions: { [key: string]: string } = {
+  Snowflake: "Data warehouse - stores all configuration and app data",
+  BigTime: "Time tracking - employee hours and project billing",
+  QuickBooks: "Financial data - invoices and revenue",
+  Pipedrive: "CRM - deals, pipeline, and bookings",
+  "Google Drive": "File storage - vault folders and documents",
+  "Google Sheets": "Configuration data (now in Snowflake)",
+  Gmail: "Email notifications and reports",
+  "Claude API": "AI analysis and document review",
+  "Gemini API": "AI vault processing (cost-effective)",
 };
 
 export default function HealthCheckPage() {
   const [loading, setLoading] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [data, setData] = useState<HealthResponse | null>(null);
 
-  const runHealthCheck = async () => {
-    setLoading(true);
+  const runHealthCheck = async (sendTestEmail: boolean = false) => {
+    if (sendTestEmail) {
+      setSendingEmail(true);
+    } else {
+      setLoading(true);
+    }
+
     try {
-      const response = await fetch("/api/health");
+      const url = sendTestEmail ? "/api/health?sendTestEmail=true" : "/api/health";
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error("Failed to run health check");
       }
       const result: HealthResponse = await response.json();
       setData(result);
 
-      // Show toast based on results
-      if (result.summary.error > 0) {
-        toast.error(`${result.summary.error} service(s) have errors`);
-      } else if (result.summary.warning > 0) {
-        toast.warning(`${result.summary.warning} service(s) have warnings`);
+      if (sendTestEmail) {
+        const gmailResult = result.results["Gmail"];
+        if (gmailResult?.status === "success" && gmailResult.message.includes("sent")) {
+          toast.success("Test email sent! Check your inbox.");
+        } else {
+          toast.error("Failed to send test email");
+        }
       } else {
-        toast.success("All configured services are healthy");
+        if (result.summary.error > 0) {
+          toast.error(`${result.summary.error} service(s) have errors`);
+        } else if (result.summary.warning > 0 || result.summary.notConfigured > 0) {
+          toast.warning("Some services need attention");
+        } else {
+          toast.success("All services are healthy!");
+        }
       }
     } catch (error) {
       console.error("Health check error:", error);
       toast.error("Failed to run health check");
     } finally {
       setLoading(false);
+      setSendingEmail(false);
+    }
+  };
+
+  const getStatusStyle = (status: string) => {
+    switch (status) {
+      case "success":
+        return {
+          bg: "bg-emerald-50",
+          border: "border-emerald-200",
+          icon: "bg-emerald-500",
+          text: "text-emerald-700",
+          badge: "bg-emerald-100 text-emerald-800",
+        };
+      case "warning":
+        return {
+          bg: "bg-amber-50",
+          border: "border-amber-200",
+          icon: "bg-amber-500",
+          text: "text-amber-700",
+          badge: "bg-amber-100 text-amber-800",
+        };
+      case "error":
+        return {
+          bg: "bg-red-50",
+          border: "border-red-200",
+          icon: "bg-red-500",
+          text: "text-red-700",
+          badge: "bg-red-100 text-red-800",
+        };
+      default:
+        return {
+          bg: "bg-slate-50",
+          border: "border-slate-200",
+          icon: "bg-slate-400",
+          text: "text-slate-600",
+          badge: "bg-slate-100 text-slate-600",
+        };
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "success":
+        return "Healthy";
+      case "warning":
+        return "Warning";
+      case "error":
+        return "Error";
+      default:
+        return "Not Configured";
     }
   };
 
   return (
     <AppLayout>
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Connection Health</h1>
-          <p className="text-gray-500">
-            Test connections to all external APIs and services
-          </p>
+      <div className="space-y-8 max-w-5xl">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <span className="text-4xl">🏥</span>
+              Connection Health
+            </h1>
+            <p className="text-gray-500 mt-1">
+              Monitor all external API connections and services
+            </p>
+          </div>
+          <div className="flex gap-3">
+            {data && (
+              <Button
+                variant="outline"
+                onClick={() => runHealthCheck(true)}
+                disabled={sendingEmail || !data.results["Gmail"] || data.results["Gmail"].status === "not_configured"}
+              >
+                {sendingEmail ? "Sending..." : "📧 Send Test Email"}
+              </Button>
+            )}
+            <Button onClick={() => runHealthCheck(false)} disabled={loading} size="lg">
+              {loading ? (
+                <>
+                  <span className="animate-spin mr-2">⟳</span>
+                  Checking...
+                </>
+              ) : (
+                <>🔍 Run Health Check</>
+              )}
+            </Button>
+          </div>
         </div>
-
-        <Button onClick={runHealthCheck} disabled={loading}>
-          {loading ? "Checking..." : "Run Health Check"}
-        </Button>
 
         {data && (
           <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-              <div className="rounded-lg border bg-white p-4 text-center">
-                <p className="text-2xl font-bold">{data.summary.total}</p>
-                <p className="text-sm text-gray-500">Total Services</p>
+            {/* Summary Dashboard */}
+            <div className="grid grid-cols-5 gap-4">
+              <div className="rounded-xl border-2 border-slate-200 bg-white p-5 text-center shadow-sm">
+                <p className="text-4xl font-bold text-slate-700">{data.summary.total}</p>
+                <p className="text-sm text-slate-500 mt-1">Total Services</p>
               </div>
-              <div className="rounded-lg border bg-green-50 border-green-200 p-4 text-center">
-                <p className="text-2xl font-bold text-green-700">{data.summary.success}</p>
-                <p className="text-sm text-green-600">Healthy</p>
+              <div className="rounded-xl border-2 border-emerald-200 bg-emerald-50 p-5 text-center shadow-sm">
+                <p className="text-4xl font-bold text-emerald-600">{data.summary.success}</p>
+                <p className="text-sm text-emerald-600 mt-1">Healthy</p>
               </div>
-              <div className="rounded-lg border bg-yellow-50 border-yellow-200 p-4 text-center">
-                <p className="text-2xl font-bold text-yellow-700">{data.summary.warning}</p>
-                <p className="text-sm text-yellow-600">Warnings</p>
+              <div className="rounded-xl border-2 border-amber-200 bg-amber-50 p-5 text-center shadow-sm">
+                <p className="text-4xl font-bold text-amber-600">{data.summary.warning}</p>
+                <p className="text-sm text-amber-600 mt-1">Warnings</p>
               </div>
-              <div className="rounded-lg border bg-red-50 border-red-200 p-4 text-center">
-                <p className="text-2xl font-bold text-red-700">{data.summary.error}</p>
-                <p className="text-sm text-red-600">Errors</p>
+              <div className="rounded-xl border-2 border-red-200 bg-red-50 p-5 text-center shadow-sm">
+                <p className="text-4xl font-bold text-red-600">{data.summary.error}</p>
+                <p className="text-sm text-red-600 mt-1">Errors</p>
               </div>
-              <div className="rounded-lg border bg-gray-50 border-gray-200 p-4 text-center">
-                <p className="text-2xl font-bold text-gray-500">{data.summary.notConfigured}</p>
-                <p className="text-sm text-gray-500">Not Configured</p>
+              <div className="rounded-xl border-2 border-slate-200 bg-slate-50 p-5 text-center shadow-sm">
+                <p className="text-4xl font-bold text-slate-500">{data.summary.notConfigured}</p>
+                <p className="text-sm text-slate-500 mt-1">Not Configured</p>
               </div>
             </div>
 
             {/* Overall Status Banner */}
             {data.summary.error === 0 && data.summary.warning === 0 && data.summary.notConfigured === 0 && (
-              <div className="rounded-lg bg-green-100 border border-green-300 p-4 text-green-800">
-                All systems operational! All apps should work correctly.
-              </div>
-            )}
-            {data.summary.error === 0 && data.summary.warning > 0 && (
-              <div className="rounded-lg bg-yellow-100 border border-yellow-300 p-4 text-yellow-800">
-                {data.summary.warning} warning(s). Core functionality works but some features may be limited.
+              <div className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 p-6 text-white shadow-lg">
+                <div className="flex items-center gap-4">
+                  <span className="text-5xl">🎉</span>
+                  <div>
+                    <h2 className="text-xl font-bold">All Systems Operational</h2>
+                    <p className="text-emerald-100">All {data.summary.total} services are connected and working correctly.</p>
+                  </div>
+                </div>
               </div>
             )}
             {data.summary.error > 0 && (
-              <div className="rounded-lg bg-red-100 border border-red-300 p-4 text-red-800">
-                {data.summary.error} error(s) detected. Some apps may not work. Please fix the issues below.
+              <div className="rounded-xl bg-gradient-to-r from-red-500 to-rose-500 p-6 text-white shadow-lg">
+                <div className="flex items-center gap-4">
+                  <span className="text-5xl">⚠️</span>
+                  <div>
+                    <h2 className="text-xl font-bold">Action Required</h2>
+                    <p className="text-red-100">
+                      {data.summary.error} service(s) have errors. Some apps may not work correctly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {data.summary.error === 0 && (data.summary.warning > 0 || data.summary.notConfigured > 0) && (
+              <div className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white shadow-lg">
+                <div className="flex items-center gap-4">
+                  <span className="text-5xl">📋</span>
+                  <div>
+                    <h2 className="text-xl font-bold">Mostly Good</h2>
+                    <p className="text-amber-100">
+                      Core services working. {data.summary.notConfigured > 0 && `${data.summary.notConfigured} service(s) not configured.`}
+                      {data.summary.warning > 0 && ` ${data.summary.warning} warning(s).`}
+                    </p>
+                  </div>
+                </div>
               </div>
             )}
 
-            {/* Service Details */}
-            <div className="space-y-3">
-              <h2 className="text-xl font-semibold">Service Details</h2>
-
-              {Object.entries(data.results).map(([service, result]) => (
-                <div
-                  key={service}
-                  className={`rounded-lg border p-4 ${statusColors[result.status]}`}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{statusIcons[result.status]}</span>
-                      <div>
-                        <h3 className="font-semibold">{service}</h3>
-                        <p className={`text-sm ${statusTextColors[result.status]}`}>
-                          {result.message}
-                        </p>
+            {/* Service Cards */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold text-slate-700">Service Details</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {Object.entries(data.results).map(([service, result]) => {
+                  const style = getStatusStyle(result.status);
+                  return (
+                    <div
+                      key={service}
+                      className={`rounded-xl border-2 ${style.border} ${style.bg} p-5 shadow-sm transition-all hover:shadow-md`}
+                    >
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <span className="text-2xl">{serviceIcons[service] || "🔌"}</span>
+                          <div>
+                            <h3 className="font-semibold text-slate-800">{service}</h3>
+                            <p className="text-xs text-slate-500">{serviceDescriptions[service]}</p>
+                          </div>
+                        </div>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${style.badge}`}>
+                          {getStatusLabel(result.status)}
+                        </span>
+                      </div>
+                      <div className={`text-sm ${style.text} font-medium mb-2`}>
+                        {result.message}
+                      </div>
+                      <div className="text-xs text-slate-600 bg-white/60 rounded-lg p-3 whitespace-pre-wrap">
+                        {result.details}
                       </div>
                     </div>
-                  </div>
-                  <p className="mt-2 text-sm text-gray-600 bg-white/50 rounded p-2">
-                    {result.details}
-                  </p>
-
-                  {/* Troubleshooting hints for errors */}
-                  {result.status === "error" && (
-                    <div className="mt-2 text-sm bg-white rounded p-2 border">
-                      <strong>Fix:</strong>{" "}
-                      {service === "Snowflake" && "Check SNOWFLAKE_* environment variables in Vercel"}
-                      {service === "Pipedrive" && "Check PIPEDRIVE_API_TOKEN in Vercel environment variables"}
-                      {service === "BigTime" && "Check BIGTIME_API_KEY and BIGTIME_FIRM_ID in Vercel"}
-                      {service === "QuickBooks" && "QuickBooks requires OAuth token refresh"}
-                      {service === "Claude API" && "Check CLAUDE_API_KEY in Vercel environment variables"}
-                      {service === "Gemini API" && "Check GEMINI_API_KEY in Vercel environment variables"}
-                      {service === "Google APIs" && "Check GOOGLE_SERVICE_ACCOUNT_KEY in Vercel"}
-                    </div>
-                  )}
-                </div>
-              ))}
+                  );
+                })}
+              </div>
             </div>
 
             {/* Timestamp */}
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-slate-400 text-center">
               Last checked: {new Date(data.timestamp).toLocaleString()}
             </p>
           </>
         )}
 
         {!data && !loading && (
-          <div className="rounded-lg border border-dashed p-12 text-center text-gray-500">
-            <p className="mb-4">Click the button above to check all API connections</p>
-            <div className="text-left max-w-md mx-auto">
-              <h3 className="font-semibold mb-2">Services Checked:</h3>
-              <ul className="space-y-1 text-sm">
-                <li>Snowflake - Data warehouse</li>
-                <li>Pipedrive - CRM and deal tracking</li>
-                <li>BigTime - Time tracking</li>
-                <li>QuickBooks - Financial data</li>
-                <li>Claude API - AI analysis</li>
-                <li>Gemini API - AI vault processing</li>
-                <li>Google APIs - Drive, Sheets, Gmail</li>
-              </ul>
+          <div className="rounded-xl border-2 border-dashed border-slate-300 p-16 text-center">
+            <span className="text-6xl mb-6 block">🔌</span>
+            <h2 className="text-xl font-semibold text-slate-700 mb-2">Ready to Check Connections</h2>
+            <p className="text-slate-500 mb-8 max-w-md mx-auto">
+              Click the button above to test all API connections and verify your services are working correctly.
+            </p>
+
+            <div className="grid grid-cols-3 gap-4 max-w-2xl mx-auto text-left">
+              <div className="space-y-2">
+                <h3 className="font-semibold text-slate-700 text-sm">Data & Storage</h3>
+                <ul className="text-sm text-slate-500 space-y-1">
+                  <li>❄️ Snowflake</li>
+                  <li>📁 Google Drive</li>
+                  <li>📊 Google Sheets</li>
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-semibold text-slate-700 text-sm">Business Apps</h3>
+                <ul className="text-sm text-slate-500 space-y-1">
+                  <li>⏱️ BigTime</li>
+                  <li>📗 QuickBooks</li>
+                  <li>🔵 Pipedrive</li>
+                </ul>
+              </div>
+              <div className="space-y-2">
+                <h3 className="font-semibold text-slate-700 text-sm">AI & Comms</h3>
+                <ul className="text-sm text-slate-500 space-y-1">
+                  <li>🤖 Claude API</li>
+                  <li>✨ Gemini API</li>
+                  <li>📧 Gmail</li>
+                </ul>
+              </div>
             </div>
           </div>
         )}
