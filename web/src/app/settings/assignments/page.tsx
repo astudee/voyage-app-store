@@ -71,6 +71,7 @@ export default function AssignmentsSettingsPage() {
   const [addMonthOpen, setAddMonthOpen] = useState(false);
   const [newMonthYear, setNewMonthYear] = useState<string>("");
   const [newMonthMonth, setNewMonthMonth] = useState<string>("");
+  const [yearError, setYearError] = useState<string>("");
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
 
@@ -438,10 +439,6 @@ export default function AssignmentsSettingsPage() {
     return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
 
-  // Generate year options (current year -2 to +2)
-  const currentYear = new Date().getFullYear();
-  const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
-
   // Month options
   const monthOptions = [
     { value: "01", label: "January" },
@@ -560,21 +557,21 @@ export default function AssignmentsSettingsPage() {
             </div>
 
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-sm">
+              <table className="text-sm border-collapse">
                 <thead className="bg-gray-100">
                   <tr>
-                    <th className="sticky left-0 bg-gray-100 px-4 py-3 text-left font-medium">
+                    <th className="sticky left-0 z-10 bg-gray-100 w-[180px] min-w-[180px] px-3 py-3 text-left font-medium border-r">
                       Staff Member
                     </th>
-                    <th className="px-4 py-3 text-right font-medium">Bill Rate</th>
+                    <th className="w-[90px] min-w-[90px] px-2 py-3 text-center font-medium">Bill Rate</th>
                     {months.map((month) => (
-                      <th key={month} className="px-4 py-3 text-center font-medium min-w-[80px]">
+                      <th key={month} className="w-[85px] min-w-[85px] px-2 py-3 text-center font-medium">
                         {formatMonth(month)}
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-right font-medium">Total Hrs</th>
-                    <th className="px-4 py-3 text-right font-medium">Revenue</th>
-                    <th className="px-4 py-3 text-center font-medium w-[60px]"></th>
+                    <th className="w-[90px] min-w-[90px] px-2 py-3 text-right font-medium">Total Hrs</th>
+                    <th className="w-[100px] min-w-[100px] px-2 py-3 text-right font-medium">Revenue</th>
+                    <th className="w-[40px] min-w-[40px] px-1 py-3"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -591,13 +588,13 @@ export default function AssignmentsSettingsPage() {
                     <>
                       {staffRows.map((row) => (
                         <tr key={row.staffName} className="border-t hover:bg-gray-50">
-                          <td className="sticky left-0 bg-white px-4 py-2 font-medium">
+                          <td className="sticky left-0 z-10 bg-white w-[180px] min-w-[180px] px-3 py-2 font-medium border-r">
                             {row.staffName}
                           </td>
-                          <td className="px-2 py-1">
+                          <td className="w-[90px] min-w-[90px] px-2 py-1 text-center">
                             <Input
                               type="number"
-                              className="w-20 text-right"
+                              className="w-full text-center h-8"
                               value={row.billRate}
                               onChange={(e) => {
                                 const newRate = parseFloat(e.target.value) || 0;
@@ -620,10 +617,10 @@ export default function AssignmentsSettingsPage() {
                           {months.map((month) => {
                             const monthData = row.months[month] || { assignmentId: null, hours: 0 };
                             return (
-                              <td key={month} className="px-1 py-1">
+                              <td key={month} className="w-[85px] min-w-[85px] px-2 py-1 text-center">
                                 <Input
                                   type="number"
-                                  className="w-16 text-center"
+                                  className="w-full text-center h-8"
                                   value={monthData.hours || ""}
                                   placeholder="0"
                                   onChange={(e) => {
@@ -655,16 +652,16 @@ export default function AssignmentsSettingsPage() {
                               </td>
                             );
                           })}
-                          <td className="px-4 py-2 text-right font-medium">
+                          <td className="w-[90px] min-w-[90px] px-2 py-2 text-right font-medium">
                             {Object.values(row.months).reduce((sum, m) => sum + (m?.hours || 0), 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-2 text-right font-medium text-green-600">
+                          <td className="w-[100px] min-w-[100px] px-2 py-2 text-right font-medium text-green-600">
                             {formatCurrency(
                               Object.values(row.months).reduce((sum, m) => sum + (m?.hours || 0), 0) *
                                 row.billRate
                             )}
                           </td>
-                          <td className="px-2 py-2 text-center">
+                          <td className="w-[40px] min-w-[40px] px-1 py-2 text-center">
                             <Button
                               variant="ghost"
                               size="sm"
@@ -679,32 +676,32 @@ export default function AssignmentsSettingsPage() {
 
                       {/* Totals Row */}
                       <tr className="border-t-2 bg-gray-100 font-bold">
-                        <td className="sticky left-0 bg-gray-100 px-4 py-3">TOTALS</td>
-                        <td className="px-4 py-3"></td>
+                        <td className="sticky left-0 z-10 bg-gray-100 w-[180px] min-w-[180px] px-3 py-3 border-r">TOTALS</td>
+                        <td className="w-[90px] min-w-[90px] px-2 py-3"></td>
                         {months.map((month) => (
-                          <td key={month} className="px-4 py-3 text-center">
+                          <td key={month} className="w-[85px] min-w-[85px] px-2 py-3 text-center">
                             {columnTotals[month]?.hours.toLocaleString() || 0}
                           </td>
                         ))}
-                        <td className="px-4 py-3 text-right">{grandTotalHours.toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right text-green-600">
+                        <td className="w-[90px] min-w-[90px] px-2 py-3 text-right">{grandTotalHours.toLocaleString()}</td>
+                        <td className="w-[100px] min-w-[100px] px-2 py-3 text-right text-green-600">
                           {formatCurrency(grandTotalRevenue)}
                         </td>
-                        <td></td>
+                        <td className="w-[40px] min-w-[40px]"></td>
                       </tr>
 
                       {/* Revenue Row */}
                       <tr className="bg-gray-50 text-green-600">
-                        <td className="sticky left-0 bg-gray-50 px-4 py-2 font-medium">REVENUE</td>
-                        <td className="px-4 py-2"></td>
+                        <td className="sticky left-0 z-10 bg-gray-50 w-[180px] min-w-[180px] px-3 py-2 font-medium border-r">REVENUE</td>
+                        <td className="w-[90px] min-w-[90px] px-2 py-2"></td>
                         {months.map((month) => (
-                          <td key={month} className="px-4 py-2 text-center text-xs">
+                          <td key={month} className="w-[85px] min-w-[85px] px-2 py-2 text-center text-xs">
                             {formatCurrency(columnTotals[month]?.revenue || 0)}
                           </td>
                         ))}
-                        <td className="px-4 py-2"></td>
-                        <td className="px-4 py-2"></td>
-                        <td></td>
+                        <td className="w-[90px] min-w-[90px] px-2 py-2"></td>
+                        <td className="w-[100px] min-w-[100px] px-2 py-2"></td>
+                        <td className="w-[40px] min-w-[40px]"></td>
                       </tr>
                     </>
                   )}
@@ -773,7 +770,12 @@ export default function AssignmentsSettingsPage() {
       </Dialog>
 
       {/* Add Month Dialog */}
-      <Dialog open={addMonthOpen} onOpenChange={setAddMonthOpen}>
+      <Dialog open={addMonthOpen} onOpenChange={(open) => {
+        setAddMonthOpen(open);
+        if (!open) {
+          setYearError("");
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Month Column</DialogTitle>
@@ -785,18 +787,24 @@ export default function AssignmentsSettingsPage() {
             <div className="flex gap-4">
               <div className="flex-1 space-y-2">
                 <label className="text-sm font-medium">Year</label>
-                <Select value={newMonthYear} onValueChange={setNewMonthYear}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select year..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {yearOptions.map((year) => (
-                      <SelectItem key={year} value={year.toString()}>
-                        {year}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  type="number"
+                  placeholder="e.g. 2025"
+                  value={newMonthYear}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setNewMonthYear(value);
+                    const yearNum = parseInt(value);
+                    if (value && (isNaN(yearNum) || yearNum < 2001 || yearNum > 2098)) {
+                      setYearError("Year must be between 2001 and 2098");
+                    } else {
+                      setYearError("");
+                    }
+                  }}
+                />
+                {yearError && (
+                  <p className="text-sm text-red-500">{yearError}</p>
+                )}
               </div>
               <div className="flex-1 space-y-2">
                 <label className="text-sm font-medium">Month</label>
@@ -814,7 +822,7 @@ export default function AssignmentsSettingsPage() {
                 </Select>
               </div>
             </div>
-            {newMonthYear && newMonthMonth && (
+            {newMonthYear && newMonthMonth && !yearError && (
               <p className="text-sm text-gray-600">
                 Will add: <strong>{formatMonth(`${newMonthYear}-${newMonthMonth}`)}</strong>
                 {months.includes(`${newMonthYear}-${newMonthMonth}`) && (
@@ -829,7 +837,7 @@ export default function AssignmentsSettingsPage() {
             </Button>
             <Button
               onClick={handleAddMonth}
-              disabled={!newMonthYear || !newMonthMonth || months.includes(`${newMonthYear}-${newMonthMonth}`)}
+              disabled={!newMonthYear || !newMonthMonth || !!yearError || months.includes(`${newMonthYear}-${newMonthMonth}`)}
             >
               Add Month
             </Button>

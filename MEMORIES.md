@@ -1,7 +1,7 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Added Pipedrive booking validation to assignments)
+> **Last updated:** 2026-01-22 (Extensive update before session end)
 
 ---
 
@@ -28,10 +28,11 @@
   - `VC_PROJECTS` - Project data
 - Connection tested and working as of 2026-01-22
 
-### Phase 2: Config Tools in Vercel [CURRENT]
-- Build web-based config tools to replace Google Sheets UI
-- Start with basic Snowflake connectivity proof
-- Goal: CRUD interface for the config tables above
+### Phase 2: Config Tools in Vercel [COMPLETE]
+- Built web-based config tools to replace Google Sheets UI
+- All 7 settings pages complete with full CRUD
+- Pipedrive integration for booking validation
+- See "What's Built" section below for full list
 
 ### Phase 3: Streamlit → Vercel Migration [FUTURE]
 Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
@@ -104,16 +105,11 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 ## Pipedrive API Configuration
 
-**Status:** Working in Streamlit AND Vercel
+**Status:** WORKING in Streamlit AND Vercel (verified 2026-01-22)
 
 **Environment Variable:** `PIPEDRIVE_API_TOKEN`
 - Streamlit: `.streamlit/secrets.toml`
-- Vercel: Add via Vercel Dashboard > Settings > Environment Variables
-
-**To add to Vercel:**
-1. Go to https://vercel.com/astudees-projects/web/settings/environment-variables
-2. Add: `PIPEDRIVE_API_TOKEN` = (value from .streamlit/secrets.toml)
-3. Redeploy for changes to take effect
+- Vercel: Already configured in Vercel Dashboard
 
 **Custom Fields in Pipedrive Deals:**
 - BigTime Client ID
@@ -126,6 +122,8 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 **API Endpoints:**
 - Streamlit: `pages/13_📊_Bookings_Tracker.py` - fetches won deals
 - Vercel: `/api/pipedrive/booking?projectId=X` - finds deal by BigTime Project ID
+
+**Confirmed Working:** Tested with Navitus Health Solutions project - shows $138,000 booking amount from Pipedrive
 
 ---
 
@@ -305,6 +303,20 @@ This is where reference files are uploaded for Claude to review:
 - Updated `.devcontainer/devcontainer.json` to auto-install Claude Code
 - **Phase 2 Config Tools: COMPLETE**
 
+### 2026-01-22 - Pipedrive Integration & Enhancements
+- Added Pipedrive booking validation to assignments page
+  - Created `/api/pipedrive/booking` API route
+  - Fetches won deals from Pipedrive, matches by BigTime Project ID
+  - Shows booking amount, calculated revenue, and variance
+- Improved Add Month dialog:
+  - Now allows selecting any year/month (past or future)
+  - Months are sorted chronologically after adding
+- Added PIPEDRIVE_API_TOKEN to Vercel environment variables
+- Confirmed working: Navitus Health Solutions shows $138,000 booking
+- Identified UI issues to fix:
+  - Column alignment in grid needs fixing
+  - Year selector should be text input with validation
+
 ---
 
 ## Notes for Future Sessions
@@ -475,15 +487,105 @@ Monthly allocated hours are used by other apps (Revenue Forecaster) to project f
 - Revenue per month = Σ(staff hours × staff rate) for that month
 - Grand total revenue = Σ(all hours × respective rates)
 
-**Future: Validation panel (after Pipedrive integration)**
+**Validation panel (IMPLEMENTED - Pipedrive integration working)**
 ```
-Booking Amount: $65,000 (from Pipedrive)
-Calculated:     $62,400
-Variance:       -$2,600 (under-allocated)
+Calculated Revenue: $90,599
+Booking (Pipedrive): $138,000
+Variance: -$47,401 (-34.3%)
 ```
 
-### Pipedrive Integration (Future Enhancement)
-- Add PIPEDRIVE_API_TOKEN to Vercel environment variables
-- Fetch booking amounts via Pipedrive API (match by BigTime Project ID)
-- Auto-validate assignment totals against deal values
-- Show warning if variance > 5%
+### Pipedrive Integration [COMPLETE]
+- PIPEDRIVE_API_TOKEN configured in Vercel environment variables
+- `/api/pipedrive/booking?projectId=X` fetches booking amounts
+- Matches deals by BigTime Project ID custom field
+- Shows variance between calculated revenue and booking amount
+- Negative variance (red) = under-allocated, Positive (green) = over-allocated
+
+---
+
+## Current Work In Progress (as of 2026-01-22 end of session)
+
+### Assignments Page Polish (minor fixes needed)
+1. **Column alignment issue** - Grid columns don't line up between header, data rows, and totals. Need to set fixed column widths.
+2. **Year input change** - Change year dropdown to text input with validation (must be 2001-2098)
+
+### Known Issues
+- None critical - all core functionality working
+
+---
+
+## What's Next (Phase 3 Planning)
+
+### Priority Order for Streamlit → Vercel Migration
+
+**High Priority (used frequently):**
+1. Commission Calculator (01) - Monthly commission calculations
+2. Billable Hours Report (04) - Monthly utilization tracking
+3. Time Reviewer (06) - Weekly timesheet compliance
+4. Payroll Helper (10) - Gusto payroll prep
+
+**Medium Priority:**
+5. Revenue Forecaster (16) - Uses assignments data
+6. Bookings Tracker (13) - Already have Pipedrive API working
+7. Project Health Monitor (14) - Combines multiple data sources
+8. Resource Checker (15) - Utilization tracking
+
+**Lower Priority (less frequent use):**
+9. Bonus Calculator (05) - Annual
+10. Benefits Calculator (08) - Periodic
+11. Payroll Calculator (09) - Periodic
+12. Expense Reviewer (07)
+13. Contractor Fee Reviewer (11)
+
+**Future/As Needed:**
+- Email to Vault (02) - Gmail integration
+- To File to Vault (03) - AI document classification
+- Contract Reviewer (17) - AI contract analysis
+- Sales Snapshot (18) - Pipedrive pipeline
+
+### Technical Considerations for Phase 3
+- Most apps need BigTime API integration (not yet in Vercel)
+- Commission Calculator needs QuickBooks API
+- Some apps use AI (Claude/Gemini) for analysis
+- Excel export functionality needed (use xlsx library)
+- Consider batch operations for large data sets
+
+### API Integrations Needed for Phase 3
+| API | Status | Used By |
+|-----|--------|---------|
+| Snowflake | WORKING | All apps |
+| Pipedrive | WORKING | Bookings, Revenue Forecaster, Project Health |
+| BigTime | NOT YET | Most apps (time entries, expenses) |
+| QuickBooks | NOT YET | Commission Calculator |
+| Gmail | NOT YET | Email to Vault |
+| Google Drive | NOT YET | To File to Vault |
+| Claude/Gemini | NOT YET | Contract Reviewer, To File to Vault |
+
+---
+
+## Quick Reference Commands
+
+**Deploy to Vercel:**
+```bash
+npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3
+```
+
+**Run Python with env vars:**
+```bash
+export $(grep -v '^#' .env | xargs) && PYTHONPATH=/workspaces/voyage-app-store python3 <script>
+```
+
+**Git commit with co-author:**
+```bash
+git commit -m "$(cat <<'EOF'
+Your commit message here
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+**Check Snowflake connection:**
+```bash
+curl https://apps.voyage.xyz/api/test-snowflake
+```
