@@ -1,7 +1,36 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Extensive update before session end)
+> **Last updated:** 2026-01-22 (Final session update - all Phase 2 work complete)
+
+---
+
+## FOR NEW CLAUDE SESSIONS - START HERE
+
+**Current Status:** Phase 2 COMPLETE. Phase 3 ready to begin.
+
+**What's Done:**
+- Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
+- Vercel/Next.js app at https://apps.voyage.xyz with 7 settings pages (full CRUD)
+- Pipedrive API integration for booking validation
+- All config management tools working
+
+**What's Next (Phase 3):** Migrate 22 Streamlit apps to Vercel. See "Streamlit Apps Inventory" section below for full list. Start with high-priority apps:
+1. Commission Calculator - needs BigTime + QuickBooks APIs
+2. Billable Hours Report - needs BigTime API
+3. Time Reviewer - needs BigTime API
+4. Payroll Helper - needs BigTime API
+
+**Key Technical Notes:**
+- BigTime API credentials are in `.env` but NOT yet integrated into Vercel
+- QuickBooks API needs OAuth token refresh mechanism
+- Streamlit apps are in `pages/` folder - study them before migrating
+- Sister project `voyage-consultant-tools` has working examples
+
+**Quick Commands:**
+- Deploy: `npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3`
+- Test Snowflake: `curl https://apps.voyage.xyz/api/test-snowflake`
+- Build: `cd web && npm run build`
 
 ---
 
@@ -96,10 +125,27 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 **API Key:** `fh1g37HpUbLxcRSzVENmNrkMMx1Zm0QdNt0+MuL4GmcaAJWc63LFhCU1/gBKnYH2`
 **Firm ID:** `pvnq-stx-htoh`
+**Base URL:** `https://iq.bigtime.net/BigtimeData/api/v2`
+
+**Environment Variables (in .env, NOT yet in Vercel):**
+- `BIGTIME_API_KEY` - API key above
+- `BIGTIME_FIRM_ID` - Firm ID above
 
 **Staff ID URL pattern:** `https://iq.bigtime.net/Bigtime/Staff2#/detail/{BIGTIME_STAFF_ID}`
 
 **Note:** David Woods (STAFF_ID 104) has no BigTime account - BIGTIME_STAFF_ID is NULL.
+
+**Common BigTime API Endpoints (used by Streamlit apps):**
+- `GET /staff` - List all staff members
+- `GET /project` - List projects
+- `GET /time/Sheet` - Get time entries
+- `GET /expense` - Get expenses
+- `GET /picklist/StaffList` - Staff dropdown list
+- `GET /report/...` - Various reports
+
+**Authentication:** API key in `X-Auth-Token` header, Firm ID in `X-Auth-Realm` header
+
+**Reference Implementation:** See `/functions/bigtime_api.py` for Python examples
 
 ---
 
@@ -313,9 +359,20 @@ This is where reference files are uploaded for Claude to review:
   - Months are sorted chronologically after adding
 - Added PIPEDRIVE_API_TOKEN to Vercel environment variables
 - Confirmed working: Navitus Health Solutions shows $138,000 booking
-- Identified UI issues to fix:
-  - Column alignment in grid needs fixing
-  - Year selector should be text input with validation
+
+### 2026-01-22 - Final Session Fixes
+- Fixed column alignment in assignments grid:
+  - Added consistent `w-[Xpx] min-w-[Xpx]` classes to all table cells
+  - Staff Member: 180px, Bill Rate: 90px, Month columns: 85px, Total Hrs: 90px, Revenue: 100px
+  - Added `border-r` to sticky Staff Member column for visual separation
+  - Set all inputs to `w-full h-8` for consistent sizing
+- Changed year selector from dropdown to text input:
+  - Removed yearOptions array (was limiting to 5 years)
+  - Added text input with validation (2001-2098 range)
+  - Shows error message when year is out of range
+  - Add Month button disabled when validation fails
+- Committed and pushed: `ed16832`
+- **PHASE 2 COMPLETE** - All config tools working
 
 ---
 
@@ -503,14 +560,21 @@ Variance: -$47,401 (-34.3%)
 
 ---
 
-## Current Work In Progress (as of 2026-01-22 end of session)
+## Current State (as of 2026-01-22 final)
 
-### Assignments Page Polish (minor fixes needed)
-1. **Column alignment issue** - Grid columns don't line up between header, data rows, and totals. Need to set fixed column widths.
-2. **Year input change** - Change year dropdown to text input with validation (must be 2001-2098)
+### Phase 2: COMPLETE
+All config settings pages are built and working:
+- Staff, Benefits, Commission Rules, Offsets, Client Name Mapping, Fixed Fee Revenue, Staff Assignments
+- Pipedrive integration for booking validation
+- All CRUD operations working
+
+### Assignments Page - COMPLETE
+All polish items fixed:
+1. **Column alignment** - FIXED. Added fixed widths (`w-[Xpx] min-w-[Xpx]`) to all table cells
+2. **Year input** - FIXED. Changed from dropdown to text input with validation (2001-2098 range)
 
 ### Known Issues
-- None critical - all core functionality working
+- None - all functionality working
 
 ---
 
@@ -549,6 +613,40 @@ Variance: -$47,401 (-34.3%)
 - Some apps use AI (Claude/Gemini) for analysis
 - Excel export functionality needed (use xlsx library)
 - Consider batch operations for large data sets
+
+### Streamlit → Vercel Migration Approach
+
+**For each app migration:**
+1. **Study the Streamlit app** - Read `pages/XX_*.py` to understand:
+   - What data it fetches (BigTime, QuickBooks, Snowflake, etc.)
+   - What calculations it performs
+   - What outputs it generates (tables, charts, Excel exports)
+
+2. **Create API routes** in `/web/src/app/api/`:
+   - One route per external API (e.g., `/api/bigtime/time-entries`)
+   - Keep business logic in the route, not the frontend
+
+3. **Create the page** in `/web/src/app/`:
+   - Use existing UI patterns from settings pages
+   - Use shadcn/ui components (already installed)
+   - Add to sidebar navigation in `components/sidebar.tsx`
+
+4. **Handle Excel exports:**
+   - Install `xlsx` package: `npm install xlsx`
+   - Generate in API route or client-side
+   - Return as downloadable blob
+
+**Common Patterns in Streamlit Apps:**
+- Date range selectors → Use shadcn DatePicker
+- Data tables → Use existing table patterns or install tanstack/react-table
+- Charts → Install recharts or chart.js
+- File uploads → Use shadcn Input type="file"
+- Excel download → Use xlsx library
+
+**Reference Files:**
+- Streamlit apps: `/pages/` folder
+- Python API helpers: `/functions/` folder
+- Working Vercel examples: `/web/src/app/settings/` folder
 
 ### API Integrations Needed for Phase 3
 | API | Status | Used By |
