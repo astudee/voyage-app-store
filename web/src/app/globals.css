@@ -47,6 +47,14 @@
 }
 
 :root {
+  /* Voyage Advisory Brand Colors */
+  --voyage-dark-charcoal: #333333;
+  --voyage-dark-blue: #336699;
+  --voyage-medium-blue: #6699cc;
+  --voyage-teal: #669999;
+  --voyage-gray: #999999;
+  --voyage-navy: #0D3B66;
+
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -54,8 +62,8 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+  --primary: #0D3B66;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);

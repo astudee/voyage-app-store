@@ -38,6 +38,7 @@ interface StaffFormData {
   staff_type: string;
   notes: string;
   is_active: boolean;
+  bigtime_staff_id: string;
 }
 
 interface StaffFormProps {
@@ -46,7 +47,13 @@ interface StaffFormProps {
   mode: "create" | "edit";
 }
 
-const STAFF_TYPES = ["FTE", "International", "Contractor"];
+const STAFF_TYPES = ["FTE", "Hourly", "International", "Contractor"];
+const NONE_VALUE = "__none__";
+
+// Helper to convert empty string to NONE_VALUE for Select display
+const toSelectValue = (value: string) => value || NONE_VALUE;
+// Helper to convert NONE_VALUE back to empty string for form state
+const fromSelectValue = (value: string) => value === NONE_VALUE ? "" : value;
 
 export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
   const router = useRouter();
@@ -70,6 +77,7 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
       staff_type: "",
       notes: "",
       is_active: true,
+      bigtime_staff_id: "",
     }
   );
 
@@ -120,6 +128,9 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
         staff_type: formData.staff_type || null,
         notes: formData.notes || null,
         is_active: formData.is_active,
+        bigtime_staff_id: formData.bigtime_staff_id
+          ? parseInt(formData.bigtime_staff_id)
+          : null,
       };
 
       const url = mode === "create" ? "/api/staff" : `/api/staff/${staffId}`;
@@ -175,13 +186,14 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="staff_type">Staff Type</Label>
             <Select
-              value={formData.staff_type}
-              onValueChange={(value) => handleChange("staff_type", value)}
+              value={toSelectValue(formData.staff_type)}
+              onValueChange={(value) => handleChange("staff_type", fromSelectValue(value))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select type" />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {STAFF_TYPES.map((type) => (
                   <SelectItem key={type} value={type}>
                     {type}
@@ -262,6 +274,28 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="bigtime_staff_id">BigTime Staff ID</Label>
+            <div className="flex gap-2">
+              <Input
+                id="bigtime_staff_id"
+                type="number"
+                value={formData.bigtime_staff_id}
+                onChange={(e) => handleChange("bigtime_staff_id", e.target.value)}
+                placeholder="e.g. 569940"
+              />
+              {formData.bigtime_staff_id && (
+                <a
+                  href={`https://iq.bigtime.net/Bigtime/Staff2#/detail/${formData.bigtime_staff_id}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 text-sm text-blue-600 hover:bg-gray-50"
+                >
+                  View
+                </a>
+              )}
+            </div>
+          </div>
         </CardContent>
       </Card>
 
@@ -273,16 +307,16 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="medical_plan_code">Medical Plan</Label>
             <Select
-              value={formData.medical_plan_code}
+              value={toSelectValue(formData.medical_plan_code)}
               onValueChange={(value) =>
-                handleChange("medical_plan_code", value)
+                handleChange("medical_plan_code", fromSelectValue(value))
               }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("M").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -294,16 +328,16 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="dental_plan_code">Dental Plan</Label>
             <Select
-              value={formData.dental_plan_code}
+              value={toSelectValue(formData.dental_plan_code)}
               onValueChange={(value) =>
-                handleChange("dental_plan_code", value)
+                handleChange("dental_plan_code", fromSelectValue(value))
               }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("D").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -315,16 +349,16 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="vision_plan_code">Vision Plan</Label>
             <Select
-              value={formData.vision_plan_code}
+              value={toSelectValue(formData.vision_plan_code)}
               onValueChange={(value) =>
-                handleChange("vision_plan_code", value)
+                handleChange("vision_plan_code", fromSelectValue(value))
               }
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("V").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -336,14 +370,14 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="std_code">Short-Term Disability</Label>
             <Select
-              value={formData.std_code}
-              onValueChange={(value) => handleChange("std_code", value)}
+              value={toSelectValue(formData.std_code)}
+              onValueChange={(value) => handleChange("std_code", fromSelectValue(value))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("S").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -355,14 +389,14 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="ltd_code">Long-Term Disability</Label>
             <Select
-              value={formData.ltd_code}
-              onValueChange={(value) => handleChange("ltd_code", value)}
+              value={toSelectValue(formData.ltd_code)}
+              onValueChange={(value) => handleChange("ltd_code", fromSelectValue(value))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("L").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -374,14 +408,14 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
           <div className="space-y-2">
             <Label htmlFor="life_code">Life Insurance</Label>
             <Select
-              value={formData.life_code}
-              onValueChange={(value) => handleChange("life_code", value)}
+              value={toSelectValue(formData.life_code)}
+              onValueChange={(value) => handleChange("life_code", fromSelectValue(value))}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select plan" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">None</SelectItem>
+                <SelectItem value={NONE_VALUE}>None</SelectItem>
                 {filterBenefitsByPrefix("T").map((benefit) => (
                   <SelectItem key={benefit.CODE} value={benefit.CODE}>
                     {benefit.CODE} - {benefit.DESCRIPTION}
@@ -390,14 +424,20 @@ export function StaffForm({ initialData, staffId, mode }: StaffFormProps) {
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-2 md:col-span-2 lg:col-span-3">
+          <div className="space-y-2">
             <Label htmlFor="addl_life_code">Additional Life Insurance</Label>
-            <Input
-              id="addl_life_code"
-              value={formData.addl_life_code}
-              onChange={(e) => handleChange("addl_life_code", e.target.value)}
-              placeholder="Enter code if applicable"
-            />
+            <Select
+              value={formData.addl_life_code || "NO"}
+              onValueChange={(value) => handleChange("addl_life_code", value)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="NO">No</SelectItem>
+                <SelectItem value="YES">Yes (add amount to Notes)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>

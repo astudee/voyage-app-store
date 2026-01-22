@@ -30,6 +30,7 @@ interface Staff {
   SALARY: number | null;
   STAFF_TYPE: string | null;
   IS_ACTIVE: boolean;
+  BIGTIME_STAFF_ID: number | null;
 }
 
 export default function StaffListPage() {
@@ -130,6 +131,7 @@ export default function StaffListPage() {
                     <TableHead>Type</TableHead>
                     <TableHead>Start Date</TableHead>
                     <TableHead>Salary</TableHead>
+                    <TableHead>BigTime</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -143,6 +145,20 @@ export default function StaffListPage() {
                       <TableCell>{member.STAFF_TYPE || "-"}</TableCell>
                       <TableCell>{formatDate(member.START_DATE)}</TableCell>
                       <TableCell>{formatCurrency(member.SALARY)}</TableCell>
+                      <TableCell>
+                        {member.BIGTIME_STAFF_ID ? (
+                          <a
+                            href={`https://iq.bigtime.net/Bigtime/Staff2#/detail/${member.BIGTIME_STAFF_ID}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {member.BIGTIME_STAFF_ID}
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
                       <TableCell>
                         <span
                           className={`inline-flex rounded-full px-2 py-1 text-xs font-semibold ${

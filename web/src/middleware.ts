@@ -12,10 +12,11 @@ export const config = {
      * Match all request paths except:
      * - /login
      * - /api/auth (NextAuth routes)
+     * - /api/test-snowflake (unauthenticated test endpoint)
      * - /_next/static (static files)
      * - /_next/image (image optimization files)
      * - /favicon.ico
      */
-    "/((?!login|api/auth|_next/static|_next/image|favicon.ico).*)",
+    "/((?!login|api/auth|api/test-snowflake|_next/static|_next/image|favicon.ico).*)",
   ],
 };

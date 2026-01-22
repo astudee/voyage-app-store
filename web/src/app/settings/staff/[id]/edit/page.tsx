@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import { StaffForm } from "@/components/staff-form";
 import { toast } from "sonner";
@@ -23,14 +24,13 @@ interface Staff {
   STAFF_TYPE: string | null;
   NOTES: string | null;
   IS_ACTIVE: boolean;
+  BIGTIME_STAFF_ID: number | null;
 }
 
-export default function EditStaffPage({
-  params,
-}: {
-  params: Promise<{ id: string }>;
-}) {
-  const resolvedParams = use(params);
+export default function EditStaffPage() {
+  const params = useParams();
+  const id = params.id as string;
+
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +38,7 @@ export default function EditStaffPage({
   useEffect(() => {
     const fetchStaff = async () => {
       try {
-        const response = await fetch(`/api/staff/${resolvedParams.id}`);
+        const response = await fetch(`/api/staff/${id}`);
         if (!response.ok) {
           if (response.status === 404) {
             setError("Staff member not found");
@@ -58,8 +58,10 @@ export default function EditStaffPage({
       }
     };
 
-    fetchStaff();
-  }, [resolvedParams.id]);
+    if (id) {
+      fetchStaff();
+    }
+  }, [id]);
 
   if (loading) {
     return (
@@ -103,6 +105,7 @@ export default function EditStaffPage({
     staff_type: staff.STAFF_TYPE || "",
     notes: staff.NOTES || "",
     is_active: staff.IS_ACTIVE,
+    bigtime_staff_id: staff.BIGTIME_STAFF_ID?.toString() || "",
   };
 
   return (

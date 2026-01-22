@@ -66,6 +66,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       staff_type,
       notes,
       is_active,
+      bigtime_staff_id,
     } = body;
 
     if (!staff_name) {
@@ -93,6 +94,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         STAFF_TYPE = ?,
         NOTES = ?,
         IS_ACTIVE = ?,
+        BIGTIME_STAFF_ID = ?,
         UPDATED_AT = CURRENT_TIMESTAMP()
       WHERE STAFF_ID = ?`,
       [
@@ -112,6 +114,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         staff_type || null,
         notes || null,
         is_active ?? true,
+        bigtime_staff_id || null,
         parseInt(id),
       ]
     );

@@ -21,6 +21,7 @@ export interface Staff {
   STAFF_TYPE: string | null;
   NOTES: string | null;
   IS_ACTIVE: boolean;
+  BIGTIME_STAFF_ID: number | null;
   CREATED_AT: string;
   UPDATED_AT: string;
 }
@@ -73,6 +74,7 @@ export async function POST(request: NextRequest) {
       staff_type,
       notes,
       is_active = true,
+      bigtime_staff_id,
     } = body;
 
     if (!staff_name) {
@@ -87,8 +89,8 @@ export async function POST(request: NextRequest) {
         STAFF_NAME, START_DATE, SALARY, UTILIZATION_BONUS_TARGET, OTHER_BONUS_TARGET,
         MEDICAL_PLAN_CODE, DENTAL_PLAN_CODE, VISION_PLAN_CODE, STD_CODE, LTD_CODE,
         LIFE_CODE, ADDL_LIFE_CODE, PHONE_ALLOWANCE, STAFF_TYPE, NOTES, IS_ACTIVE,
-        CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
+        BIGTIME_STAFF_ID, CREATED_AT, UPDATED_AT
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         staff_name,
         start_date || null,
@@ -106,6 +108,7 @@ export async function POST(request: NextRequest) {
         staff_type || null,
         notes || null,
         is_active,
+        bigtime_staff_id || null,
       ]
     );
 
