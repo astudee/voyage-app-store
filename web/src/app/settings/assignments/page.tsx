@@ -48,6 +48,12 @@ interface StaffRow {
   totalRevenue: number;
 }
 
+interface BookingData {
+  dealValue: number;
+  dealName: string;
+  wonTime: string;
+}
+
 export default function AssignmentsSettingsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -62,6 +68,11 @@ export default function AssignmentsSettingsPage() {
   const [newStaffRate, setNewStaffRate] = useState("");
   const [staffList, setStaffList] = useState<string[]>([]);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [addMonthOpen, setAddMonthOpen] = useState(false);
+  const [newMonthYear, setNewMonthYear] = useState<string>("");
+  const [newMonthMonth, setNewMonthMonth] = useState<string>("");
+  const [bookingData, setBookingData] = useState<BookingData | null>(null);
+  const [bookingLoading, setBookingLoading] = useState(false);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -94,6 +105,33 @@ export default function AssignmentsSettingsPage() {
     fetchStaffList();
   }, []);
 
+  // Fetch booking data from Pipedrive
+  const fetchBookingData = useCallback(async (projectId: string) => {
+    setBookingLoading(true);
+    try {
+      const response = await fetch(`/api/pipedrive/booking?projectId=${projectId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.found) {
+          setBookingData({
+            dealValue: data.dealValue,
+            dealName: data.dealName,
+            wonTime: data.wonTime,
+          });
+        } else {
+          setBookingData(null);
+        }
+      } else {
+        setBookingData(null);
+      }
+    } catch (error) {
+      console.error("Error fetching booking data:", error);
+      setBookingData(null);
+    } finally {
+      setBookingLoading(false);
+    }
+  }, []);
+
   // Fetch assignments when project is selected
   const fetchAssignments = useCallback(async (projectId: string) => {
     if (!projectId) return;
@@ -117,13 +155,15 @@ export default function AssignmentsSettingsPage() {
       const project = projects.find((p) => p.PROJECT_ID.toString() === selectedProjectId);
       setSelectedProject(project || null);
       fetchAssignments(selectedProjectId);
+      fetchBookingData(selectedProjectId);
     } else {
       setSelectedProject(null);
       setAssignments([]);
       setStaffRows([]);
       setMonths([]);
+      setBookingData(null);
     }
-  }, [selectedProjectId, projects, fetchAssignments]);
+  }, [selectedProjectId, projects, fetchAssignments, fetchBookingData]);
 
   // Process flat assignment data into grid structure
   const processAssignments = (data: Assignment[]) => {
@@ -239,27 +279,20 @@ export default function AssignmentsSettingsPage() {
 
     try {
       // Update all assignments for this staff/project with new rate
-      const assignmentIds = Object.values(row.months)
-        .filter((m) => m.assignmentId)
-        .map((m) => m.assignmentId!);
-
-      if (assignmentIds.length > 0) {
-        // Bulk update using individual calls (could optimize with bulk endpoint)
-        for (const month of Object.keys(row.months)) {
-          const monthData = row.months[month];
-          if (monthData.assignmentId) {
-            await fetch(`/api/assignments/${monthData.assignmentId}`, {
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                project_id: parseInt(selectedProjectId),
-                staff_name: staffName,
-                month_date: `${month}-01`,
-                allocated_hours: monthData.hours,
-                bill_rate: newRate,
-              }),
-            });
-          }
+      for (const month of Object.keys(row.months)) {
+        const monthData = row.months[month];
+        if (monthData.assignmentId) {
+          await fetch(`/api/assignments/${monthData.assignmentId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project_id: parseInt(selectedProjectId),
+              staff_name: staffName,
+              month_date: `${month}-01`,
+              allocated_hours: monthData.hours,
+              bill_rate: newRate,
+            }),
+          });
         }
       }
 
@@ -329,24 +362,22 @@ export default function AssignmentsSettingsPage() {
 
   // Add month column
   const handleAddMonth = () => {
-    // Find the next month after the last one
-    const lastMonth = months[months.length - 1];
-    let nextMonth: string;
-
-    if (lastMonth) {
-      const [year, month] = lastMonth.split("-").map(Number);
-      if (month === 12) {
-        nextMonth = `${year + 1}-01`;
-      } else {
-        nextMonth = `${year}-${String(month + 1).padStart(2, "0")}`;
-      }
-    } else {
-      // Default to current month
-      const now = new Date();
-      nextMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (!newMonthYear || !newMonthMonth) {
+      toast.error("Please select year and month");
+      return;
     }
 
-    setMonths((prev) => [...prev, nextMonth]);
+    const newMonth = `${newMonthYear}-${newMonthMonth}`;
+
+    // Check if month already exists
+    if (months.includes(newMonth)) {
+      toast.error("This month already exists");
+      return;
+    }
+
+    // Add month and sort
+    const updatedMonths = [...months, newMonth].sort();
+    setMonths(updatedMonths);
 
     // Add empty entries for all staff rows
     setStaffRows((prev) =>
@@ -354,10 +385,15 @@ export default function AssignmentsSettingsPage() {
         ...row,
         months: {
           ...row.months,
-          [nextMonth]: { assignmentId: null, hours: 0 },
+          [newMonth]: { assignmentId: null, hours: 0 },
         },
       }))
     );
+
+    setAddMonthOpen(false);
+    setNewMonthYear("");
+    setNewMonthMonth("");
+    toast.success(`Added ${formatMonth(newMonth)}`);
   };
 
   // Calculate column totals
@@ -381,6 +417,12 @@ export default function AssignmentsSettingsPage() {
   const grandTotalHours = staffRows.reduce((sum, r) => sum + r.totalHours, 0);
   const grandTotalRevenue = staffRows.reduce((sum, r) => sum + r.totalRevenue, 0);
 
+  // Calculate variance from booking
+  const variance = bookingData ? grandTotalRevenue - bookingData.dealValue : null;
+  const variancePercent = bookingData && bookingData.dealValue > 0
+    ? ((grandTotalRevenue - bookingData.dealValue) / bookingData.dealValue) * 100
+    : null;
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
@@ -395,6 +437,26 @@ export default function AssignmentsSettingsPage() {
     const date = new Date(parseInt(year), parseInt(month) - 1, 1);
     return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
+
+  // Generate year options (current year -2 to +2)
+  const currentYear = new Date().getFullYear();
+  const yearOptions = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+
+  // Month options
+  const monthOptions = [
+    { value: "01", label: "January" },
+    { value: "02", label: "February" },
+    { value: "03", label: "March" },
+    { value: "04", label: "April" },
+    { value: "05", label: "May" },
+    { value: "06", label: "June" },
+    { value: "07", label: "July" },
+    { value: "08", label: "August" },
+    { value: "09", label: "September" },
+    { value: "10", label: "October" },
+    { value: "11", label: "November" },
+    { value: "12", label: "December" },
+  ];
 
   if (loading) {
     return (
@@ -434,7 +496,7 @@ export default function AssignmentsSettingsPage() {
           {saving && <span className="text-sm text-gray-500">Saving...</span>}
         </div>
 
-        {/* Project Info Bar */}
+        {/* Project Info Bar with Booking Validation */}
         {selectedProject && (
           <div className="rounded-lg border bg-gray-50 p-4">
             <div className="flex items-center justify-between">
@@ -447,17 +509,42 @@ export default function AssignmentsSettingsPage() {
                 <p className="font-medium">{selectedProject.PROJECT_STATUS}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Type</p>
-                <p className="font-medium">{selectedProject.PROJECT_TYPE}</p>
-              </div>
-              <div>
                 <p className="text-sm text-gray-500">Total Hours</p>
                 <p className="text-xl font-bold">{grandTotalHours.toLocaleString()}</p>
               </div>
               <div>
-                <p className="text-sm text-gray-500">Total Revenue</p>
+                <p className="text-sm text-gray-500">Calculated Revenue</p>
                 <p className="text-xl font-bold text-green-600">{formatCurrency(grandTotalRevenue)}</p>
               </div>
+              {bookingLoading ? (
+                <div>
+                  <p className="text-sm text-gray-500">Booking Amount</p>
+                  <p className="text-sm text-gray-400">Loading...</p>
+                </div>
+              ) : bookingData ? (
+                <>
+                  <div>
+                    <p className="text-sm text-gray-500">Booking (Pipedrive)</p>
+                    <p className="text-xl font-bold text-blue-600">{formatCurrency(bookingData.dealValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-500">Variance</p>
+                    <p className={`text-xl font-bold ${variance && variance >= 0 ? "text-green-600" : "text-red-600"}`}>
+                      {variance !== null ? formatCurrency(variance) : "-"}
+                      {variancePercent !== null && (
+                        <span className="text-sm font-normal ml-1">
+                          ({variancePercent >= 0 ? "+" : ""}{variancePercent.toFixed(1)}%)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <p className="text-sm text-gray-500">Booking</p>
+                  <p className="text-sm text-gray-400">No Pipedrive deal found</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -467,7 +554,7 @@ export default function AssignmentsSettingsPage() {
           <>
             <div className="flex gap-2">
               <Button onClick={() => setAddStaffOpen(true)}>+ Add Staff</Button>
-              <Button variant="outline" onClick={handleAddMonth}>
+              <Button variant="outline" onClick={() => setAddMonthOpen(true)}>
                 + Add Month
               </Button>
             </div>
@@ -680,6 +767,71 @@ export default function AssignmentsSettingsPage() {
             </Button>
             <Button onClick={handleAddStaff} disabled={!newStaffName}>
               Add Staff
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Month Dialog */}
+      <Dialog open={addMonthOpen} onOpenChange={setAddMonthOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Month Column</DialogTitle>
+            <DialogDescription>
+              Select a month to add to the grid. You can add past or future months.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="flex gap-4">
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium">Year</label>
+                <Select value={newMonthYear} onValueChange={setNewMonthYear}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select year..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {yearOptions.map((year) => (
+                      <SelectItem key={year} value={year.toString()}>
+                        {year}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1 space-y-2">
+                <label className="text-sm font-medium">Month</label>
+                <Select value={newMonthMonth} onValueChange={setNewMonthMonth}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select month..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {monthOptions.map((m) => (
+                      <SelectItem key={m.value} value={m.value}>
+                        {m.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            {newMonthYear && newMonthMonth && (
+              <p className="text-sm text-gray-600">
+                Will add: <strong>{formatMonth(`${newMonthYear}-${newMonthMonth}`)}</strong>
+                {months.includes(`${newMonthYear}-${newMonthMonth}`) && (
+                  <span className="text-red-500 ml-2">(already exists)</span>
+                )}
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddMonthOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleAddMonth}
+              disabled={!newMonthYear || !newMonthMonth || months.includes(`${newMonthYear}-${newMonthMonth}`)}
+            >
+              Add Month
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,7 +1,7 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Staff Assignments page complete - Phase 2 done!)
+> **Last updated:** 2026-01-22 (Added Pipedrive booking validation to assignments)
 
 ---
 
@@ -104,10 +104,16 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 ## Pipedrive API Configuration
 
-**Status:** Working in Streamlit (Bookings Tracker app), NOT YET in Vercel
+**Status:** Working in Streamlit AND Vercel
 
-**API Token:** Stored in `.streamlit/secrets.toml` as `PIPEDRIVE_API_TOKEN`
-**Note:** Need to add to Vercel environment variables for assignments validation
+**Environment Variable:** `PIPEDRIVE_API_TOKEN`
+- Streamlit: `.streamlit/secrets.toml`
+- Vercel: Add via Vercel Dashboard > Settings > Environment Variables
+
+**To add to Vercel:**
+1. Go to https://vercel.com/astudees-projects/web/settings/environment-variables
+2. Add: `PIPEDRIVE_API_TOKEN` = (value from .streamlit/secrets.toml)
+3. Redeploy for changes to take effect
 
 **Custom Fields in Pipedrive Deals:**
 - BigTime Client ID
@@ -117,7 +123,9 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 - Project Duration (months)
 - Project Start Date
 
-**Bookings Tracker App:** `pages/13_📊_Bookings_Tracker.py` - fetches won deals from Pipedrive
+**API Endpoints:**
+- Streamlit: `pages/13_📊_Bookings_Tracker.py` - fetches won deals
+- Vercel: `/api/pipedrive/booking?projectId=X` - finds deal by BigTime Project ID
 
 ---
 
