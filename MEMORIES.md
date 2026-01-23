@@ -1,13 +1,13 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-23 (Project Health Monitor fixed, 14/22 apps migrated)
+> **Last updated:** 2026-01-23 (18/22 apps migrated + Jan 2025 assignments imported)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (14/22 apps migrated).
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (18/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
@@ -31,11 +31,16 @@
 - **Forecasted Billable Hours** (app 12) migrated to `/apps/forecasted-hours`
 - **Payroll Calculator** (app 09) migrated to `/apps/payroll-calc`
 - **Payroll Helper** (app 10) migrated to `/apps/payroll-helper`
+- **Resource Checker** (app 15) migrated to `/apps/resource-checker`
+- **Revenue Forecaster** (app 16) migrated to `/apps/revenue-forecast`
+- **Sales Snapshot** (app 18) migrated to `/apps/sales-snapshot`
+- **Time Reviewer** (app 06) migrated to `/apps/time-reviewer`
 
 **What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Remaining apps:
-1. Time Reviewer - needs BigTime API
-2. Payroll Helper - needs BigTime API
-3. Revenue Forecaster - uses assignments data
+1. Email to Vault (02) - Gmail integration
+2. To File to Vault (03) - AI document classification
+3. Bookings Tracker (13) - Pipedrive pipeline tracker
+4. Contract Reviewer (17) - AI contract analysis
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
@@ -494,6 +499,94 @@ This is where reference files are uploaded for Claude to review:
   - Forecasted Hours: Snowflake returns Date objects not strings - added `string | Date` union type handling
   - Sidebar link typo: `/apps/forecast-hours` → `/apps/forecasted-hours`
 
+### 2026-01-23 - Resource Checker, Revenue Forecaster, Sales Snapshot, Time Reviewer Migration
+- **Migrated 4 additional Streamlit apps to Vercel:**
+
+- **Resource Checker (app 15)** to `/apps/resource-checker`:
+  - Created `/api/resource-checker` - API that:
+    - Fetches BigTime time entries for a date range
+    - Loads staff assignments from Snowflake
+    - Compares assigned hours vs actual hours by staff/project
+    - Calculates utilization status (Overrun, On Target, At Risk, Under Target, Severely Under)
+    - Calculates schedule pace ratio
+    - Identifies unassigned work (actuals without assignments)
+  - Created `/apps/resource-checker` page with:
+    - Date range selector (defaults to current year)
+    - Summary cards (Overruns, Severely Under, Late, Unassigned)
+    - Multi-select filters (Staff, Client, Utilization Status, Schedule Status)
+    - Sortable results table with color-coded status badges
+    - Excel export
+    - Status legend explaining utilization and schedule thresholds
+
+- **Revenue Forecaster (app 16)** to `/apps/revenue-forecast`:
+  - Created `/api/revenue-forecast` - API that:
+    - Fetches BigTime actuals for historical months
+    - Loads staff assignments (plan) from Snowflake
+    - Loads fixed fee revenue from Snowflake
+    - Fetches open pipeline deals from Pipedrive
+    - Builds 5 sections:
+      - Section 1: Hours-Based (all projects use Hours x Rate)
+      - Section 2: Fixed Fee Reflected (uses scheduled revenue for FF projects)
+      - Section 3: Pipeline Deals (unfactored)
+      - Section 4: Pipeline Deals (factored by stage probability)
+      - Section 5: Unified Forecast (Won at 100% + Factored Pipeline)
+    - Supports configurable probability overrides for Qualified/Proposal/Forecast stages
+  - Created `/apps/revenue-forecast` page with:
+    - Month range selector
+    - Hours vs Revenue toggle
+    - Probability override sliders (Qualified, Proposal, Forecast)
+    - Collapsible section tables with grand totals
+    - Excel export (one sheet per section)
+
+- **Sales Snapshot (app 18)** to `/apps/sales-snapshot`:
+  - Created `/api/sales-snapshot` - API that:
+    - Fetches Pipedrive stages with probabilities
+    - Fetches Pipedrive users
+    - Fetches deals with optional date filtering
+    - Groups deals by stage, calculates factored values
+    - Builds summary by All Deals, Qualified Pipeline, Booked Deals
+    - Aggregates by owner
+  - Created `/apps/sales-snapshot` page with:
+    - Date range selector (This Quarter, Last Quarter, Next Quarter, This Year, Last Year, All Dates, Custom)
+    - Summary cards (All Deals, Qualified Pipeline, Booked Deals)
+    - CSS-based bar chart showing pipeline by stage
+    - Summary by Stage table
+    - Deal Details table (pivot style with stages as columns)
+    - Owner Details table
+    - Excel export
+
+- **Time Reviewer (app 06)** to `/apps/time-reviewer`:
+  - Created `/api/time-reviewer` - API that:
+    - Fetches 3 BigTime reports: Zero Hours (288578), Unsubmitted (284828), Detailed Time (284796)
+    - Loads active staff from Snowflake
+    - Loads assignments for project overrun checks
+    - Performs 6 checks:
+      1. Zero Hours - staff with no time reported
+      2. Unsubmitted - timesheets not submitted or rejected
+      3. Under 40 Hours - employees with less than 40 hours
+      4. Non-Billable Client Work - client work marked as non-billable
+      5. Project Overruns - staff/projects at 90%+ of assigned hours
+      6. Poor Quality Notes - heuristic-based note quality check
+    - Snaps selected date to nearest Friday
+    - Optional note quality review
+  - Created `/apps/time-reviewer` page with:
+    - Date selector (auto-snaps to Friday)
+    - Optional "Review billing notes" checkbox
+    - Summary showing total issues found
+    - Collapsible sections for each issue type
+    - Color-coded sections (red, yellow, blue, orange, purple)
+    - Excel export
+
+- Updated MEMORIES.md to reflect 18/22 apps migrated
+
+### 2026-01-23 - January 2025 Assignments Data Import
+- **Imported 24 assignment records for January 2025** from `Voyage_Global_Config_20260122_1429.xlsx`:
+  - Read the "2025" column (column I) from the Assignments sheet
+  - Inserted all non-zero values as January 2025 (MONTH_DATE = '2025-01-01')
+  - Records span 9 projects across 17 unique staff members
+  - Total hours imported: ~9,500+ hours of historical assignment data
+  - Includes notes where present (e.g., Peter Croswell's SOW note)
+
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
   - Created `/api/snowflake-test` - API to read/write test records to TEST_INPUT table
@@ -690,7 +783,7 @@ When a project is sold, it's marked "won" in Pipedrive and a new project is crea
 | BILL_RATE | NUMBER(10,2) | Default project rate |
 | CREATED_AT, UPDATED_AT | TIMESTAMP | |
 
-**VC_STAFF_ASSIGNMENTS** (127 rows - normalized, one row per staff/project/month):
+**VC_STAFF_ASSIGNMENTS** (155 rows - normalized, one row per staff/project/month):
 | Column | Type | Notes |
 |--------|------|-------|
 | ASSIGNMENT_ID | NUMBER(38,0) | PK, auto-increment |
