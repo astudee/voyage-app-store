@@ -587,6 +587,21 @@ This is where reference files are uploaded for Claude to review:
   - Total hours imported: ~9,500+ hours of historical assignment data
   - Includes notes where present (e.g., Peter Croswell's SOW note)
 
+### 2026-01-23 - Sales Snapshot Chart Enhancement
+- **Added Recharts pipeline chart** to Sales Snapshot app:
+  - Installed `recharts` library for data visualization
+  - Replaced CSS-based horizontal bars with proper ComposedChart
+  - Chart features match the scheduled script's matplotlib output:
+    - Blue bars for $ Pipeline (unfactored)
+    - Green bars for $ Pipeline (Factored)
+    - Orange line with markers for # Deals
+    - Dual Y-axes ($ Value on left, # Deals on right)
+    - Data labels on bars and line points
+    - X-axis labels angled for readability
+    - Legend in top right
+    - Title with current date
+  - Fixed TypeScript type issues with Recharts formatters
+
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
   - Created `/api/snowflake-test` - API to read/write test records to TEST_INPUT table
