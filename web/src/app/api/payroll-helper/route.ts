@@ -5,7 +5,7 @@ import { query } from "@/lib/snowflake";
 
 interface StaffMember {
   STAFF_NAME: string;
-  EMPLOYEE_TYPE: string;
+  STAFF_TYPE: string;
 }
 
 interface TimeEntry {
@@ -163,7 +163,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch staff list
     const staffRows = await query<StaffMember>(`
-      SELECT STAFF_NAME, EMPLOYEE_TYPE
+      SELECT STAFF_NAME, STAFF_TYPE
       FROM VC_STAFF
       WHERE IS_ACTIVE = TRUE
       ORDER BY STAFF_NAME
@@ -172,7 +172,7 @@ export async function GET(request: NextRequest) {
     // Build staff map
     const staffMap = new Map<string, string>();
     for (const s of staffRows) {
-      staffMap.set(s.STAFF_NAME, s.EMPLOYEE_TYPE || "FT");
+      staffMap.set(s.STAFF_NAME, s.STAFF_TYPE || "FT");
     }
 
     // Fetch BigTime data - handle year boundary
