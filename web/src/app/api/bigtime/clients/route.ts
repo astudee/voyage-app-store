@@ -41,7 +41,7 @@ async function fetchClients(showInactive: boolean = false): Promise<Client[]> {
   const response = await fetch(url, {
     method: "GET",
     headers: {
-      "X-Auth-Token": BIGTIME_API_KEY!,
+      "X-Auth-ApiToken": BIGTIME_API_KEY!,
       "X-Auth-Realm": BIGTIME_FIRM_ID!,
       Accept: "application/json",
     },
@@ -70,7 +70,7 @@ async function fetchProjects(showInactive: boolean = false): Promise<Project[]> 
   const response = await fetch(url, {
     method: "GET",
     headers: {
-      "X-Auth-Token": BIGTIME_API_KEY!,
+      "X-Auth-ApiToken": BIGTIME_API_KEY!,
       "X-Auth-Realm": BIGTIME_FIRM_ID!,
       Accept: "application/json",
     },
