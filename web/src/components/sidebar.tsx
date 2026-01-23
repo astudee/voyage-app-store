@@ -46,7 +46,7 @@ const navigation = [
       { name: "Contractor Fee Reviewer", href: "/apps/contractor-fees" },
       { name: "Document Manager", href: "/apps/document-manager" },
       { name: "Expense Reviewer", href: "/apps/expense-reviewer" },
-      { name: "Forecasted Billable Hours", href: "/apps/forecast-hours" },
+      { name: "Forecasted Billable Hours", href: "/apps/forecasted-hours" },
       { name: "Payroll Calculator", href: "/apps/payroll-calc" },
       { name: "Payroll Helper", href: "/apps/payroll-helper" },
       { name: "Project Health Monitor", href: "/apps/project-health" },
