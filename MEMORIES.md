@@ -587,6 +587,13 @@ This is where reference files are uploaded for Claude to review:
   - Total hours imported: ~9,500+ hours of historical assignment data
   - Includes notes where present (e.g., Peter Croswell's SOW note)
 
+### 2026-01-23 - Staff Page Salary Privacy Toggle
+- **Added show/hide toggle for salaries** on Settings > Staff page:
+  - Salaries hidden by default, showing "••••••" placeholder
+  - Click eye icon in Salary column header to toggle visibility
+  - Eye icon changes between open (visible) and slashed (hidden) states
+  - Hover effect on toggle button for better UX
+
 ### 2026-01-23 - Sales Snapshot Chart Enhancement
 - **Added Recharts pipeline chart** to Sales Snapshot app:
   - Installed `recharts` library for data visualization
