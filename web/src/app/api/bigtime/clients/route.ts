@@ -35,8 +35,9 @@ interface Project {
 }
 
 // Fetch all clients directly from BigTime API
-async function fetchClients(showInactive: boolean = false): Promise<Client[]> {
-  const url = `https://iq.bigtime.net/BigtimeData/api/v2/client${showInactive ? "?ShowInactive=true" : ""}`;
+async function fetchClientsRaw(): Promise<BigTimeClient[]> {
+  // Always fetch with ShowInactive to get all, we'll filter in code
+  const url = `https://iq.bigtime.net/BigtimeData/api/v2/client?ShowInactive=true`;
 
   const response = await fetch(url, {
     method: "GET",
@@ -51,21 +52,13 @@ async function fetchClients(showInactive: boolean = false): Promise<Client[]> {
     throw new Error(`BigTime Client API error: ${response.status}`);
   }
 
-  const data: BigTimeClient[] = await response.json();
-
-  return data
-    .filter((c) => c.Nm && c.SystemId)
-    .map((c) => ({
-      id: c.SystemId,
-      name: c.Nm,
-      clientId: c.ClientId,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return await response.json();
 }
 
 // Fetch all projects directly from BigTime API
-async function fetchProjects(showInactive: boolean = false): Promise<Project[]> {
-  const url = `https://iq.bigtime.net/BigtimeData/api/v2/project${showInactive ? "?ShowInactive=true" : ""}`;
+async function fetchProjectsRaw(): Promise<BigTimeProject[]> {
+  // Always fetch with ShowInactive to get all, we'll filter in code
+  const url = `https://iq.bigtime.net/BigtimeData/api/v2/project?ShowInactive=true`;
 
   const response = await fetch(url, {
     method: "GET",
@@ -80,20 +73,7 @@ async function fetchProjects(showInactive: boolean = false): Promise<Project[]> 
     throw new Error(`BigTime Project API error: ${response.status}`);
   }
 
-  const data: BigTimeProject[] = await response.json();
-
-  return data
-    .filter((p) => p.Nm && p.SystemId)
-    .map((p) => ({
-      id: p.SystemId,
-      projectName: p.Nm,
-      clientName: p.ClientNm || "Unknown",
-      projectCode: p.ProjectCode,
-    }))
-    .sort((a, b) =>
-      a.clientName.localeCompare(b.clientName) ||
-      a.projectName.localeCompare(b.projectName)
-    );
+  return await response.json();
 }
 
 // GET /api/bigtime/clients?includeInactive=true
@@ -114,20 +94,51 @@ export async function GET(request: Request) {
   const includeInactive = searchParams.get("includeInactive") === "true";
 
   try {
-    // Fetch clients and projects in parallel using direct API endpoints
-    const [clients, projects] = await Promise.all([
-      fetchClients(includeInactive),
-      fetchProjects(includeInactive),
+    // Fetch clients and projects in parallel
+    const [rawClients, rawProjects] = await Promise.all([
+      fetchClientsRaw(),
+      fetchProjectsRaw(),
     ]);
+
+    // Build client lookup map (id -> name)
+    const clientLookup = new Map<number, string>();
+    for (const c of rawClients) {
+      if (c.SystemId && c.Nm) {
+        clientLookup.set(c.SystemId, c.Nm);
+      }
+    }
+
+    // Filter and transform clients
+    const clients: Client[] = rawClients
+      .filter((c) => c.Nm && c.SystemId)
+      .filter((c) => includeInactive || !c.IsInactive)
+      .map((c) => ({
+        id: c.SystemId,
+        name: c.Nm,
+        clientId: c.ClientId,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    // Filter and transform projects, using client lookup for names
+    const projects: Project[] = rawProjects
+      .filter((p) => p.Nm && p.SystemId)
+      .filter((p) => includeInactive || !p.IsInactive)
+      .map((p) => ({
+        id: p.SystemId,
+        projectName: p.Nm,
+        clientName: p.ClientSid ? (clientLookup.get(p.ClientSid) || "Unknown") : (p.ClientNm || "Unknown"),
+        projectCode: p.ProjectCode,
+      }))
+      .sort((a, b) =>
+        a.clientName.localeCompare(b.clientName) ||
+        a.projectName.localeCompare(b.projectName)
+      );
 
     return NextResponse.json({
       success: true,
       clients,
       projects,
       includeInactive,
-      // Legacy compatibility fields
-      years: [new Date().getFullYear()],
-      entryCount: 0, // No longer using time entries
     });
   } catch (error) {
     console.error("BigTime clients fetch error:", error);
