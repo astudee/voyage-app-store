@@ -110,23 +110,33 @@ async function checkBigTime(): Promise<HealthResult> {
   }
 
   try {
+    // Use report endpoint with POST (same as Python bigtime.py)
+    // Report 284796 is the standard time report
+    const currentYear = new Date().getFullYear();
     const response = await fetch(
-      "https://iq.bigtime.net/BigtimeData/api/v2/firm",
+      "https://iq.bigtime.net/BigtimeData/api/v2/report/data/284796",
       {
-        method: "GET",
+        method: "POST",
         headers: {
-          "X-Auth-Token": apiKey,
+          "X-Auth-ApiToken": apiKey,
           "X-Auth-Realm": firmId,
+          "Accept": "application/json",
+          "Content-Type": "application/json",
         },
+        body: JSON.stringify({
+          DT_BEGIN: `${currentYear}-01-01`,
+          DT_END: `${currentYear}-01-31`,
+        }),
       }
     );
 
     if (response.status === 200) {
       const data = await response.json();
+      const rowCount = data?.Data?.length || 0;
       return {
         status: "success",
         message: "Connected successfully",
-        details: `Firm: ${data.FirmName || firmId}`,
+        details: `Firm ID: ${firmId} (${rowCount} time entries in Jan ${currentYear})`,
       };
     } else if (response.status === 401) {
       return {
@@ -420,12 +430,11 @@ async function checkGoogleDrive(): Promise<HealthResult> {
     };
   }
 
-  // Get folder IDs to test
+  // Get folder IDs to test (only folders actually used by apps)
   const folderConfigs: { [key: string]: string | undefined } = {
     "To-File Inbox": process.env.FOLDER_TO_FILE,
     "Archive - Contracts": process.env.FOLDER_ARCHIVE_CONTRACTS,
     "Archive - Docs": process.env.FOLDER_ARCHIVE_DOCS,
-    "Programs Root": process.env.FOLDER_PROGRAMS_ROOT,
     "Reports": process.env.REPORTS_FOLDER_ID,
   };
 
@@ -478,18 +487,28 @@ async function checkGoogleDrive(): Promise<HealthResult> {
       }
     }
 
-    if (inaccessible.length > 0) {
+    if (inaccessible.length > 0 && accessible.length === 0) {
+      // All folders failed - error
       return {
         status: "error",
-        message: `Cannot access ${inaccessible.length} folder(s)`,
-        details: `SA: ${credentials.client_email}\nAccessible: ${accessible.join(", ") || "None"}\nInaccessible: ${inaccessible.join(", ")}`,
+        message: `Cannot access any folders`,
+        details: `SA: ${credentials.client_email}\nInaccessible: ${inaccessible.join(", ")}`,
+      };
+    }
+
+    if (inaccessible.length > 0) {
+      // Some folders failed - warning (partial access is still useful)
+      return {
+        status: "warning",
+        message: `${accessible.length}/${folders.length} folders accessible`,
+        details: `SA: ${credentials.client_email}\nAccessible: ${accessible.join(", ")}\nInaccessible: ${inaccessible.join(", ")}`,
       };
     }
 
     return {
       status: "success",
       message: "Connected successfully",
-      details: `Service account can access ${accessible.length} folders`,
+      details: `Service account can access all ${accessible.length} folders`,
     };
   } catch (error) {
     return {
@@ -533,7 +552,7 @@ async function checkGoogleDocs(): Promise<HealthResult> {
       };
     }
 
-    const { auth, credentials } = authResult as { auth: InstanceType<typeof google.auth.GoogleAuth>; credentials: { client_email: string } };
+    const { auth } = authResult as { auth: InstanceType<typeof google.auth.GoogleAuth> };
     const drive = google.drive({ version: "v3", auth });
 
     const response = await drive.files.get({

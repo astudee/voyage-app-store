@@ -1,20 +1,23 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Phase 3 started - first app migrated)
+> **Last updated:** 2026-01-22 (Project Health Monitor fixed + migrated)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (1/22 apps migrated).
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (4/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
 - Vercel/Next.js app at https://apps.voyage.xyz with 7 settings pages (full CRUD)
 - Pipedrive API integration for booking validation
 - All config management tools working
-- **Connection Health Checker** (app 99) migrated to `/settings/health`
+- **Connection Health Checker** (app 99) migrated to `/health/connection`
+- **QuickBooks Token Refresh** (app 98) migrated to `/health/quickbooks`
+- **BigTime Client Lookup** (app 97) migrated to `/health/bigtime`
+- **Project Health Monitor** (app 14) migrated to `/apps/project-health`
 
 **What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Priority order:
 1. Commission Calculator - needs BigTime + QuickBooks APIs
@@ -23,7 +26,7 @@
 4. Payroll Helper - needs BigTime API
 
 **Key Technical Notes:**
-- BigTime API credentials are in `.env` but NOT yet integrated into Vercel
+- BigTime API credentials are in `.env` AND Vercel environment variables
 - QuickBooks API needs OAuth token refresh mechanism
 - Streamlit apps are in `pages/` folder - study them before migrating
 - Sister project `voyage-consultant-tools` has working examples
@@ -128,7 +131,7 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 **Firm ID:** `pvnq-stx-htoh`
 **Base URL:** `https://iq.bigtime.net/BigtimeData/api/v2`
 
-**Environment Variables (in .env, NOT yet in Vercel):**
+**Environment Variables (in .env AND Vercel):**
 - `BIGTIME_API_KEY` - API key above
 - `BIGTIME_FIRM_ID` - Firm ID above
 
@@ -137,14 +140,12 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 **Note:** David Woods (STAFF_ID 104) has no BigTime account - BIGTIME_STAFF_ID is NULL.
 
 **Common BigTime API Endpoints (used by Streamlit apps):**
-- `GET /staff` - List all staff members
-- `GET /project` - List projects
-- `GET /time/Sheet` - Get time entries
-- `GET /expense` - Get expenses
-- `GET /picklist/StaffList` - Staff dropdown list
-- `GET /report/...` - Various reports
+- `POST /report/data/{report_id}` - Fetch report data (requires JSON body with date range)
+  - Report 284796 = Standard time report
+  - Report 284803 = Contractor report
+- Note: Simple GET endpoints like `/staff` or `/picklist/StaffList` return 404 - use report endpoint
 
-**Authentication:** API key in `X-Auth-Token` header, Firm ID in `X-Auth-Realm` header
+**Authentication:** API key in `X-Auth-ApiToken` header, Firm ID in `X-Auth-Realm` header
 
 **Reference Implementation:** See `/functions/bigtime_api.py` for Python examples
 
@@ -160,11 +161,13 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 **Custom Fields in Pipedrive Deals:**
 - BigTime Client ID
-- BigTime Project ID (links Pipedrive deal to BigTime project)
+- BigTime Project ID (links Pipedrive deal to BigTime project) **IMPORTANT: Must be populated for Project Health Monitor to link deals to projects**
 - Bill Rate
 - Budget Hours
 - Project Duration (months)
 - Project Start Date
+
+**Note:** Project Health Monitor matches Pipedrive deals to BigTime projects using the "BigTime Project ID" custom field. Projects without this field populated will show as "No Pipedrive Link" in the app.
 
 **API Endpoints:**
 - Streamlit: `pages/13_📊_Bookings_Tracker.py` - fetches won deals
@@ -278,6 +281,13 @@ This is where reference files are uploaded for Claude to review:
 - `POST/DELETE /api/assignments/bulk` - Bulk create/update/delete assignments
 - `GET /api/projects` - List projects (for dropdowns)
 - `GET /api/test-snowflake` - Unauthenticated test endpoint
+- `GET /api/quickbooks/token` - Get QuickBooks OAuth authorization URL
+- `POST /api/quickbooks/token` - Exchange authorization code for refresh token
+- `GET /api/health` - Run all health checks (add `?sendTestEmail=true` to send Gmail test)
+- `POST /api/vercel/env` - Update Vercel environment variable (requires VERCEL_TOKEN)
+- `POST /api/vercel/deploy` - Trigger production redeploy (requires VERCEL_TOKEN)
+- `GET /api/bigtime/clients?years=N` - Fetch BigTime clients and projects (N years of history)
+- `GET /api/project-health?status=X` - Fetch project health data (combines Pipedrive, Snowflake, BigTime)
 
 ---
 
@@ -386,6 +396,68 @@ This is where reference files are uploaded for Claude to review:
 - Fixed `.gitignore` to exclude `.env` file (was accidentally committed briefly)
 - Deleted accidentally created "web" project from Vercel via API
 
+### 2026-01-22 - Health Check Fixes
+- Fixed BigTime health check (multiple attempts):
+  - Changed header from `X-Auth-Token` to `X-Auth-ApiToken` (correct BigTime API header)
+  - Changed from GET `/firm` to GET `/picklist/StaffList` - still got 404
+  - **Final fix:** Changed to POST `/report/data/284796` with date range (same as Python bigtime.py)
+  - BigTime API doesn't have simple GET endpoints - must use POST to report endpoint
+- Fixed Google Drive health check:
+  - Changed from error to warning when some (but not all) folders are inaccessible
+  - Removed FOLDER_PROGRAMS_ROOT from check (not used by any actual apps)
+  - Now only checks 4 folders: To-File Inbox, Archive-Contracts, Archive-Docs, Reports
+- Updated MEMORIES.md corrections:
+  - BigTime credentials ARE in Vercel (was incorrectly noted as "not yet")
+  - Fixed BigTime auth header documentation
+- Moved "Send Test Email" button from header into the Gmail card itself (better UX)
+- **Synced Assignments data** from `Voyage_Global_Config_20260122_1429.xlsx` to Snowflake:
+  - Deleted 6 rows, Inserted 10 rows, Updated 35 rows (51 total changes)
+  - Final count: 131 assignment rows in VC_STAFF_ASSIGNMENTS
+- **Migrated QuickBooks Token Refresh (app 98)** to Vercel:
+  - Created `/api/quickbooks/token` - GET returns auth URL, POST exchanges code for token
+  - Created `/health/quickbooks` page with step-by-step OAuth flow
+  - **Added "Push to Vercel & Redeploy" button** - updates QB_REFRESH_TOKEN AND triggers redeploy
+  - Created `/api/vercel/env` - updates Vercel environment variables via API
+  - Created `/api/vercel/deploy` - triggers production redeploy via Vercel API
+  - Added VERCEL_TOKEN to Vercel env vars for API access
+  - Full workflow: Get token → Push to Vercel → Auto-redeploy → New token active in ~1 min
+- **Reorganized Health section URLs:**
+  - Moved `/settings/health` → `/health/connection`
+  - Moved `/settings/quickbooks` → `/health/quickbooks`
+- **Migrated BigTime Client Lookup (app 97)** to Vercel:
+  - Created `/api/bigtime/clients` - fetches clients and projects from BigTime time reports
+  - Created `/health/bigtime` page with client/project lookup, search, CSV download
+  - Supports fetching historical data (1-5 years back) for inactive clients/projects
+- **Fixed Project Health Monitor (app 14)** Streamlit app:
+  - Issue: After Snowflake migration, `_pivot_assignments_from_snowflake()` was returning date columns as 'Mon-yy' strings
+  - Project Health Monitor expected datetime columns it could parse with `pd.to_datetime()`
+  - Also missing 'Total' column that the app used
+  - **Fix:** Updated both `_pivot_assignments_from_snowflake()` and `_pivot_fixedfee_from_snowflake()` in `functions/sheets.py`:
+    - Date columns now returned as end-of-month Timestamp objects (e.g., `Timestamp('2026-01-31')`)
+    - Added 'Total' column (sum of all date columns)
+  - This maintains backwards compatibility with apps expecting the original Google Sheets format
+- **Migrated Project Health Monitor (app 14)** to Vercel:
+  - Created `/api/project-health` - fetches and combines data from 3 sources:
+    - Pipedrive: Won deals (bookings)
+    - Snowflake: Staff assignments (plan)
+    - BigTime: Time entries (actuals)
+  - Created `/apps/project-health` page with:
+    - Status filter (All/Active/Completed/Not Started)
+    - Summary metrics (Scoping Errors, Over-Billed, Under-Billed, Total Bookings, No Pipedrive Link)
+    - Project details table with Plan/Booked % and Fees/Booked %
+    - Color-coded status indicators
+    - CSV download export
+    - Legend explaining color meanings
+    - Shows ALL projects from assignments (not just those with Pipedrive matches)
+    - Projects without Pipedrive links shown with "No PD" badge and orange highlight
+  - Added to sidebar navigation at top of Apps section
+- **Fixed pivot functions returning only 1 row:**
+  - Root cause: Snowflake returns `Decimal` objects, pandas couldn't aggregate them
+  - Fixed `_pivot_assignments_from_snowflake()`: Convert ALLOCATED_HOURS and BILL_RATE to numeric
+  - Fixed `_pivot_fixedfee_from_snowflake()`: Convert REVENUE_AMOUNT to numeric
+  - Also fixed NOTES field handling (None vs empty string was causing grouping issues)
+  - Now correctly returns all 28 staff assignments across 14 projects
+
 ---
 
 ## Notes for Future Sessions
@@ -394,6 +466,7 @@ This is where reference files are uploaded for Claude to review:
 - The sister project `voyage-consultant-tools` has working examples if stuck
 - User prefers simple, working solutions over complex ones
 - **Claude Code** auto-installs on codespace creation via `.devcontainer/devcontainer.json` postCreateCommand
+- **IGNORE THIS BUILD WARNING:** `⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.` - This is a Next.js 16 warning about our `middleware.ts` file. It still works fine. Migration to "proxy" can be done later if needed but is not urgent.
 
 ---
 
@@ -665,11 +738,11 @@ All polish items fixed:
 |-----|--------|---------|
 | Snowflake | WORKING | All apps |
 | Pipedrive | WORKING | Bookings, Revenue Forecaster, Project Health |
-| BigTime | NOT YET | Most apps (time entries, expenses) |
+| BigTime | WORKING | Most apps (time entries, expenses) |
 | QuickBooks | NOT YET | Commission Calculator |
-| Gmail | NOT YET | Email to Vault |
-| Google Drive | NOT YET | To File to Vault |
-| Claude/Gemini | NOT YET | Contract Reviewer, To File to Vault |
+| Gmail | WORKING | Email to Vault |
+| Google Drive | WORKING (partial) | To File to Vault |
+| Claude/Gemini | WORKING | Contract Reviewer, To File to Vault |
 
 ---
 

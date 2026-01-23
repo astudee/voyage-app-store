@@ -262,9 +262,14 @@ def _pivot_assignments_from_snowflake():
     Pivot VC_STAFF_ASSIGNMENTS from normalized to wide format.
 
     Snowflake has: project_id, staff_name, month_date, allocated_hours, bill_rate, notes
-    Apps expect: Project ID, Client, Project Name, Project Status, Staff Member, Bill Rate, Notes, Jan-25, Feb-25, ...
+    Apps expect: Project ID, Client, Project Name, Project Status, Staff Member, Bill Rate, Notes, Total, + datetime columns
+
+    NOTE: Date columns are returned as datetime objects (end-of-month) to match the original
+    Excel format that apps like Project Health Monitor expect.
     """
     from functions.snowflake_db import query_snowflake
+    from datetime import datetime
+    from dateutil.relativedelta import relativedelta
 
     query = """
     SELECT
@@ -287,6 +292,13 @@ def _pivot_assignments_from_snowflake():
     if df.empty:
         return df
 
+    # Convert Decimal types to numeric (Snowflake returns Decimal objects)
+    df['ALLOCATED_HOURS'] = pd.to_numeric(df['ALLOCATED_HOURS'], errors='coerce').fillna(0)
+    df['BILL_RATE'] = pd.to_numeric(df['BILL_RATE'], errors='coerce').fillna(0)
+
+    # Handle None in NOTES - convert to empty string for consistent grouping
+    df['NOTES'] = df['NOTES'].fillna('')
+
     # Get the static columns (everything except month_date and allocated_hours)
     static_cols = ['PROJECT_ID', 'CLIENT_NAME', 'PROJECT_NAME', 'PROJECT_STATUS',
                    'STAFF_NAME', 'BILL_RATE', 'NOTES']
@@ -300,17 +312,22 @@ def _pivot_assignments_from_snowflake():
         fill_value=0
     ).reset_index()
 
-    # Flatten column names and format date columns as "Mon-YY"
+    # Convert date columns to end-of-month datetime objects (matching original Excel format)
     new_columns = []
+    date_columns = []
     for col in pivot_df.columns:
-        if isinstance(col, (pd.Timestamp, str)) and col not in static_cols:
-            try:
-                date_val = pd.to_datetime(col)
-                new_columns.append(date_val.strftime('%b-%y'))
-            except Exception:
-                new_columns.append(str(col))
-        else:
+        if col in static_cols:
             new_columns.append(col)
+        else:
+            try:
+                # Convert to datetime (first of month from Snowflake)
+                date_val = pd.to_datetime(col)
+                # Convert to end-of-month datetime to match original Excel format
+                end_of_month = date_val + relativedelta(months=1) - relativedelta(days=1)
+                new_columns.append(end_of_month)
+                date_columns.append(end_of_month)
+            except Exception:
+                new_columns.append(col)
     pivot_df.columns = new_columns
 
     # Rename to match Google Sheets format
@@ -325,6 +342,10 @@ def _pivot_assignments_from_snowflake():
     }
     pivot_df = pivot_df.rename(columns=rename_map)
 
+    # Calculate Total column (sum of all date columns)
+    if date_columns:
+        pivot_df['Total'] = pivot_df[date_columns].sum(axis=1)
+
     return pivot_df
 
 
@@ -333,9 +354,13 @@ def _pivot_fixedfee_from_snowflake():
     Pivot VC_FIXED_FEE_REVENUE from normalized to wide format.
 
     Snowflake has: project_id, month_date, revenue_amount
-    Apps expect: Project ID, Client, Project Name, Project Status, Jan-25, Feb-25, ...
+    Apps expect: Project ID, Client, Project Name, Project Status, Total, + datetime columns
+
+    NOTE: Date columns are returned as datetime objects (end-of-month) to match the original
+    Excel format that apps expect.
     """
     from functions.snowflake_db import query_snowflake
+    from dateutil.relativedelta import relativedelta
 
     query = """
     SELECT
@@ -355,6 +380,9 @@ def _pivot_fixedfee_from_snowflake():
     if df.empty:
         return df
 
+    # Convert Decimal types to numeric (Snowflake returns Decimal objects)
+    df['REVENUE_AMOUNT'] = pd.to_numeric(df['REVENUE_AMOUNT'], errors='coerce').fillna(0)
+
     # Get the static columns
     static_cols = ['PROJECT_ID', 'CLIENT_NAME', 'PROJECT_NAME', 'PROJECT_STATUS']
 
@@ -367,17 +395,22 @@ def _pivot_fixedfee_from_snowflake():
         fill_value=0
     ).reset_index()
 
-    # Flatten column names and format date columns as "Mon-YY"
+    # Convert date columns to end-of-month datetime objects (matching original Excel format)
     new_columns = []
+    date_columns = []
     for col in pivot_df.columns:
-        if isinstance(col, (pd.Timestamp, str)) and col not in static_cols:
-            try:
-                date_val = pd.to_datetime(col)
-                new_columns.append(date_val.strftime('%b-%y'))
-            except Exception:
-                new_columns.append(str(col))
-        else:
+        if col in static_cols:
             new_columns.append(col)
+        else:
+            try:
+                # Convert to datetime (first of month from Snowflake)
+                date_val = pd.to_datetime(col)
+                # Convert to end-of-month datetime to match original Excel format
+                end_of_month = date_val + relativedelta(months=1) - relativedelta(days=1)
+                new_columns.append(end_of_month)
+                date_columns.append(end_of_month)
+            except Exception:
+                new_columns.append(col)
     pivot_df.columns = new_columns
 
     # Rename to match Google Sheets format
@@ -388,6 +421,10 @@ def _pivot_fixedfee_from_snowflake():
         'PROJECT_STATUS': 'Project Status',
     }
     pivot_df = pivot_df.rename(columns=rename_map)
+
+    # Calculate Total column (sum of all date columns)
+    if date_columns:
+        pivot_df['Total'] = pivot_df[date_columns].sum(axis=1)
 
     return pivot_df
 

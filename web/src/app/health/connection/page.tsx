@@ -162,15 +162,6 @@ export default function HealthCheckPage() {
             </p>
           </div>
           <div className="flex gap-3">
-            {data && (
-              <Button
-                variant="outline"
-                onClick={() => runHealthCheck(true)}
-                disabled={sendingEmail || !data.results["Gmail"] || data.results["Gmail"].status === "not_configured"}
-              >
-                {sendingEmail ? "Sending..." : "📧 Send Test Email"}
-              </Button>
-            )}
             <Button onClick={() => runHealthCheck(false)} disabled={loading} size="lg">
               {loading ? (
                 <>
@@ -279,6 +270,18 @@ export default function HealthCheckPage() {
                       <div className="text-xs text-slate-600 bg-white/60 rounded-lg p-3 whitespace-pre-wrap">
                         {result.details}
                       </div>
+                      {/* Send Test Email button for Gmail */}
+                      {service === "Gmail" && result.status !== "not_configured" && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="mt-3 w-full"
+                          onClick={() => runHealthCheck(true)}
+                          disabled={sendingEmail}
+                        >
+                          {sendingEmail ? "Sending..." : "📧 Send Test Email"}
+                        </Button>
+                      )}
                     </div>
                   );
                 })}

@@ -37,6 +37,7 @@ const navigation = [
   {
     section: "Apps",
     items: [
+      { name: "Project Health Monitor", href: "/apps/project-health" },
       { name: "Commission Calculator", href: "/apps/commission" },
       { name: "Email to To File", href: "/apps/email-to-file" },
       { name: "To File to Vault", href: "/apps/to-file-vault" },
@@ -50,7 +51,6 @@ const navigation = [
       { name: "Contractor Fee Reviewer", href: "/apps/contractor-fees" },
       { name: "Forecasted Billable Hours", href: "/apps/forecast-hours" },
       { name: "Bookings Tracker", href: "/apps/bookings" },
-      { name: "Project Health Monitor", href: "/apps/project-health" },
       { name: "Resource Checker", href: "/apps/resource-checker" },
       { name: "Revenue Forecaster", href: "/apps/revenue-forecast" },
       { name: "Contract Reviewer", href: "/apps/contract-reviewer" },
@@ -72,7 +72,9 @@ const navigation = [
   {
     section: "Health",
     items: [
-      { name: "Connection Health", href: "/settings/health" },
+      { name: "Connection Health", href: "/health/connection" },
+      { name: "QuickBooks Token", href: "/health/quickbooks" },
+      { name: "BigTime Client Lookup", href: "/health/bigtime" },
     ],
   },
 ];
