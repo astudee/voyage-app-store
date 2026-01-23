@@ -100,35 +100,85 @@ export async function GET(request: Request) {
       fetchProjectsRaw(),
     ]);
 
-    // Build client lookup map (id -> name)
+    // Cast to any for flexible field access
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const clientsAny = rawClients as any[];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const projectsAny = rawProjects as any[];
+
+    // Debug: log sample data to understand field names
+    const sampleClient = clientsAny[0];
+    const sampleProject = projectsAny[0];
+    console.log("Sample client fields:", sampleClient ? Object.keys(sampleClient) : "none");
+    console.log("Sample client data:", JSON.stringify(sampleClient, null, 2));
+    console.log("Sample project fields:", sampleProject ? Object.keys(sampleProject) : "none");
+    console.log("Sample project data:", JSON.stringify(sampleProject, null, 2));
+
+    // Build client lookup map (id -> name) - try multiple possible ID fields
     const clientLookup = new Map<number, string>();
-    for (const c of rawClients) {
-      if (c.SystemId && c.Nm) {
-        clientLookup.set(c.SystemId, c.Nm);
+    for (const c of clientsAny) {
+      const id = c.SystemId || c.Id || c.id || c.Sid;
+      const name = c.Nm || c.Name || c.name;
+      if (id && name) {
+        clientLookup.set(Number(id), String(name));
       }
     }
+    console.log("Client lookup size:", clientLookup.size);
 
-    // Filter and transform clients
-    const clients: Client[] = rawClients
-      .filter((c) => c.Nm && c.SystemId)
-      .filter((c) => includeInactive || !c.IsInactive)
+    // Filter and transform clients - check various field name patterns
+    const clients: Client[] = clientsAny
+      .filter((c) => {
+        const name = c.Nm || c.Name || c.name;
+        const id = c.SystemId || c.Id || c.id || c.Sid;
+        return name && id;
+      })
+      .filter((c) => {
+        if (includeInactive) return true;
+        // Check various possible inactive field names
+        const inactive = c.IsInactive ?? c.isInactive ?? c.Inactive ?? c.inactive ?? false;
+        return !inactive;
+      })
       .map((c) => ({
-        id: c.SystemId,
-        name: c.Nm,
-        clientId: c.ClientId,
+        id: Number(c.SystemId || c.Id || c.id || c.Sid),
+        name: String(c.Nm || c.Name || c.name),
+        clientId: c.ClientId ? String(c.ClientId) : undefined,
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
 
-    // Filter and transform projects, using client lookup for names
-    const projects: Project[] = rawProjects
-      .filter((p) => p.Nm && p.SystemId)
-      .filter((p) => includeInactive || !p.IsInactive)
-      .map((p) => ({
-        id: p.SystemId,
-        projectName: p.Nm,
-        clientName: p.ClientSid ? (clientLookup.get(p.ClientSid) || "Unknown") : (p.ClientNm || "Unknown"),
-        projectCode: p.ProjectCode,
-      }))
+    // Filter and transform projects
+    const projects: Project[] = projectsAny
+      .filter((p) => {
+        const name = p.Nm || p.Name || p.name;
+        const id = p.SystemId || p.Id || p.id || p.Sid;
+        return name && id;
+      })
+      .filter((p) => {
+        if (includeInactive) return true;
+        const inactive = p.IsInactive ?? p.isInactive ?? p.Inactive ?? p.inactive ?? false;
+        return !inactive;
+      })
+      .map((p) => {
+        const projectId = Number(p.SystemId || p.Id || p.id || p.Sid);
+        const projectName = String(p.Nm || p.Name || p.name);
+
+        // Try multiple possible client ID/name fields
+        const clientSid = p.ClientSid || p.ClientId || p.clientId || p.Client_Id || p.ClientSystemId;
+        const clientNm = p.ClientNm || p.ClientName || p.clientName || p.Client;
+
+        let clientName = "Unknown";
+        if (clientSid) {
+          clientName = clientLookup.get(Number(clientSid)) || "Unknown";
+        } else if (clientNm) {
+          clientName = String(clientNm);
+        }
+
+        return {
+          id: projectId,
+          projectName,
+          clientName,
+          projectCode: p.ProjectCode ? String(p.ProjectCode) : undefined,
+        };
+      })
       .sort((a, b) =>
         a.clientName.localeCompare(b.clientName) ||
         a.projectName.localeCompare(b.projectName)
@@ -139,6 +189,16 @@ export async function GET(request: Request) {
       clients,
       projects,
       includeInactive,
+      // Debug info
+      debug: {
+        sampleClientFields: sampleClient ? Object.keys(sampleClient) : [],
+        sampleProjectFields: sampleProject ? Object.keys(sampleProject) : [],
+        sampleClient,
+        sampleProject,
+        clientLookupSize: clientLookup.size,
+        rawClientCount: clientsAny.length,
+        rawProjectCount: projectsAny.length,
+      },
     });
   } catch (error) {
     console.error("BigTime clients fetch error:", error);
