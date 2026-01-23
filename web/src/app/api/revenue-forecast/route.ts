@@ -274,7 +274,7 @@ export async function GET(request: NextRequest) {
       fetchAssignments(),
       fetchFixedFee(),
       PIPEDRIVE_API_TOKEN ? fetchPipedriveStages() : Promise.resolve(new Map()),
-      PIPEDRIVE_API_TOKEN ? getPipedriveCustomFields() : Promise.resolve({}),
+      PIPEDRIVE_API_TOKEN ? getPipedriveCustomFields() : Promise.resolve({} as Record<string, string>),
       ...Array.from(yearsNeeded).map((y) => fetchBigTimeReport(y)),
     ]);
 
