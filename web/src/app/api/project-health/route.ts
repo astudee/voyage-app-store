@@ -94,13 +94,21 @@ async function fetchBigTimeReport(year: number): Promise<BigTimeEntry[]> {
     colIndex[field.FieldNm] = idx;
   });
 
+  // Log available columns for debugging
+  console.log(`BigTime ${year} columns:`, Object.keys(colIndex).join(", "));
+
   // Parse rows into typed objects
-  // Note: tmprojectsid is the project ID, tmclientsid is the client ID
+  // Try multiple column names for project ID and client ID (different reports may use different names)
+  const projectIdIdx = colIndex["tmprojectnm_id"] ?? colIndex["tmprojectsid"] ?? colIndex["Project_ID"];
+  const clientIdIdx = colIndex["tmclientnm_id"] ?? colIndex["tmclientsid"] ?? colIndex["Client_ID"];
+  const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
+  const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
+
   const entries: BigTimeEntry[] = rows.map((row: unknown[]) => ({
-    clientId: Number(row[colIndex["tmclientsid"]]) || null,
-    projectId: Number(row[colIndex["tmprojectsid"]]) || null,
-    hours: Number(row[colIndex["tmhrsin"]] || row[colIndex["tmhrsbill"]]) || 0,
-    date: (row[colIndex["tmdt"]] as string) || "",
+    clientId: clientIdIdx !== undefined ? (Number(row[clientIdIdx]) || null) : null,
+    projectId: projectIdIdx !== undefined ? (Number(row[projectIdIdx]) || null) : null,
+    hours: hoursIdx !== undefined ? (Number(row[hoursIdx]) || 0) : 0,
+    date: dateIdx !== undefined ? ((row[dateIdx] as string) || "") : "",
   }));
 
   return entries.filter((e) => e.hours !== 0);
@@ -122,26 +130,20 @@ async function getPipedriveCustomFields(): Promise<Record<string, string>> {
   const fieldMap: Record<string, string> = {};
   for (const field of fields) {
     const name = field.name.toLowerCase();
-    // Look for BigTime project ID field - try multiple patterns
-    if (
-      (name.includes("bigtime") && name.includes("project")) ||
-      (name.includes("bt") && name.includes("project") && name.includes("id")) ||
-      name === "bigtime project id" ||
-      name === "bt project id" ||
-      name === "bigtime_project_id" ||
-      name.includes("bigtime id")
-    ) {
+    // Match exactly what the original Streamlit code does:
+    // 'bigtime project id' in name or 'project id' in name
+    if (name.includes("bigtime project id") || name.includes("project id")) {
       fieldMap.bigtime_project_id = field.key;
-    } else if (name.includes("project") && name.includes("start") && name.includes("date")) {
+    } else if (name.includes("project start date") || name.includes("start date")) {
       fieldMap.project_start_date = field.key;
-    } else if (name.includes("project") && name.includes("duration")) {
+    } else if (name.includes("project duration") || name.includes("duration")) {
       fieldMap.project_duration = field.key;
     }
   }
 
   // Log found fields for debugging
   console.log("Pipedrive custom fields found:", fieldMap);
-  console.log("All Pipedrive field names:", fields.map(f => f.name).slice(0, 50));
+  console.log("All Pipedrive field names:", fields.map(f => f.name));
 
   return fieldMap;
 }
@@ -362,6 +364,14 @@ export async function GET(request: NextRequest) {
 
     console.log(`Pipedrive matching: ${matchedDeals} matched, ${unmatchedDeals} unmatched`);
     console.log(`BigTime entries loaded: ${btTime.length} total, ${filteredBtTime.length} after filtering internal`);
+
+    // Debug: Show sample of unique project IDs from BigTime
+    const btProjectIds = new Set(filteredBtTime.map(e => e.projectId).filter(Boolean));
+    console.log(`BigTime unique project IDs (sample): ${Array.from(btProjectIds).slice(0, 10).join(", ")}`);
+
+    // Debug: Show sample of project IDs from assignments
+    const assignmentProjectIds = Object.keys(projectsMap).slice(0, 10);
+    console.log(`Assignment project IDs (sample): ${assignmentProjectIds.join(", ")}`);
 
     // Calculate actuals from BigTime
     const actualsByProject: Record<
