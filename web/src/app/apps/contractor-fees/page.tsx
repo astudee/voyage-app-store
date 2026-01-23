@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 
@@ -47,6 +48,9 @@ export default function ContractorFeesPage() {
   const [endDate, setEndDate] = useState(() => {
     return new Date().toISOString().split("T")[0];
   });
+  const [emailTo, setEmailTo] = useState("");
+  const [emailSending, setEmailSending] = useState(false);
+  const reportRef = useRef<HTMLDivElement>(null);
 
   const reviewFees = async () => {
     setLoading(true);
@@ -73,8 +77,8 @@ export default function ContractorFeesPage() {
     }
   };
 
-  const exportToExcel = () => {
-    if (!data) return;
+  const createExcelWorkbook = () => {
+    if (!data) return null;
 
     const wb = XLSX.utils.book_new();
 
@@ -114,9 +118,109 @@ export default function ContractorFeesPage() {
     );
     XLSX.utils.book_append_sheet(wb, summarySheet, "Contractor_Summary");
 
+    return wb;
+  };
+
+  const exportToExcel = () => {
+    const wb = createExcelWorkbook();
+    if (!wb) return;
+
     const filename = `Contractor_Fee_Review_${startDate}_${endDate}.xlsx`;
     XLSX.writeFile(wb, filename);
     toast.success("Report downloaded!");
+  };
+
+  const exportToPdf = () => {
+    if (!reportRef.current) return;
+
+    // Use print to PDF functionality
+    const printContent = reportRef.current.innerHTML;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      toast.error("Please allow popups for PDF export");
+      return;
+    }
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Contractor Fee Review - ${startDate} to ${endDate}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 40px; color: #333; }
+          h1 { color: #336699; border-bottom: 2px solid #669999; padding-bottom: 10px; }
+          h2 { color: #336699; margin-top: 30px; }
+          table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+          th { background-color: #669999; color: white; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+          .summary-card { display: inline-block; margin: 10px 20px 10px 0; padding: 15px 25px; border: 2px solid #669999; border-radius: 8px; }
+          .summary-value { font-size: 24px; font-weight: bold; }
+          .summary-label { font-size: 12px; color: #666; }
+          .text-right { text-align: right; }
+          .success { background-color: #E8F5E9; border: 1px solid #4CAF50; padding: 10px; border-radius: 4px; color: #2E7D32; }
+          .warning { background-color: #FFF4E6; border: 1px solid #FF9800; padding: 10px; border-radius: 4px; }
+          .error { background-color: #FFEBEE; border: 1px solid #f44336; padding: 10px; border-radius: 4px; }
+          @media print { body { margin: 20px; } }
+        </style>
+      </head>
+      <body>
+        ${printContent}
+        <script>window.onload = function() { window.print(); window.close(); }</script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  const sendEmail = async () => {
+    if (!data || !emailTo) {
+      toast.error("Please enter an email address");
+      return;
+    }
+
+    if (!emailTo.includes("@")) {
+      toast.error("Please enter a valid email address");
+      return;
+    }
+
+    setEmailSending(true);
+    try {
+      const wb = createExcelWorkbook();
+      if (!wb) throw new Error("Failed to create workbook");
+
+      const excelBuffer = XLSX.write(wb, { type: "base64", bookType: "xlsx" });
+      const filename = `Contractor_Fee_Review_${startDate}_${endDate}.xlsx`;
+
+      const response = await fetch("/api/contractor-fees/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emailTo,
+          startDate,
+          endDate,
+          summary: data.summary,
+          nonFridayFees: data.nonFridayFees,
+          missingInvoices: data.missingInvoices,
+          weeklySummary: data.weeklySummary,
+          excelBase64: excelBuffer,
+          filename,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || "Failed to send email");
+      }
+
+      toast.success(`Report sent to ${emailTo}`);
+      setEmailTo("");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to send email";
+      toast.error(message);
+    } finally {
+      setEmailSending(false);
+    }
   };
 
   const formatCurrency = (value: number) =>
@@ -181,7 +285,14 @@ export default function ContractorFeesPage() {
         {/* Results */}
         {data && (
           <>
-            {/* Summary Cards */}
+            {/* Printable Report Content */}
+            <div ref={reportRef}>
+              <h1 style={{ display: "none" }} className="print:block">Contractor Fee Review</h1>
+              <p style={{ display: "none" }} className="print:block">
+                Period: {formatDate(startDate)} - {formatDate(endDate)}
+              </p>
+
+              {/* Summary Cards */}
             <div className="grid grid-cols-4 gap-4">
               <div className="bg-white rounded-xl border p-4 text-center">
                 <div className="text-2xl font-bold">{data.summary.totalContractors}</div>
@@ -315,13 +426,38 @@ export default function ContractorFeesPage() {
                 <p className="text-gray-500">No contractor data found for this period</p>
               )}
             </div>
+            </div>
 
-            {/* Export Button */}
+            {/* Export Options */}
             <div className="bg-white rounded-xl border p-6">
               <h3 className="text-lg font-semibold mb-4">Export Report</h3>
-              <Button variant="outline" onClick={exportToExcel} className="w-full">
-                Download Excel Report
-              </Button>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <Button variant="outline" onClick={exportToExcel}>
+                  Download Excel
+                </Button>
+                <Button variant="outline" onClick={exportToPdf}>
+                  Download PDF
+                </Button>
+              </div>
+
+              <div className="border-t pt-4 mt-4">
+                <h4 className="font-medium mb-2">Email Report</h4>
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={emailTo}
+                    onChange={(e) => setEmailTo(e.target.value)}
+                    className="flex-1"
+                  />
+                  <Button onClick={sendEmail} disabled={emailSending || !emailTo}>
+                    {emailSending ? "Sending..." : "Send"}
+                  </Button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Sends HTML report with Excel attachment
+                </p>
+              </div>
             </div>
           </>
         )}
