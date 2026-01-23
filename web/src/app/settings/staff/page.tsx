@@ -36,11 +36,17 @@ interface Staff {
 export default function StaffListPage() {
   const [staff, setStaff] = useState<Staff[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
   const [deactivateDialog, setDeactivateDialog] = useState<{
     open: boolean;
     staff: Staff | null;
   }>({ open: false, staff: null });
   const [deactivating, setDeactivating] = useState(false);
+
+  // Filter staff based on showInactive toggle
+  const filteredStaff = showInactive
+    ? staff
+    : staff.filter((s) => s.IS_ACTIVE);
 
   const fetchStaff = async () => {
     try {
@@ -113,15 +119,24 @@ export default function StaffListPage() {
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Staff Members</CardTitle>
+            <label className="flex items-center gap-2 text-sm font-normal cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              Include inactive staff
+            </label>
           </CardHeader>
           <CardContent>
             {loading ? (
               <div className="py-8 text-center text-gray-500">Loading...</div>
-            ) : staff.length === 0 ? (
+            ) : filteredStaff.length === 0 ? (
               <div className="py-8 text-center text-gray-500">
-                No staff members found
+                {showInactive ? "No staff members found" : "No active staff members found"}
               </div>
             ) : (
               <Table>
@@ -137,7 +152,7 @@ export default function StaffListPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {staff.map((member) => (
+                  {filteredStaff.map((member) => (
                     <TableRow key={member.STAFF_ID}>
                       <TableCell className="font-medium">
                         {member.STAFF_NAME}

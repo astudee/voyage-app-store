@@ -174,14 +174,15 @@ export async function GET(request: NextRequest) {
     // Get months for the report
     const months = getMonthsBetween(startYear, startMonth, endYear, endMonth);
 
-    // Fetch data in parallel
+    // Fetch data in parallel - get ALL staff (active and inactive) for proper classification
     const [staffRows, timeEntries] = await Promise.all([
-      query<StaffMember>("SELECT STAFF_NAME, IS_ACTIVE FROM VC_STAFF WHERE IS_ACTIVE = TRUE"),
+      query<StaffMember>("SELECT STAFF_NAME, IS_ACTIVE FROM VC_STAFF"),
       fetchBigTimeReport(startDate, endDate),
     ]);
 
-    // Build active employees set
-    const activeEmployees = new Set(staffRows.map((s) => s.STAFF_NAME));
+    // Build employee sets - all employees (current and former) and active only
+    const allEmployees = new Set(staffRows.map((s) => s.STAFF_NAME));
+    const activeEmployees = new Set(staffRows.filter((s) => s.IS_ACTIVE).map((s) => s.STAFF_NAME));
 
     // Group time entries by staff and month
     const staffData = new Map<string, Map<string, { hours: number; revenue: number }>>();
@@ -216,17 +217,23 @@ export async function GET(request: NextRequest) {
     const staffReports: StaffReport[] = [];
 
     for (const [staffName, monthsData] of staffData) {
-      // Classify
+      // Classify based on employee status and recent activity
       let classification: "Active Employee" | "Contractor" | "Inactive";
 
+      // Check if has hours in last 2 months
+      const hasRecentHours = lastTwoMonths.some((period) => {
+        const data = monthsData.get(period);
+        return data && data.hours > 0;
+      });
+
       if (activeEmployees.has(staffName)) {
+        // Current active employee
         classification = "Active Employee";
+      } else if (allEmployees.has(staffName)) {
+        // Former/terminated employee - always show as Inactive
+        classification = "Inactive";
       } else {
-        // Check if has hours in last 2 months
-        const hasRecentHours = lastTwoMonths.some((period) => {
-          const data = monthsData.get(period);
-          return data && data.hours > 0;
-        });
+        // Not in staff table at all - true contractor or inactive contractor
         classification = hasRecentHours ? "Contractor" : "Inactive";
       }
 
