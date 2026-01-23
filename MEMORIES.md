@@ -1,13 +1,13 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-23 (Bookings Tracker + Contract Reviewer migrated)
+> **Last updated:** 2026-01-23 (Project Health Monitor fixed, 14/22 apps migrated)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (11/22 apps migrated).
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (14/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
@@ -25,8 +25,14 @@
 - **Benefits Calculator** (app 08) migrated to `/apps/benefits-calc`
 - **Bookings Tracker** (app 13) migrated to `/apps/bookings`
 - **Contract Reviewer** (app 17) migrated to `/apps/contract-review`
+- **Document Manager** (app 02/03) migrated to `/apps/document-manager`
+- **Expense Reviewer** (app 07) migrated to `/apps/expense-reviewer`
+- **Contractor Fee Reviewer** (app 11) migrated to `/apps/contractor-fees`
+- **Forecasted Billable Hours** (app 12) migrated to `/apps/forecasted-hours`
+- **Payroll Calculator** (app 09) migrated to `/apps/payroll-calc`
+- **Payroll Helper** (app 10) migrated to `/apps/payroll-helper`
 
-**What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Priority order:
+**What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Remaining apps:
 1. Time Reviewer - needs BigTime API
 2. Payroll Helper - needs BigTime API
 3. Revenue Forecaster - uses assignments data
@@ -463,6 +469,30 @@ This is where reference files are uploaded for Claude to review:
   - Fixed `_pivot_fixedfee_from_snowflake()`: Convert REVENUE_AMOUNT to numeric
   - Also fixed NOTES field handling (None vs empty string was causing grouping issues)
   - Now correctly returns all 28 staff assignments across 14 projects
+
+### 2026-01-23 - Project Health Monitor Fixes & Additional Apps
+- **Fixed Project Health Monitor BigTime integration:**
+  - Issue: Fees to Date showing $0 and Fees/Booked at 0%
+  - Root cause 1: BigTime report data was being returned as raw arrays but accessed as objects
+  - Root cause 2: Wrong column name used (`tmprojectsid` instead of `tmprojectnm_id`)
+  - Fix: Properly parse BigTime report using FieldList to map column indices
+  - Fix: Use correct column names (`tmprojectnm_id`, `tmclientnm_id`) matching original Streamlit code
+  - Fix: Expanded date range from 2 years to 5 years to capture all historical hours
+  - Added debugging metadata (BigTime years, projects with actuals, matched deals)
+- **Fixed Pipedrive custom field lookup:**
+  - Updated pattern matching to match original Streamlit: `'bigtime project id' in name or 'project id' in name`
+- **Migrated additional apps:**
+  - Document Manager (`/apps/document-manager`)
+  - Expense Reviewer (`/apps/expense-reviewer`)
+  - Contractor Fee Reviewer (`/apps/contractor-fees`)
+  - Forecasted Billable Hours (`/apps/forecasted-hours`)
+  - Payroll Calculator (`/apps/payroll-calc`)
+  - Payroll Helper (`/apps/payroll-helper`)
+- **Fixed various bugs during migration:**
+  - Expense Reviewer: Friday date validation using UTC instead of local time - fixed with `T00:00:00` suffix
+  - Payroll Helper: Wrong column name `EMPLOYEE_TYPE` - fixed to `STAFF_TYPE`
+  - Forecasted Hours: Snowflake returns Date objects not strings - added `string | Date` union type handling
+  - Sidebar link typo: `/apps/forecast-hours` → `/apps/forecasted-hours`
 
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
