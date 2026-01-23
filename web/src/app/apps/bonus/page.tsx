@@ -231,25 +231,37 @@ export default function BonusCalculatorPage() {
           <tr>
             <th>Employee</th>
             <th>Proration</th>
+            <th class="text-right">Util Target</th>
+            <th class="text-right">Other Target</th>
             <th class="text-right">YTD Eligible</th>
             <th>YTD Tier</th>
-            <th class="text-right">YTD Bonus</th>
+            <th class="text-right">YTD Util</th>
+            <th class="text-right">YTD Other</th>
+            <th class="text-right">YTD Total</th>
             <th class="text-right">YTD Cost</th>
             <th class="text-right">Proj Eligible</th>
             <th>Proj Tier</th>
-            <th class="text-right">Proj Bonus</th>
+            <th class="text-right">Proj Util</th>
+            <th class="text-right">Proj Other</th>
+            <th class="text-right">Proj Total</th>
             <th class="text-right">Proj Cost</th>
           </tr>
           ${data.employees.map((e) => `
             <tr>
               <td>${e.employee}</td>
               <td>${(e.proration * 100).toFixed(0)}%</td>
+              <td class="text-right">${formatCurrency(e.utilTarget)}</td>
+              <td class="text-right">${formatCurrency(e.otherTarget)}</td>
               <td class="text-right">${formatHours(e.ytdEligible)}</td>
               <td class="tier-${e.ytdTier}">${e.ytdTier}</td>
+              <td class="text-right">${formatCurrency(e.ytdUtilBonus)}</td>
+              <td class="text-right">${formatCurrency(e.ytdOtherBonus)}</td>
               <td class="text-right">${formatCurrency(e.ytdTotalBonus)}</td>
               <td class="text-right">${formatCurrency(e.ytdTotalCost)}</td>
               <td class="text-right">${formatHours(e.projEligible)}</td>
               <td class="tier-${e.projTier}">${e.projTier}</td>
+              <td class="text-right">${formatCurrency(e.projUtilBonus)}</td>
+              <td class="text-right">${formatCurrency(e.projOtherBonus)}</td>
               <td class="text-right">${formatCurrency(e.projTotalBonus)}</td>
               <td class="text-right">${formatCurrency(e.projTotalCost)}</td>
             </tr>
@@ -419,15 +431,20 @@ export default function BonusCalculatorPage() {
                       <th className="text-left px-3 py-2 sticky left-0 bg-gray-50">Employee</th>
                       <th className="text-right px-2 py-2">Proration</th>
                       <th className="text-right px-2 py-2">Util Target</th>
+                      <th className="text-right px-2 py-2">Other Target</th>
                       <th className="text-right px-2 py-2">YTD Billable</th>
                       <th className="text-right px-2 py-2">YTD Pro Bono</th>
                       <th className="text-right px-2 py-2">YTD Eligible</th>
                       <th className="text-center px-2 py-2">YTD Tier</th>
-                      <th className="text-right px-2 py-2">YTD Bonus</th>
+                      <th className="text-right px-2 py-2">YTD Util Bonus</th>
+                      <th className="text-right px-2 py-2">YTD Other Bonus</th>
+                      <th className="text-right px-2 py-2">YTD Total</th>
                       <th className="text-right px-2 py-2">YTD Cost</th>
                       <th className="text-right px-2 py-2">Proj Eligible</th>
                       <th className="text-center px-2 py-2">Proj Tier</th>
-                      <th className="text-right px-2 py-2">Proj Bonus</th>
+                      <th className="text-right px-2 py-2">Proj Util Bonus</th>
+                      <th className="text-right px-2 py-2">Proj Other Bonus</th>
+                      <th className="text-right px-2 py-2">Proj Total</th>
                       <th className="text-right px-2 py-2">Proj Cost</th>
                     </tr>
                   </thead>
@@ -437,15 +454,20 @@ export default function BonusCalculatorPage() {
                         <td className="px-3 py-2 font-medium sticky left-0 bg-white">{e.employee}</td>
                         <td className="px-2 py-2 text-right">{(e.proration * 100).toFixed(0)}%</td>
                         <td className="px-2 py-2 text-right">{formatCurrency(e.utilTarget)}</td>
+                        <td className="px-2 py-2 text-right">{formatCurrency(e.otherTarget)}</td>
                         <td className="px-2 py-2 text-right">{formatHours(e.ytdBillable)}</td>
                         <td className="px-2 py-2 text-right">{formatHours(e.ytdProBono)}</td>
                         <td className="px-2 py-2 text-right font-medium">{formatHours(e.ytdEligible)}</td>
                         <td className={`px-2 py-2 text-center ${getTierColor(e.ytdTier)}`}>{e.ytdTier}</td>
-                        <td className="px-2 py-2 text-right">{formatCurrency(e.ytdTotalBonus)}</td>
+                        <td className="px-2 py-2 text-right">{formatCurrency(e.ytdUtilBonus)}</td>
+                        <td className="px-2 py-2 text-right">{formatCurrency(e.ytdOtherBonus)}</td>
+                        <td className="px-2 py-2 text-right font-medium">{formatCurrency(e.ytdTotalBonus)}</td>
                         <td className="px-2 py-2 text-right font-medium">{formatCurrency(e.ytdTotalCost)}</td>
                         <td className="px-2 py-2 text-right">{formatHours(e.projEligible)}</td>
                         <td className={`px-2 py-2 text-center ${getTierColor(e.projTier)}`}>{e.projTier}</td>
-                        <td className="px-2 py-2 text-right">{formatCurrency(e.projTotalBonus)}</td>
+                        <td className="px-2 py-2 text-right">{formatCurrency(e.projUtilBonus)}</td>
+                        <td className="px-2 py-2 text-right">{formatCurrency(e.projOtherBonus)}</td>
+                        <td className="px-2 py-2 text-right font-medium">{formatCurrency(e.projTotalBonus)}</td>
                         <td className="px-2 py-2 text-right font-medium">{formatCurrency(e.projTotalCost)}</td>
                       </tr>
                     ))}

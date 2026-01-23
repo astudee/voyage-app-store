@@ -305,11 +305,12 @@ if st.sidebar.button("Generate Report", type="primary"):
                 
                 # Check for overrides first
                 if name in overrides:
-                    util_target = overrides[name]['util_target']
-                    other_target = overrides[name]['other_target']
+                    util_target = float(overrides[name]['util_target'])
+                    other_target = float(overrides[name]['other_target'])
                 else:
-                    util_target = employee.get('Utilization_Bonus_Target', 0)
-                    other_target = employee.get('Other_Bonus_Target', 0)
+                    # Convert to float to handle Snowflake decimal.Decimal types
+                    util_target = float(employee.get('Utilization_Bonus_Target', 0) or 0)
+                    other_target = float(employee.get('Other_Bonus_Target', 0) or 0)
                 
                 # Get hours for this employee
                 ytd_billable = regular_hours.get(name, 0)
