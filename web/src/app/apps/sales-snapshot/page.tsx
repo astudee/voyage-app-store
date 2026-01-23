@@ -5,6 +5,18 @@ import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  LabelList,
+} from "recharts";
 
 interface DealRow {
   client: string;
@@ -167,9 +179,6 @@ export default function SalesSnapshotPage() {
     toast.success("Report downloaded!");
   };
 
-  // Calculate max value for chart scaling
-  const maxValue = data ? Math.max(...data.stages.map((s) => s.value), 1) : 1;
-
   return (
     <AppLayout>
       <div className="space-y-6 max-w-[1400px]">
@@ -290,41 +299,105 @@ export default function SalesSnapshotPage() {
               </div>
             </div>
 
-            {/* Pipeline Chart (CSS-based) */}
+            {/* Pipeline Chart */}
             <div className="bg-white rounded-xl border p-6">
-              <h3 className="text-lg font-semibold mb-4">Pipeline by Stage</h3>
-              <div className="space-y-4">
-                {data.stages.map((stage) => (
-                  <div key={stage.id} className="flex items-center gap-4">
-                    <div className="w-32 text-sm font-medium truncate" title={stage.name}>
-                      {stage.name}
-                    </div>
-                    <div className="flex-1 flex gap-2">
-                      <div className="flex-1">
-                        <div className="relative h-6 bg-gray-100 rounded">
-                          <div
-                            className="absolute h-full bg-blue-500 rounded"
-                            style={{ width: `${(stage.value / maxValue) * 100}%` }}
-                          />
-                          <div
-                            className="absolute h-full bg-green-500 rounded opacity-70"
-                            style={{ width: `${(stage.factored / maxValue) * 100}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="w-24 text-right text-sm">
-                        <span className="text-blue-600 font-medium">{formatCurrency(stage.value)}</span>
-                      </div>
-                      <div className="w-8 text-right text-sm text-gray-600">
-                        {stage.count}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 flex gap-4 text-sm text-gray-600">
-                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded"></span> Pipeline</span>
-                <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded"></span> Factored</span>
+              <h3 className="text-lg font-semibold mb-4 text-center">
+                Sales Pipeline by Stage - {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+              </h3>
+              <div style={{ width: "100%", height: 400 }}>
+                <ResponsiveContainer>
+                  <ComposedChart
+                    data={data.stages.map((s) => ({
+                      name: s.name,
+                      pipeline: s.value,
+                      factored: s.factored,
+                      deals: s.count,
+                    }))}
+                    margin={{ top: 30, right: 60, left: 20, bottom: 80 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 11 }}
+                      angle={-35}
+                      textAnchor="end"
+                      height={80}
+                      interval={0}
+                    />
+                    <YAxis
+                      yAxisId="left"
+                      tickFormatter={(value) => `$${(value / 1000000).toFixed(1)}M`}
+                      tick={{ fontSize: 11 }}
+                      label={{
+                        value: "$ Value",
+                        angle: -90,
+                        position: "insideLeft",
+                        style: { textAnchor: "middle", fontSize: 12 },
+                      }}
+                    />
+                    <YAxis
+                      yAxisId="right"
+                      orientation="right"
+                      tick={{ fontSize: 11 }}
+                      label={{
+                        value: "# Deals",
+                        angle: 90,
+                        position: "insideRight",
+                        style: { textAnchor: "middle", fontSize: 12 },
+                      }}
+                    />
+                    <Tooltip
+                      formatter={(value, name) => {
+                        const v = value as number;
+                        if (name === "deals") return [v, "# Deals"];
+                        return [`$${v.toLocaleString()}`, name === "pipeline" ? "$ Pipeline" : "$ Pipeline (Factored)"];
+                      }}
+                    />
+                    <Legend
+                      verticalAlign="top"
+                      align="right"
+                      wrapperStyle={{ paddingBottom: 10 }}
+                      formatter={(value) => {
+                        if (value === "pipeline") return "$ Pipeline";
+                        if (value === "factored") return "$ Pipeline (Factored)";
+                        if (value === "deals") return "# Deals";
+                        return value;
+                      }}
+                    />
+                    <Bar yAxisId="left" dataKey="pipeline" fill="#4472C4" name="pipeline" barSize={40}>
+                      <LabelList
+                        dataKey="pipeline"
+                        position="top"
+                        formatter={(value) => `$${((value as number) / 1000).toFixed(0)}k`}
+                        style={{ fontSize: 9, fill: "#333" }}
+                      />
+                    </Bar>
+                    <Bar yAxisId="left" dataKey="factored" fill="#70AD47" name="factored" barSize={40}>
+                      <LabelList
+                        dataKey="factored"
+                        position="top"
+                        formatter={(value) => (value as number) > 0 ? `$${((value as number) / 1000).toFixed(0)}k` : ""}
+                        style={{ fontSize: 9, fill: "#333" }}
+                      />
+                    </Bar>
+                    <Line
+                      yAxisId="right"
+                      type="monotone"
+                      dataKey="deals"
+                      stroke="#ED7D31"
+                      strokeWidth={2}
+                      dot={{ fill: "#ED7D31", r: 5 }}
+                      name="deals"
+                    >
+                      <LabelList
+                        dataKey="deals"
+                        position="top"
+                        offset={10}
+                        style={{ fontSize: 11, fill: "#ED7D31", fontWeight: "bold" }}
+                      />
+                    </Line>
+                  </ComposedChart>
+                </ResponsiveContainer>
               </div>
             </div>
 
