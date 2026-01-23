@@ -11,7 +11,7 @@ interface Assignment {
   STAFF_NAME: string;
   PROJECT_NAME: string;
   CLIENT_NAME: string;
-  MONTH_DATE: string;
+  MONTH_DATE: string | Date;
   ALLOCATED_HOURS: number;
   BILL_RATE: number;
 }
