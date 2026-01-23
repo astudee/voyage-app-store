@@ -1,60 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-
-const CONTRACT_STANDARDS_DOC_ID = process.env.CONTRACT_STANDARDS_DOC_ID || "1RbPIYVgYH1HZ-FQTHYbQWycHshe-K_L5OZkat45VQnQ";
-
-async function fetchGoogleDocContent(docId: string): Promise<string | null> {
-  // Try public export first (works if doc is "Anyone with link can view")
-  try {
-    const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
-    const response = await fetch(exportUrl, { next: { revalidate: 3600 } }); // Cache for 1 hour
-
-    if (response.ok) {
-      return await response.text();
-    }
-  } catch {
-    // Continue to authenticated fallback
-  }
-
-  // Try authenticated access
-  const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-  if (!serviceAccountKey) {
-    return null;
-  }
-
-  try {
-    const keyData = JSON.parse(serviceAccountKey);
-    const { GoogleAuth } = await import("google-auth-library");
-
-    const auth = new GoogleAuth({
-      credentials: keyData,
-      scopes: ["https://www.googleapis.com/auth/drive.readonly"],
-    });
-
-    const client = await auth.getClient();
-    const accessToken = await client.getAccessToken();
-
-    if (!accessToken.token) return null;
-
-    const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${docId}/export?mimeType=text/plain`,
-      {
-        headers: {
-          Authorization: `Bearer ${accessToken.token}`,
-        },
-      }
-    );
-
-    if (response.ok) {
-      return await response.text();
-    }
-  } catch (e) {
-    console.error("Failed to fetch Google Doc:", e);
-  }
-
-  return null;
-}
+import { CONTRACT_STANDARDS } from "@/data/contract-standards";
 
 async function callClaudeAPI(contractText: string, standardsText: string): Promise<string | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -138,7 +85,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { contractText, standardsDocId } = body;
+    const { contractText } = body;
 
     if (!contractText || contractText.trim().length < 100) {
       return NextResponse.json(
@@ -147,19 +94,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch standards
-    const docId = standardsDocId || CONTRACT_STANDARDS_DOC_ID;
-    const standardsText = await fetchGoogleDocContent(docId);
-
-    if (!standardsText) {
-      return NextResponse.json(
-        { error: "Could not load contract standards. Please ensure the document is accessible." },
-        { status: 500 }
-      );
-    }
-
-    // Call Claude
-    const review = await callClaudeAPI(contractText, standardsText);
+    // Call Claude with bundled standards (no external fetch needed)
+    const review = await callClaudeAPI(contractText, CONTRACT_STANDARDS);
 
     if (!review) {
       return NextResponse.json(
