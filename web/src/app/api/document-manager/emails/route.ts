@@ -133,16 +133,15 @@ export async function POST(_request: NextRequest) {
 
     // Create delegated credentials for Gmail access
     const credentials = JSON.parse(process.env.SERVICE_ACCOUNT_KEY!);
-    const jwtClient = new google.auth.JWT(
-      credentials.client_email,
-      undefined,
-      credentials.private_key,
-      [
+    const jwtClient = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: [
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/gmail.modify",
       ],
-      "astudee@voyageadvisory.com" // Domain-wide delegation
-    );
+      subject: "astudee@voyageadvisory.com", // Domain-wide delegation
+    });
 
     const gmail = google.gmail({ version: "v1", auth: jwtClient });
     const drive = google.drive({ version: "v3", auth });
