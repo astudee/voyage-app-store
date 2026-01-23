@@ -1,13 +1,13 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-23 (Billable Hours Report + Bonus Calculator migrated)
+> **Last updated:** 2026-01-23 (Bookings Tracker + Contract Reviewer migrated)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (9/22 apps migrated).
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (11/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
@@ -23,12 +23,13 @@
 - **Billable Hours Report** (app 04) migrated to `/apps/billable-hours`
 - **Bonus Calculator** (app 05) migrated to `/apps/bonus`
 - **Benefits Calculator** (app 08) migrated to `/apps/benefits-calc`
+- **Bookings Tracker** (app 13) migrated to `/apps/bookings`
+- **Contract Reviewer** (app 17) migrated to `/apps/contract-review`
 
 **What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Priority order:
 1. Time Reviewer - needs BigTime API
 2. Payroll Helper - needs BigTime API
 3. Revenue Forecaster - uses assignments data
-4. Bookings Tracker - already have Pipedrive API working
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
