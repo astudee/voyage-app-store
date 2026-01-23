@@ -94,7 +94,7 @@ export default function ExpenseReviewerPage() {
   const reviewExpenses = async () => {
     // Validate weekly mode is a Friday
     if (dateMode === "weekly") {
-      const weekDate = new Date(weekEnding);
+      const weekDate = new Date(weekEnding + "T00:00:00");
       if (weekDate.getDay() !== 5) {
         toast.error("Please select a Friday for week ending date");
         return;
@@ -107,7 +107,7 @@ export default function ExpenseReviewerPage() {
     try {
       let url: string;
       if (dateMode === "weekly") {
-        const friday = new Date(weekEnding);
+        const friday = new Date(weekEnding + "T00:00:00");
         const monday = getMonday(friday);
         url = `/api/expense-reviewer?startDate=${monday.toISOString().split("T")[0]}&endDate=${weekEnding}&weekEnding=${weekEnding}`;
       } else {
@@ -275,7 +275,7 @@ export default function ExpenseReviewerPage() {
                 className="w-full rounded-md border border-gray-300 px-3 py-2"
               />
               <p className="text-sm text-gray-500 mt-1">
-                {new Date(weekEnding).getDay() !== 5 && (
+                {new Date(weekEnding + "T00:00:00").getDay() !== 5 && (
                   <span className="text-red-600">Please select a Friday</span>
                 )}
               </p>
