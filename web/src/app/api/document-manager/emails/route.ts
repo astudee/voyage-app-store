@@ -36,8 +36,8 @@ function decodeBase64(data: string): Buffer {
   return Buffer.from(base64, "base64");
 }
 
-function getHeader(headers: Array<{ name: string; value: string }>, name: string): string {
-  const header = headers.find((h) => h.name.toLowerCase() === name.toLowerCase());
+function getHeader(headers: Array<{ name?: string | null; value?: string | null }>, name: string): string {
+  const header = headers.find((h) => h.name?.toLowerCase() === name.toLowerCase());
   return header?.value || "";
 }
 
