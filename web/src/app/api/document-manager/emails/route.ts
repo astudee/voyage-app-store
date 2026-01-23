@@ -41,41 +41,21 @@ function getHeader(headers: Array<{ name: string; value: string }>, name: string
   return header?.value || "";
 }
 
-async function createEmailPdf(
+function createEmailText(
   subject: string,
   sender: string,
   date: string,
   body: string
-): Promise<Buffer> {
-  const PDFDocument = (await import("pdfkit")).default;
+): Buffer {
+  const content = `From: ${sender}
+Date: ${date}
+Subject: ${subject}
 
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    const doc = new PDFDocument({ margin: 50 });
+${"-".repeat(60)}
 
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
+${body}`;
 
-    // Header info
-    doc.fontSize(10).fillColor("#333333");
-    doc.text(`From: ${sender}`, { continued: false });
-    doc.text(`Date: ${date}`, { continued: false });
-    doc.text(`Subject: ${subject}`, { continued: false });
-    doc.moveDown();
-
-    // Body
-    doc.fontSize(11).fillColor("#000000");
-    const paragraphs = body.split("\n\n");
-    for (const para of paragraphs) {
-      if (para.trim()) {
-        doc.text(para.trim(), { align: "left" });
-        doc.moveDown(0.5);
-      }
-    }
-
-    doc.end();
-  });
+  return Buffer.from(content, "utf-8");
 }
 
 export async function POST(_request: NextRequest) {
@@ -218,7 +198,7 @@ export async function POST(_request: NextRequest) {
             processed.push({ type: "Attachment", name: filename, subject });
           }
         } else {
-          // Convert email to PDF
+          // Convert email to text file
           let body = "";
           const payload = fullMessage.data.payload;
 
@@ -231,8 +211,8 @@ export async function POST(_request: NextRequest) {
             body = decodeBase64(payload.body.data).toString("utf-8");
           }
 
-          const pdfContent = await createEmailPdf(subject, sender, dateStr, body);
-          const filename = `EMAIL_${timestamp}_${subjectClean}.pdf`;
+          const textContent = createEmailText(subject, sender, dateStr, body);
+          const filename = `EMAIL_${timestamp}_${subjectClean}.txt`;
 
           await drive.files.create({
             requestBody: {
@@ -240,13 +220,13 @@ export async function POST(_request: NextRequest) {
               parents: [toFileFolderId],
             },
             media: {
-              mimeType: "application/pdf",
-              body: Readable.from(pdfContent),
+              mimeType: "text/plain",
+              body: Readable.from(textContent),
             },
             supportsAllDrives: true,
           });
 
-          processed.push({ type: "Email PDF", name: filename, subject });
+          processed.push({ type: "Email Text", name: filename, subject });
         }
 
         // Remove Vault label
