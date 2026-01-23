@@ -41,21 +41,77 @@ function getHeader(headers: Array<{ name: string; value: string }>, name: string
   return header?.value || "";
 }
 
-function createEmailText(
+async function createEmailPdf(
   subject: string,
   sender: string,
   date: string,
   body: string
-): Buffer {
-  const content = `From: ${sender}
-Date: ${date}
-Subject: ${subject}
+): Promise<Buffer> {
+  const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
 
-${"-".repeat(60)}
+  const pdfDoc = await PDFDocument.create();
+  const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-${body}`;
+  const pageWidth = 612; // Letter size
+  const pageHeight = 792;
+  const margin = 50;
+  const lineHeight = 14;
+  const maxWidth = pageWidth - 2 * margin;
 
-  return Buffer.from(content, "utf-8");
+  let page = pdfDoc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  // Helper to add text and handle page breaks
+  const addText = (text: string, fontSize: number, useFont: typeof font, color = rgb(0, 0, 0)) => {
+    const words = text.split(" ");
+    let line = "";
+
+    for (const word of words) {
+      const testLine = line ? `${line} ${word}` : word;
+      const width = useFont.widthOfTextAtSize(testLine, fontSize);
+
+      if (width > maxWidth && line) {
+        if (y < margin + lineHeight) {
+          page = pdfDoc.addPage([pageWidth, pageHeight]);
+          y = pageHeight - margin;
+        }
+        page.drawText(line, { x: margin, y, size: fontSize, font: useFont, color });
+        y -= lineHeight;
+        line = word;
+      } else {
+        line = testLine;
+      }
+    }
+
+    if (line) {
+      if (y < margin + lineHeight) {
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - margin;
+      }
+      page.drawText(line, { x: margin, y, size: fontSize, font: useFont, color });
+      y -= lineHeight;
+    }
+  };
+
+  // Header
+  addText(`From: ${sender}`, 10, font, rgb(0.2, 0.2, 0.2));
+  addText(`Date: ${date}`, 10, font, rgb(0.2, 0.2, 0.2));
+  addText(`Subject: ${subject}`, 10, boldFont, rgb(0.2, 0.2, 0.2));
+  y -= 10; // Extra space after header
+
+  // Body - split by newlines and paragraphs
+  const lines = body.split("\n");
+  for (const line of lines) {
+    if (line.trim()) {
+      addText(line.trim(), 11, font);
+    } else {
+      y -= lineHeight / 2; // Half line for empty lines
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return Buffer.from(pdfBytes);
 }
 
 export async function POST(_request: NextRequest) {
@@ -198,7 +254,7 @@ export async function POST(_request: NextRequest) {
             processed.push({ type: "Attachment", name: filename, subject });
           }
         } else {
-          // Convert email to text file
+          // Convert email to PDF
           let body = "";
           const payload = fullMessage.data.payload;
 
@@ -211,8 +267,8 @@ export async function POST(_request: NextRequest) {
             body = decodeBase64(payload.body.data).toString("utf-8");
           }
 
-          const textContent = createEmailText(subject, sender, dateStr, body);
-          const filename = `EMAIL_${timestamp}_${subjectClean}.txt`;
+          const pdfContent = await createEmailPdf(subject, sender, dateStr, body);
+          const filename = `EMAIL_${timestamp}_${subjectClean}.pdf`;
 
           await drive.files.create({
             requestBody: {
@@ -220,13 +276,13 @@ export async function POST(_request: NextRequest) {
               parents: [toFileFolderId],
             },
             media: {
-              mimeType: "text/plain",
-              body: Readable.from(textContent),
+              mimeType: "application/pdf",
+              body: Readable.from(pdfContent),
             },
             supportsAllDrives: true,
           });
 
-          processed.push({ type: "Email Text", name: filename, subject });
+          processed.push({ type: "Email PDF", name: filename, subject });
         }
 
         // Remove Vault label

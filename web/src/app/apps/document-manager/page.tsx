@@ -185,7 +185,7 @@ export default function DocumentManagerPage() {
   const contracts = processedDocs.filter((d) => d.kind === "CONTRACT");
   const documents = processedDocs.filter((d) => d.kind === "DOCUMENT");
   const attachments = processedEmails.filter((e) => e.type === "Attachment");
-  const emailPdfs = processedEmails.filter((e) => e.type === "Email Text");
+  const emailPdfs = processedEmails.filter((e) => e.type === "Email PDF");
 
   return (
     <AppLayout>
@@ -243,7 +243,7 @@ export default function DocumentManagerPage() {
                 <ul className="text-sm text-blue-700 mt-2 space-y-1 list-disc list-inside">
                   <li>Emails sent to vault@voyageadvisory.com get the &quot;Vault&quot; label</li>
                   <li>If email has attachments → saves attachments to Drive</li>
-                  <li>If email has no attachments → saves email as text file</li>
+                  <li>If email has no attachments → converts email to PDF</li>
                   <li>Files go to the &quot;to file&quot; folder for processing</li>
                   <li>Removes &quot;Vault&quot; label after processing</li>
                 </ul>
