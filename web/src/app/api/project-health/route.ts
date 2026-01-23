@@ -31,10 +31,10 @@ interface Assignment {
 }
 
 interface BigTimeEntry {
-  tmclientnm_id?: number;
-  tmprojectnm_id?: number;
-  tmhrsin?: number;
-  tmdt?: string;
+  clientId: number | null;
+  projectId: number | null;
+  hours: number;
+  date: string;
 }
 
 interface ProjectHealth {
@@ -85,7 +85,25 @@ async function fetchBigTimeReport(year: number): Promise<BigTimeEntry[]> {
   }
 
   const data = await response.json();
-  return data.Data || [];
+  const rows = data.Data || [];
+  const fields = data.FieldList || [];
+
+  // Build column index from field list
+  const colIndex: Record<string, number> = {};
+  fields.forEach((field: { FieldNm: string }, idx: number) => {
+    colIndex[field.FieldNm] = idx;
+  });
+
+  // Parse rows into typed objects
+  // Note: tmprojectsid is the project ID, tmclientsid is the client ID
+  const entries: BigTimeEntry[] = rows.map((row: unknown[]) => ({
+    clientId: Number(row[colIndex["tmclientsid"]]) || null,
+    projectId: Number(row[colIndex["tmprojectsid"]]) || null,
+    hours: Number(row[colIndex["tmhrsin"]] || row[colIndex["tmhrsbill"]]) || 0,
+    date: (row[colIndex["tmdt"]] as string) || "",
+  }));
+
+  return entries.filter((e) => e.hours !== 0);
 }
 
 // Fetch Pipedrive custom field keys
@@ -104,7 +122,15 @@ async function getPipedriveCustomFields(): Promise<Record<string, string>> {
   const fieldMap: Record<string, string> = {};
   for (const field of fields) {
     const name = field.name.toLowerCase();
-    if (name.includes("bigtime") && name.includes("project") && name.includes("id")) {
+    // Look for BigTime project ID field - try multiple patterns
+    if (
+      (name.includes("bigtime") && name.includes("project")) ||
+      (name.includes("bt") && name.includes("project") && name.includes("id")) ||
+      name === "bigtime project id" ||
+      name === "bt project id" ||
+      name === "bigtime_project_id" ||
+      name.includes("bigtime id")
+    ) {
       fieldMap.bigtime_project_id = field.key;
     } else if (name.includes("project") && name.includes("start") && name.includes("date")) {
       fieldMap.project_start_date = field.key;
@@ -112,6 +138,10 @@ async function getPipedriveCustomFields(): Promise<Record<string, string>> {
       fieldMap.project_duration = field.key;
     }
   }
+
+  // Log found fields for debugging
+  console.log("Pipedrive custom fields found:", fieldMap);
+  console.log("All Pipedrive field names:", fields.map(f => f.name).slice(0, 50));
 
   return fieldMap;
 }
@@ -200,27 +230,28 @@ export async function GET(request: NextRequest) {
 
   try {
     // Fetch data from all three sources in parallel
+    // Fetch BigTime data for last 5 years to capture all historical hours
     const currentYear = new Date().getFullYear();
+    const yearsToFetch = [currentYear, currentYear - 1, currentYear - 2, currentYear - 3, currentYear - 4];
+
     const [
       assignments,
       pipedriveDeals,
       customFields,
-      btTimeCurrentYear,
-      btTimePreviousYear,
+      ...btTimeByYear
     ] = await Promise.all([
       fetchAssignments(),
       fetchPipedriveDeals(),
       getPipedriveCustomFields(),
-      fetchBigTimeReport(currentYear),
-      fetchBigTimeReport(currentYear - 1),
+      ...yearsToFetch.map(year => fetchBigTimeReport(year)),
     ]);
 
-    // Combine BigTime data
-    const btTime = [...btTimeCurrentYear, ...btTimePreviousYear];
+    // Combine BigTime data from all years
+    const btTime = btTimeByYear.flat();
 
     // Filter out Internal projects (client ID 5556066)
     const filteredBtTime = btTime.filter(
-      (entry) => entry.tmclientnm_id !== 5556066
+      (entry) => entry.clientId !== 5556066
     );
 
     // Group assignments by project
@@ -302,10 +333,16 @@ export async function GET(request: NextRequest) {
 
     // Match with Pipedrive deals
     const btProjectIdKey = customFields.bigtime_project_id;
+    let matchedDeals = 0;
+    let unmatchedDeals = 0;
+
+    console.log("BigTime Project ID field key:", btProjectIdKey);
 
     for (const deal of pipedriveDeals) {
-      const btProjectId = normalizeProjectId(deal[btProjectIdKey]);
+      const btProjectId = btProjectIdKey ? normalizeProjectId(deal[btProjectIdKey]) : null;
+
       if (btProjectId && projectsMap[btProjectId]) {
+        matchedDeals++;
         const project = projectsMap[btProjectId];
         if (!(project as Record<string, unknown>).dealValue) {
           (project as Record<string, unknown>).dealValue = 0;
@@ -318,8 +355,13 @@ export async function GET(request: NextRequest) {
         if (!(project as Record<string, unknown>).wonDate) {
           (project as Record<string, unknown>).wonDate = deal.won_time;
         }
+      } else {
+        unmatchedDeals++;
       }
     }
+
+    console.log(`Pipedrive matching: ${matchedDeals} matched, ${unmatchedDeals} unmatched`);
+    console.log(`BigTime entries loaded: ${btTime.length} total, ${filteredBtTime.length} after filtering internal`);
 
     // Calculate actuals from BigTime
     const actualsByProject: Record<
@@ -328,17 +370,17 @@ export async function GET(request: NextRequest) {
     > = {};
 
     for (const entry of filteredBtTime) {
-      const projectId = normalizeProjectId(entry.tmprojectnm_id);
+      const projectId = normalizeProjectId(entry.projectId);
       if (!projectId) continue;
 
       if (!actualsByProject[projectId]) {
         actualsByProject[projectId] = { hours: 0, earliestDate: null };
       }
 
-      actualsByProject[projectId].hours += entry.tmhrsin || 0;
+      actualsByProject[projectId].hours += entry.hours || 0;
 
-      if (entry.tmdt) {
-        const entryDate = new Date(entry.tmdt);
+      if (entry.date) {
+        const entryDate = new Date(entry.date);
         if (
           !actualsByProject[projectId].earliestDate ||
           entryDate < actualsByProject[projectId].earliestDate
@@ -349,14 +391,20 @@ export async function GET(request: NextRequest) {
     }
 
     // Merge actuals into projects
+    let projectsWithActuals = 0;
+    let projectsWithoutActuals = 0;
     for (const [projectId, actuals] of Object.entries(actualsByProject)) {
       if (projectsMap[projectId]) {
+        projectsWithActuals++;
         (projectsMap[projectId] as Record<string, unknown>).totalActualHours =
           actuals.hours;
         (projectsMap[projectId] as Record<string, unknown>).earliestActualDate =
           actuals.earliestDate;
+      } else {
+        projectsWithoutActuals++;
       }
     }
+    console.log(`BigTime actuals: ${Object.keys(actualsByProject).length} unique projects, ${projectsWithActuals} matched to assignments, ${projectsWithoutActuals} not in assignments`);
 
     // Build results
     const results: ProjectHealth[] = [];
@@ -499,6 +547,11 @@ export async function GET(request: NextRequest) {
         assignmentCount: assignments.length,
         dealCount: pipedriveDeals.length,
         bigTimeEntryCount: filteredBtTime.length,
+        bigTimeYears: yearsToFetch.join(", "),
+        bigTimeProjectsWithActuals: projectsWithActuals,
+        pipedriveFieldKey: btProjectIdKey || "NOT FOUND",
+        matchedDeals,
+        unmatchedDeals,
       },
     });
   } catch (error) {

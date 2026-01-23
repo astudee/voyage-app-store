@@ -49,6 +49,11 @@ interface ApiResponse {
     assignmentCount: number;
     dealCount: number;
     bigTimeEntryCount: number;
+    bigTimeYears?: string;
+    bigTimeProjectsWithActuals?: number;
+    pipedriveFieldKey?: string;
+    matchedDeals?: number;
+    unmatchedDeals?: number;
   };
   error?: string;
 }
@@ -235,9 +240,22 @@ export default function ProjectHealthPage() {
           <>
             {/* Metadata */}
             <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-sm text-slate-600">
-              Data sources: {data.metadata.dealCount} Pipedrive deals |{" "}
-              {data.metadata.assignmentCount} assignments |{" "}
-              {data.metadata.bigTimeEntryCount.toLocaleString()} BigTime entries
+              <div>
+                Data sources: {data.metadata.dealCount} Pipedrive deals |{" "}
+                {data.metadata.assignmentCount} assignments |{" "}
+                {data.metadata.bigTimeEntryCount.toLocaleString()} BigTime entries
+              </div>
+              <div className="mt-1 text-xs">
+                BigTime years: {data.metadata.bigTimeYears} |{" "}
+                Projects with actuals: {data.metadata.bigTimeProjectsWithActuals ?? 0}
+              </div>
+              {data.metadata.pipedriveFieldKey && (
+                <div className="mt-1 text-xs">
+                  Pipedrive BigTime ID field: {data.metadata.pipedriveFieldKey} |{" "}
+                  Matched deals: {data.metadata.matchedDeals ?? 0} |{" "}
+                  Unmatched: {data.metadata.unmatchedDeals ?? 0}
+                </div>
+              )}
             </div>
 
             {/* Summary Metrics */}
