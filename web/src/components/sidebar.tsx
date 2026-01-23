@@ -37,44 +37,45 @@ const navigation = [
   {
     section: "Apps",
     items: [
-      { name: "Project Health Monitor", href: "/apps/project-health" },
-      { name: "Commission Calculator", href: "/apps/commission" },
-      { name: "Email to To File", href: "/apps/email-to-file" },
-      { name: "To File to Vault", href: "/apps/to-file-vault" },
+      { name: "Benefits Calculator", href: "/apps/benefits-calc" },
       { name: "Billable Hours Report", href: "/apps/billable-hours" },
       { name: "Bonus Calculator", href: "/apps/bonus" },
-      { name: "Time Reviewer", href: "/apps/time-reviewer" },
+      { name: "Bookings Tracker", href: "/apps/bookings" },
+      { name: "Commission Calculator", href: "/apps/commission" },
+      { name: "Contract Reviewer", href: "/apps/contract-reviewer" },
+      { name: "Contractor Fee Reviewer", href: "/apps/contractor-fees" },
+      { name: "Email to To File", href: "/apps/email-to-file" },
       { name: "Expense Reviewer", href: "/apps/expense-reviewer" },
-      { name: "Benefits Calculator", href: "/apps/benefits-calc" },
+      { name: "Forecasted Billable Hours", href: "/apps/forecast-hours" },
       { name: "Payroll Calculator", href: "/apps/payroll-calc" },
       { name: "Payroll Helper", href: "/apps/payroll-helper" },
-      { name: "Contractor Fee Reviewer", href: "/apps/contractor-fees" },
-      { name: "Forecasted Billable Hours", href: "/apps/forecast-hours" },
-      { name: "Bookings Tracker", href: "/apps/bookings" },
+      { name: "Project Health Monitor", href: "/apps/project-health" },
       { name: "Resource Checker", href: "/apps/resource-checker" },
       { name: "Revenue Forecaster", href: "/apps/revenue-forecast" },
-      { name: "Contract Reviewer", href: "/apps/contract-reviewer" },
       { name: "Sales Snapshot", href: "/apps/sales-snapshot" },
+      { name: "Time Reviewer", href: "/apps/time-reviewer" },
+      { name: "To File to Vault", href: "/apps/to-file-vault" },
     ],
   },
   {
     section: "Settings",
     items: [
-      { name: "Staff", href: "/settings/staff" },
+      { name: "Assignments", href: "/settings/assignments" },
       { name: "Benefits", href: "/settings/benefits" },
       { name: "Commission Rules", href: "/settings/rules" },
-      { name: "Offsets", href: "/settings/offsets" },
-      { name: "Mapping", href: "/settings/mapping" },
-      { name: "Assignments", href: "/settings/assignments" },
       { name: "Fixed Fee Projects", href: "/settings/fixed-fee" },
+      { name: "Mapping", href: "/settings/mapping" },
+      { name: "Offsets", href: "/settings/offsets" },
+      { name: "Staff", href: "/settings/staff" },
     ],
   },
   {
     section: "Health",
     items: [
+      { name: "BigTime Client Lookup", href: "/health/bigtime" },
       { name: "Connection Health", href: "/health/connection" },
       { name: "QuickBooks Token", href: "/health/quickbooks" },
-      { name: "BigTime Client Lookup", href: "/health/bigtime" },
+      { name: "Snowflake Test", href: "/health/snowflake" },
     ],
   },
 ];
@@ -134,7 +135,7 @@ export function Sidebar() {
             <div key={group.section} className="mb-2">
               <button
                 onClick={() => toggleSection(group.section)}
-                className="flex w-full items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider transition-colors hover:bg-white/10"
+                className="flex w-full items-center justify-between px-4 py-2 text-sm font-bold uppercase tracking-wide transition-colors hover:bg-white/10"
                 style={{ color: brandColors.darkBlue }}
               >
                 <span>{group.section}</span>
@@ -151,7 +152,7 @@ export function Sidebar() {
                       <Link
                         key={item.name}
                         href={item.href}
-                        className="flex items-center px-4 py-2 text-sm transition-colors"
+                        className="flex items-center px-4 py-1.5 text-xs transition-colors"
                         style={{
                           backgroundColor: isActive
                             ? brandColors.darkBlue

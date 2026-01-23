@@ -1,13 +1,13 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-22 (Project Health Monitor fixed + migrated)
+> **Last updated:** 2026-01-23 (Billable Hours Report + Bonus Calculator migrated)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (4/22 apps migrated).
+**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (9/22 apps migrated).
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
@@ -17,13 +17,18 @@
 - **Connection Health Checker** (app 99) migrated to `/health/connection`
 - **QuickBooks Token Refresh** (app 98) migrated to `/health/quickbooks`
 - **BigTime Client Lookup** (app 97) migrated to `/health/bigtime`
+- **Snowflake Test** (app 96) migrated to `/health/snowflake`
 - **Project Health Monitor** (app 14) migrated to `/apps/project-health`
+- **Commission Calculator** (app 01) migrated to `/apps/commission`
+- **Billable Hours Report** (app 04) migrated to `/apps/billable-hours`
+- **Bonus Calculator** (app 05) migrated to `/apps/bonus`
+- **Benefits Calculator** (app 08) migrated to `/apps/benefits-calc`
 
 **What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Priority order:
-1. Commission Calculator - needs BigTime + QuickBooks APIs
-2. Billable Hours Report - needs BigTime API
-3. Time Reviewer - needs BigTime API
-4. Payroll Helper - needs BigTime API
+1. Time Reviewer - needs BigTime API
+2. Payroll Helper - needs BigTime API
+3. Revenue Forecaster - uses assignments data
+4. Bookings Tracker - already have Pipedrive API working
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
@@ -458,6 +463,100 @@ This is where reference files are uploaded for Claude to review:
   - Also fixed NOTES field handling (None vs empty string was causing grouping issues)
   - Now correctly returns all 28 staff assignments across 14 projects
 
+### 2026-01-23 - Snowflake Test & Commission Calculator Migration
+- **Migrated Snowflake Test (app 96)** to Vercel:
+  - Created `/api/snowflake-test` - API to read/write test records to TEST_INPUT table
+  - Created `/health/snowflake` page with:
+    - Text input form to write test records
+    - Display of recent records with timestamp
+    - Refresh and Clear All buttons
+    - Auto-creates TEST_INPUT table if it doesn't exist
+  - Added to sidebar navigation in Health section
+- **Migrated Commission Calculator (app 01)** to Vercel:
+  - Created `/api/commission` - All-in-one API that:
+    - Loads commission rules, offsets, and client name mappings from Snowflake
+    - Fetches QuickBooks consulting income (P&L Detail report, cash basis)
+    - Fetches BigTime time entries (report 284796)
+    - Calculates client commissions from QuickBooks transactions
+    - Calculates delivery & referral commissions from BigTime entries (monthly aggregated)
+    - Applies offsets (salaries, benefits, prior payments)
+    - Returns full ledger, summaries by salesperson, and revenue by client
+  - Created `/api/commission/email` - Email API with Excel attachment via Gmail
+  - Created `/apps/commission` page with:
+    - Year text input (2000-2100 range, future-proof)
+    - Debug log (expandable) showing API data counts
+    - Summary metrics (Total Commission, Total Due, per-salesperson)
+    - Tabbed views: Commission Summary, By Category, Revenue by Client, Full Ledger
+    - Commission Summary groups by client/category/rate (like original spreadsheet)
+    - **Salesperson filter:** View dropdown to filter by individual salesperson
+      - Shows only that person's data in all tabs
+      - Downloads/emails only contain that person's data (for privacy)
+    - **Export options:**
+      - Download Excel (.xlsx with multiple sheets using xlsx library)
+      - Download PDF (opens print dialog for Save as PDF)
+      - Email Report (sends Excel attachment via Gmail API)
+      - All exports respect the salesperson filter
+    - Explanation of commission types in instructions
+  - QuickBooks OAuth token refresh working (rotates automatically on each API call)
+  - **Note:** QuickBooks integration requires valid QB_REFRESH_TOKEN in Vercel env vars
+- **Updated sidebar navigation:**
+  - Section titles (Apps, Settings, Health) now larger and bolder
+  - Subsection items now smaller with tighter spacing
+  - All items alphabetized within each section
+- **Migrated Benefits Calculator (app 08)** to Vercel:
+  - Created `/api/benefits-calc` - API that:
+    - Loads VC_STAFF (active employees) and VC_BENEFITS (benefit plans) from Snowflake
+    - Calculates formula-based costs for STD/LTD based on salary:
+      - STD: `min(salary/52 * 0.6667, 2100) / 10 * 0.18`
+      - LTD: `(salary/12) / 100 * 0.21`
+    - Returns summary, breakdown by benefit type, employee details, and benefits legend
+  - Created `/api/benefits-calc/email` - Email API with Excel attachment via Gmail
+  - Created `/apps/benefits-calc` page with:
+    - Summary cards (Total/Employee/Firm monthly costs)
+    - Tabbed views: Breakdown by Type, Employee Details, Benefits Legend
+    - Employee Details shows all 6 benefit types (Medical, Dental, Vision, STD, LTD, Life)
+    - Legend shows all available benefit codes with descriptions and costs
+    - **Export options:** Download Excel, Download PDF, Email Report
+  - Added to sidebar navigation in Apps section
+- **Migrated Billable Hours Report (app 04)** to Vercel:
+  - Created `/api/billable-hours` - API that:
+    - Fetches BigTime time report data for a date range (report 284796)
+    - Loads active staff from Snowflake VC_STAFF
+    - Groups hours by staff and month
+    - Classifies staff: Active Employee (in VC_STAFF), Contractor (has recent hours), Inactive
+    - Calculates monthly capacity (business days - federal holidays) × 8 hours
+    - Federal holidays hardcoded for 2024-2027
+  - Created `/api/billable-hours/email` - Email with HTML report and Excel attachment
+  - Created `/apps/billable-hours` page with:
+    - Date range selector (start/end month and year)
+    - Metric toggle: Billable Hours vs Billable Revenue ($)
+    - Summary cards (total hours/revenue, employee counts by classification)
+    - Separate tables for Active Employees, Contractors, Inactive
+    - Color coding: Green (≥100% capacity), Yellow (80-99%), Blue (<80%)
+    - Revenue mode: percentile-based coloring (top 25%, 25-50%, bottom 50%)
+    - Capacity Reference table (for hours mode)
+    - **Export options:** Download Excel, Download PDF, Email Report
+- **Migrated Bonus Calculator (app 05)** to Vercel:
+  - Created `/api/bonus` - API that:
+    - Fetches BigTime billable hours YTD
+    - Loads staff config (UTILIZATION_BONUS_TARGET, OTHER_BONUS_TARGET, START_DATE)
+    - Separates regular billable hours from pro bono (project name contains "Pro Bono")
+    - Calculates tier-based bonuses:
+      - Tier 1: ≥1,840 hours → full bonus × (hours / 1,840)
+      - Tier 2: 1,350-1,839 hours → 75% × (hours / 1,840)
+      - Tier 3: <1,350 hours → no bonus
+    - Pro bono hours credit capped at 40 hours
+    - Proration for employees who started mid-year
+    - Projects year-end based on current run rate
+    - Adds employer costs: FICA (7.65%) + 401k match (4%)
+  - Created `/api/bonus/email` - Email with HTML report and Excel attachment
+  - Created `/apps/bonus` page with:
+    - As-of date selector (defaults to today)
+    - Summary cards: YTD Total Cost, Projected Year-End Cost, Progress %
+    - Employee details table with YTD and Projected columns
+    - Tier color coding: Green (Tier 1), Yellow (Tier 2), Blue (Tier 3)
+    - **Export options:** Download Excel, Download PDF, Email Report
+
 ---
 
 ## Notes for Future Sessions
@@ -467,6 +566,7 @@ This is where reference files are uploaded for Claude to review:
 - User prefers simple, working solutions over complex ones
 - **Claude Code** auto-installs on codespace creation via `.devcontainer/devcontainer.json` postCreateCommand
 - **IGNORE THIS BUILD WARNING:** `⚠ The "middleware" file convention is deprecated. Please use "proxy" instead.` - This is a Next.js 16 warning about our `middleware.ts` file. It still works fine. Migration to "proxy" can be done later if needed but is not urgent.
+- **Email reports should include both HTML and Excel:** When emailing reports, always send a nicely formatted HTML email body (matching the PDF styling) along with the Excel attachment. The HTML provides a readable summary while the Excel provides detailed data for analysis. This applies to all calculator/report apps.
 
 ---
 
@@ -739,7 +839,7 @@ All polish items fixed:
 | Snowflake | WORKING | All apps |
 | Pipedrive | WORKING | Bookings, Revenue Forecaster, Project Health |
 | BigTime | WORKING | Most apps (time entries, expenses) |
-| QuickBooks | NOT YET | Commission Calculator |
+| QuickBooks | WORKING | Commission Calculator |
 | Gmail | WORKING | Email to Vault |
 | Google Drive | WORKING (partial) | To File to Vault |
 | Claude/Gemini | WORKING | Contract Reviewer, To File to Vault |
