@@ -106,14 +106,6 @@ export async function GET(request: Request) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const projectsAny = rawProjects as any[];
 
-    // Debug: log sample data to understand field names
-    const sampleClient = clientsAny[0];
-    const sampleProject = projectsAny[0];
-    console.log("Sample client fields:", sampleClient ? Object.keys(sampleClient) : "none");
-    console.log("Sample client data:", JSON.stringify(sampleClient, null, 2));
-    console.log("Sample project fields:", sampleProject ? Object.keys(sampleProject) : "none");
-    console.log("Sample project data:", JSON.stringify(sampleProject, null, 2));
-
     // Build client lookup map (id -> name) - try multiple possible ID fields
     const clientLookup = new Map<number, string>();
     for (const c of clientsAny) {
@@ -123,7 +115,6 @@ export async function GET(request: Request) {
         clientLookup.set(Number(id), String(name));
       }
     }
-    console.log("Client lookup size:", clientLookup.size);
 
     // Filter and transform clients - check various field name patterns
     const clients: Client[] = clientsAny
@@ -189,16 +180,6 @@ export async function GET(request: Request) {
       clients,
       projects,
       includeInactive,
-      // Debug info
-      debug: {
-        sampleClientFields: sampleClient ? Object.keys(sampleClient) : [],
-        sampleProjectFields: sampleProject ? Object.keys(sampleProject) : [],
-        sampleClient,
-        sampleProject,
-        clientLookupSize: clientLookup.size,
-        rawClientCount: clientsAny.length,
-        rawProjectCount: projectsAny.length,
-      },
     });
   } catch (error) {
     console.error("BigTime clients fetch error:", error);

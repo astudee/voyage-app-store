@@ -120,7 +120,7 @@ export default function BigTimeClientLookupPage() {
                 className="w-4 h-4 rounded border-gray-300"
               />
               <span className="text-sm text-slate-700">
-                Include inactive clients/projects
+                Include inactive projects
               </span>
             </label>
 
@@ -141,8 +141,8 @@ export default function BigTimeClientLookupPage() {
               Click the button to fetch all BigTime clients and projects with
               their IDs.
               {includeInactive
-                ? " Will include inactive clients and projects."
-                : " Will only show active clients and projects."}
+                ? " Will include inactive projects."
+                : " Will only show active projects."}
             </p>
           )}
         </div>
@@ -296,12 +296,11 @@ export default function BigTimeClientLookupPage() {
                 <h3 className="font-medium text-slate-700">Options:</h3>
                 <ul className="list-disc list-inside mt-2 space-y-1 ml-2">
                   <li>
-                    <strong>Include inactive:</strong> Shows all clients/projects
+                    <strong>Include inactive:</strong> Shows all projects
                     including archived ones
                   </li>
                   <li>
-                    <strong>Default:</strong> Only shows active clients and
-                    projects
+                    <strong>Default:</strong> Only shows active projects
                   </li>
                 </ul>
               </div>
