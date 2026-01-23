@@ -30,28 +30,23 @@ interface ForecastData {
 
 type MetricType = "hours" | "revenue";
 
-function generateMonthOptions(): { label: string; value: string }[] {
-  const options: { label: string; value: string }[] = [];
+function getDefaultMonths(): { start: string; end: string } {
   const today = new Date();
-  const current = new Date(today.getFullYear(), today.getMonth(), 1);
-
-  for (let i = 0; i < 36; i++) {
-    const value = current.toISOString().slice(0, 7);
-    const label = current.toLocaleDateString("en-US", { year: "numeric", month: "short" });
-    options.push({ label, value });
-    current.setMonth(current.getMonth() + 1);
-  }
-
-  return options;
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const end = new Date(today.getFullYear(), today.getMonth() + 12, 1);
+  return {
+    start: start.toISOString().slice(0, 7),
+    end: end.toISOString().slice(0, 7),
+  };
 }
 
 export default function ForecastedHoursPage() {
-  const monthOptions = generateMonthOptions();
+  const defaults = getDefaultMonths();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ForecastData | null>(null);
 
-  const [startMonth, setStartMonth] = useState(monthOptions[0].value);
-  const [endMonth, setEndMonth] = useState(monthOptions[12]?.value || monthOptions[monthOptions.length - 1].value);
+  const [startMonth, setStartMonth] = useState(defaults.start);
+  const [endMonth, setEndMonth] = useState(defaults.end);
   const [metricType, setMetricType] = useState<MetricType>("hours");
 
   const generateForecast = async () => {
@@ -195,29 +190,23 @@ export default function ForecastedHoursPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Start Month
               </label>
-              <select
+              <input
+                type="month"
                 value={startMonth}
                 onChange={(e) => setStartMonth(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2"
-              >
-                {monthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 End Month
               </label>
-              <select
+              <input
+                type="month"
                 value={endMonth}
                 onChange={(e) => setEndMonth(e.target.value)}
                 className="w-full rounded-md border border-gray-300 px-3 py-2"
-              >
-                {monthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                ))}
-              </select>
+              />
             </div>
           </div>
 

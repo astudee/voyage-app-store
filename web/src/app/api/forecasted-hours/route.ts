@@ -87,7 +87,10 @@ export async function GET(request: NextRequest) {
 
     for (const assignment of assignmentRows) {
       const staff = assignment.STAFF_NAME;
-      const monthKey = assignment.MONTH_DATE.slice(0, 7); // Get YYYY-MM from date
+      // Handle MONTH_DATE as either Date object or string
+      const monthKey = assignment.MONTH_DATE instanceof Date
+        ? assignment.MONTH_DATE.toISOString().slice(0, 7)
+        : String(assignment.MONTH_DATE).slice(0, 7); // Get YYYY-MM from date
       const value = metricType === "revenue"
         ? (assignment.ALLOCATED_HOURS || 0) * (assignment.BILL_RATE || 0)
         : (assignment.ALLOCATED_HOURS || 0);
