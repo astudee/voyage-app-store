@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_MODEL = "gemini-2.0-flash";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
 // GET - Test AI API connectivity

@@ -3,7 +3,7 @@ import { uploadToR2 } from "@/lib/r2";
 import { query, execute } from "@/lib/snowflake";
 import { createHash, randomUUID } from "crypto";
 
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_MODEL = "gemini-2.0-flash";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
 // Classification prompt for AI
