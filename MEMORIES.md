@@ -687,6 +687,18 @@ This is where reference files are uploaded for Claude to review:
     - AI Status column showing Contract/Document classification
     - Confidence percentage display
     - Review link to new review page
+  - **AI Classification Field Naming Conventions:**
+    - CONTRACTOR: `counterparty` = company name, `sub_entity` = individual name (Last, First)
+    - COMPANY: `counterparty` = client name, `sub_entity` = department/division
+    - EMPLOYEE: `counterparty` = employee name (Last, First), `sub_entity` = not used
+    - DOCUMENT: `issuer_name` = top-level entity, `sub_entity` = agency/department
+    - Invoice types: VENDOR (bill received), CLIENT (invoice sent), CONTRACTOR
+  - **Automatic AI Processing on Upload:**
+    - PDF files are automatically processed by AI during upload
+    - Gemini (primary) or Claude (fallback) classifies the document
+    - Document record is updated with AI-extracted attributes before returning
+    - Non-PDF files skip AI processing (upload still succeeds)
+    - AI processing failures are non-fatal (document still uploads)
 
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
