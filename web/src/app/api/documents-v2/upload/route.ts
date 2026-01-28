@@ -134,12 +134,18 @@ interface DocumentAnalysis {
 type Analysis = (ContractAnalysis | DocumentAnalysis) & { _aiUsed?: string };
 
 async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
+  console.log("[upload] analyzeWithGemini called");
+  console.log("[upload] GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+  console.log("[upload] GEMINI_API_KEY length:", process.env.GEMINI_API_KEY?.length || 0);
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.log("[upload] Gemini API key not configured");
+    console.log("[upload] Gemini API key not configured - returning null");
     return null;
   }
 
+  console.log("[upload] PDF base64 length:", pdfBase64.length);
+  console.log("[upload] Gemini model:", GEMINI_MODEL);
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
 
   const payload = {
@@ -202,12 +208,17 @@ async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
 }
 
 async function analyzeWithClaude(pdfBase64: string): Promise<Analysis | null> {
+  console.log("[upload] analyzeWithClaude called");
+  console.log("[upload] ANTHROPIC_API_KEY exists:", !!process.env.ANTHROPIC_API_KEY);
+  console.log("[upload] ANTHROPIC_API_KEY length:", process.env.ANTHROPIC_API_KEY?.length || 0);
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.log("[upload] Anthropic API key not configured");
+    console.log("[upload] Anthropic API key not configured - returning null");
     return null;
   }
 
+  console.log("[upload] Claude model:", CLAUDE_MODEL);
   const url = "https://api.anthropic.com/v1/messages";
 
   const payload = {
@@ -274,12 +285,29 @@ async function analyzeWithClaude(pdfBase64: string): Promise<Analysis | null> {
 }
 
 async function analyzeFile(pdfBase64: string): Promise<Analysis | null> {
+  console.log("[upload] analyzeFile called");
+  console.log("[upload] Environment vars check:");
+  console.log("[upload]   GEMINI_API_KEY:", process.env.GEMINI_API_KEY ? "SET" : "NOT SET");
+  console.log("[upload]   ANTHROPIC_API_KEY:", process.env.ANTHROPIC_API_KEY ? "SET" : "NOT SET");
+
   // Try Gemini first (faster, cheaper)
+  console.log("[upload] Trying Gemini first...");
   const geminiResult = await analyzeWithGemini(pdfBase64);
-  if (geminiResult) return geminiResult;
+  if (geminiResult) {
+    console.log("[upload] Gemini succeeded, returning result");
+    return geminiResult;
+  }
 
   // Fall back to Claude
-  return analyzeWithClaude(pdfBase64);
+  console.log("[upload] Gemini failed or not configured, trying Claude...");
+  const claudeResult = await analyzeWithClaude(pdfBase64);
+  if (claudeResult) {
+    console.log("[upload] Claude succeeded, returning result");
+    return claudeResult;
+  }
+
+  console.log("[upload] Both Gemini and Claude failed");
+  return null;
 }
 
 async function updateDocumentWithAIResults(
