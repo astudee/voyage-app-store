@@ -28,15 +28,12 @@ interface Document {
   counterparty: string | null;
   sub_entity: string | null;
   executed_date: string | null;
-  contractor_company: string | null;
-  contractor_individual: string | null;
   is_corp_to_corp: boolean | null;
   // Document fields
   issuer_category: string | null;
   issuer_name: string | null;
   country: string | null;
   state: string | null;
-  agency_name: string | null;
   document_type: string | null;
   period_end_date: string | null;
   letter_date: string | null;
@@ -291,21 +288,48 @@ export default function ReviewPage({ params }: PageProps) {
                     </div>
 
                     <div>
-                      <Label>Counterparty</Label>
+                      <Label>
+                        {formData.document_category === "CONTRACTOR"
+                          ? "Contractor Company"
+                          : formData.document_category === "EMPLOYEE"
+                          ? "Employee Name"
+                          : "Counterparty"}
+                      </Label>
                       <Input
                         value={formData.counterparty || ""}
                         onChange={(e) => handleFieldChange("counterparty", e.target.value || null)}
-                        placeholder="Company name or Last, First"
+                        placeholder={
+                          formData.document_category === "CONTRACTOR"
+                            ? "Company name (e.g., Acme Consulting LLC)"
+                            : formData.document_category === "EMPLOYEE"
+                            ? "Last, First"
+                            : "Company name or Last, First"
+                        }
                       />
                     </div>
 
                     <div>
-                      <Label>Sub-Entity (optional)</Label>
+                      <Label>
+                        {formData.document_category === "CONTRACTOR"
+                          ? "Individual Name"
+                          : formData.document_category === "COMPANY"
+                          ? "Sub-Entity (optional)"
+                          : "Sub-Entity"}
+                      </Label>
                       <Input
                         value={formData.sub_entity || ""}
                         onChange={(e) => handleFieldChange("sub_entity", e.target.value || null)}
-                        placeholder="Department or division"
+                        placeholder={
+                          formData.document_category === "CONTRACTOR"
+                            ? "Last, First (e.g., Shah, Alam)"
+                            : "Department or division"
+                        }
                       />
+                      {formData.document_category === "CONTRACTOR" && (
+                        <p className="mt-1 text-xs text-gray-500">
+                          Individual contractor name for searchability
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -318,49 +342,32 @@ export default function ReviewPage({ params }: PageProps) {
                     </div>
 
                     {formData.document_category === "CONTRACTOR" && (
-                      <>
-                        <div>
-                          <Label>Contractor Company</Label>
-                          <Input
-                            value={formData.contractor_company || ""}
-                            onChange={(e) => handleFieldChange("contractor_company", e.target.value || null)}
-                          />
-                        </div>
-                        <div>
-                          <Label>Contractor Individual</Label>
-                          <Input
-                            value={formData.contractor_individual || ""}
-                            onChange={(e) => handleFieldChange("contractor_individual", e.target.value || null)}
-                            placeholder="Last, First"
-                          />
-                        </div>
-                        <div>
-                          <Label>Corp-to-Corp?</Label>
-                          <Select
-                            value={
-                              formData.is_corp_to_corp === true
-                                ? "yes"
-                                : formData.is_corp_to_corp === false
-                                ? "no"
-                                : ""
-                            }
-                            onValueChange={(v) =>
-                              handleFieldChange(
-                                "is_corp_to_corp",
-                                v === "yes" ? true : v === "no" ? false : null
-                              )
-                            }
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="yes">Yes</SelectItem>
-                              <SelectItem value="no">No</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </>
+                      <div>
+                        <Label>Corp-to-Corp?</Label>
+                        <Select
+                          value={
+                            formData.is_corp_to_corp === true
+                              ? "yes"
+                              : formData.is_corp_to_corp === false
+                              ? "no"
+                              : ""
+                          }
+                          onValueChange={(v) =>
+                            handleFieldChange(
+                              "is_corp_to_corp",
+                              v === "yes" ? true : v === "no" ? false : null
+                            )
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="yes">Yes</SelectItem>
+                            <SelectItem value="no">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     )}
 
                     <div>
@@ -404,7 +411,27 @@ export default function ReviewPage({ params }: PageProps) {
                       <Input
                         value={formData.issuer_name || ""}
                         onChange={(e) => handleFieldChange("issuer_name", e.target.value || null)}
-                        placeholder="Bank or company name"
+                        placeholder={
+                          formData.issuer_category === "GOVERNMENT_STATE"
+                            ? "State of {StateName}"
+                            : formData.issuer_category === "GOVERNMENT_FEDERAL"
+                            ? "US Government"
+                            : "Bank or company name"
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Sub-Entity (optional)</Label>
+                      <Input
+                        value={formData.sub_entity || ""}
+                        onChange={(e) => handleFieldChange("sub_entity", e.target.value || null)}
+                        placeholder={
+                          formData.issuer_category === "GOVERNMENT_STATE" ||
+                          formData.issuer_category === "GOVERNMENT_FEDERAL"
+                            ? "Agency or department name"
+                            : "Division or department"
+                        }
                       />
                     </div>
 
@@ -438,13 +465,6 @@ export default function ReviewPage({ params }: PageProps) {
                             />
                           </div>
                         )}
-                        <div>
-                          <Label>Agency Name</Label>
-                          <Input
-                            value={formData.agency_name || ""}
-                            onChange={(e) => handleFieldChange("agency_name", e.target.value || null)}
-                          />
-                        </div>
                       </>
                     )}
 
@@ -498,8 +518,9 @@ export default function ReviewPage({ params }: PageProps) {
                               <SelectValue placeholder="Select type" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="RECEIVABLE">Receivable (we sent it)</SelectItem>
-                              <SelectItem value="PAYABLE">Payable (we received it)</SelectItem>
+                              <SelectItem value="VENDOR">Vendor (bill we received)</SelectItem>
+                              <SelectItem value="CLIENT">Client (invoice we sent)</SelectItem>
+                              <SelectItem value="CONTRACTOR">Contractor (contractor invoice)</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>

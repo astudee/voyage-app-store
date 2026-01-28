@@ -38,16 +38,29 @@ If CONTRACT, return JSON:
 {
   "is_contract": true,
   "document_category": "EMPLOYEE" | "CONTRACTOR" | "COMPANY",
-  "counterparty": "Company Name or Last, First",
-  "sub_entity": "Department or division name if applicable, otherwise null",
+  "counterparty": "See rules below",
+  "sub_entity": "See rules below",
   "executed_date": "YYYY-MM-DD",
   "contract_type": "See codes below",
   "description": "Brief description or empty string",
-  "contractor_company": "For contractors: company name",
-  "contractor_individual": "For contractors: Last, First format",
-  "is_corp_to_corp": true/false or null,
+  "is_corp_to_corp": true/false or null (for CONTRACTOR only),
   "confidence_score": 0.0 to 1.0
 }
+
+**COUNTERPARTY AND SUB_ENTITY RULES BY CATEGORY:**
+
+For COMPANY contracts:
+- counterparty = Client/partner company name (e.g., "State of North Dakota", "Acme Corp")
+- sub_entity = Department or division if mentioned (e.g., "Department of Workforce Safety Insurance"), otherwise null
+
+For CONTRACTOR contracts:
+- counterparty = Contractor's company name (e.g., "Acme Consulting LLC")
+- sub_entity = Individual contractor name in "Last, First" format (e.g., "Shah, Alam")
+- This allows searching by either company OR individual name
+
+For EMPLOYEE contracts:
+- counterparty = Employee name in "Last, First" format (e.g., "Smith, John")
+- sub_entity = null (not used for employees)
 
 CONTRACT TYPE CODES:
 - COMPANY: CSA, MSA, SOW, NDA, TA (Teaming Agreement), RA (Referral Agreement), MOD# (modification number)
@@ -58,21 +71,27 @@ If DOCUMENT, return JSON:
 {
   "is_contract": false,
   "issuer_category": "BANK" | "CREDIT_CARD" | "UTILITY" | "INSURER" | "GOVERNMENT_STATE" | "GOVERNMENT_FEDERAL" | "INVOICE" | "OTHER",
-  "issuer_name": "Bank/company name",
+  "issuer_name": "Top-level entity name (bank, company, or government entity)",
+  "sub_entity": "Department, agency, or division name if applicable",
   "country": "US or CA or other",
-  "state": "Full state name for state government docs",
-  "agency_name": "Government agency name if applicable",
+  "state": "Full state name (for GOVERNMENT_STATE only)",
   "document_type": "Short description (e.g., 'Statement', 'Tax Notice', 'Invoice')",
   "period_end_date": "YYYY-MM-DD or null",
   "letter_date": "YYYY-MM-DD or null",
   "account_last4": "Last 4 digits if applicable",
-  "employee_name": "Last, First if this relates to an employee",
-  "invoice_type": "For invoices: 'RECEIVABLE' (we sent it) or 'PAYABLE' (we received it)",
+  "employee_name": "Last, First if this relates to a specific employee",
+  "invoice_type": "For invoices: 'VENDOR' (bill from vendor), 'CLIENT' (invoice to client), or 'CONTRACTOR' (contractor invoice)",
   "amount": numeric amount if this is an invoice/bill,
   "currency": "USD" or other currency code,
   "due_date": "YYYY-MM-DD if applicable",
   "confidence_score": 0.0 to 1.0
 }
+
+**DOCUMENT ISSUER_NAME AND SUB_ENTITY RULES:**
+- For GOVERNMENT_STATE: issuer_name = "State of {StateName}", sub_entity = specific agency/department
+- For GOVERNMENT_FEDERAL: issuer_name = "US Government" or country name, sub_entity = specific agency (e.g., "IRS", "SSA")
+- For BANK/CREDIT_CARD/UTILITY/INSURER: issuer_name = company name, sub_entity = division if applicable
+- For INVOICE: issuer_name = vendor/client company name
 
 CRITICAL RULES:
 1. Use STRICT "Last, First" format for person names (e.g., "Smith, John" not "John Smith")
@@ -80,7 +99,6 @@ CRITICAL RULES:
 3. For contracts, the executed_date is the latest signature date
 4. Do NOT duplicate information across fields
 5. The confidence_score should reflect how certain you are about the classification (1.0 = very certain)
-6. For government agencies, counterparty should be the government entity (e.g., "State of North Dakota") and sub_entity should be the specific department (e.g., "Department of Workforce Safety Insurance")
 
 Return ONLY valid JSON, no markdown formatting.`;
 }
@@ -93,8 +111,6 @@ interface ContractAnalysis {
   executed_date?: string;
   contract_type?: string;
   description?: string;
-  contractor_company?: string;
-  contractor_individual?: string;
   is_corp_to_corp?: boolean | null;
   confidence_score?: number;
 }
@@ -103,9 +119,9 @@ interface DocumentAnalysis {
   is_contract: false;
   issuer_category?: string;
   issuer_name?: string;
+  sub_entity?: string;
   country?: string;
   state?: string;
-  agency_name?: string;
   document_type?: string;
   period_end_date?: string;
   letter_date?: string;
@@ -357,12 +373,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       updateFields.push("EXECUTED_DATE = ?");
       updateValues.push(ca.executed_date ?? null);
 
-      updateFields.push("CONTRACTOR_COMPANY = ?");
-      updateValues.push(ca.contractor_company ?? null);
-
-      updateFields.push("CONTRACTOR_INDIVIDUAL = ?");
-      updateValues.push(ca.contractor_individual ?? null);
-
       updateFields.push("IS_CORP_TO_CORP = ?");
       updateValues.push(ca.is_corp_to_corp ?? null);
 
@@ -376,6 +386,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       updateFields.push("ISSUER_NAME = ?");
       updateValues.push(da.issuer_name ?? null);
 
+      updateFields.push("SUB_ENTITY = ?");
+      updateValues.push(da.sub_entity ?? null);
+
       updateFields.push("DOCUMENT_TYPE = ?");
       updateValues.push(da.document_type ?? null);
 
@@ -384,9 +397,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
       updateFields.push("STATE = ?");
       updateValues.push(da.state ?? null);
-
-      updateFields.push("AGENCY_NAME = ?");
-      updateValues.push(da.agency_name ?? null);
 
       updateFields.push("PERIOD_END_DATE = ?");
       updateValues.push(da.period_end_date ?? null);
