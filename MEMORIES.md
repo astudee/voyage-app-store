@@ -665,6 +665,29 @@ This is where reference files are uploaded for Claude to review:
 
 - Added Badge component via shadcn/ui
 
+- **Phase 2: AI Processing & Review Workflow:**
+  - Created `/api/documents-v2/[id]/process` - AI processing endpoint:
+    - Downloads PDF from R2
+    - Sends to Gemini (primary) with classification prompt
+    - Falls back to Claude if Gemini fails (429 quota)
+    - Updates document record with extracted attributes
+    - Supports both CONTRACT and DOCUMENT classification
+  - Created `/api/documents-v2/[id]/view-url` - Generates signed R2 URLs for PDF viewing
+  - Created `/documents-v2/review/[id]` - Review page with:
+    - Split-screen layout: PDF preview (left) + edit form (right)
+    - Editable fields for all AI-extracted attributes
+    - Contract fields: category, type, counterparty, sub_entity, executed_date, etc.
+    - Document fields: issuer_category, issuer_name, document_type, amount, etc.
+    - Approve & Archive button (sets status to 'archived')
+    - Delete button (soft delete)
+    - AI confidence score and model used displayed
+  - Updated queue page with:
+    - "Process" button for individual documents
+    - "Process All" button for batch processing
+    - AI Status column showing Contract/Document classification
+    - Confidence percentage display
+    - Review link to new review page
+
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
   - Created `/api/snowflake-test` - API to read/write test records to TEST_INPUT table
