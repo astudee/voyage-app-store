@@ -40,7 +40,6 @@ If CONTRACT, return JSON:
   "executed_date": "YYYY-MM-DD",
   "contract_type": "See codes below",
   "description": "Brief description or empty string",
-  "is_corp_to_corp": true/false or null (for CONTRACTOR only),
   "confidence_score": 0.0 to 1.0
 }
 
@@ -108,7 +107,6 @@ interface ContractAnalysis {
   executed_date?: string;
   contract_type?: string;
   description?: string;
-  is_corp_to_corp?: boolean | null;
   confidence_score?: number;
 }
 
@@ -348,9 +346,6 @@ async function updateDocumentWithAIResults(
 
     updateFields.push("EXECUTED_DATE = ?");
     updateValues.push(ca.executed_date ?? null);
-
-    updateFields.push("IS_CORP_TO_CORP = ?");
-    updateValues.push(ca.is_corp_to_corp ?? null);
 
     updateFields.push("DESCRIPTION = ?");
     updateValues.push(ca.description ?? null);

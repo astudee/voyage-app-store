@@ -28,7 +28,6 @@ interface Document {
   counterparty: string | null;
   sub_entity: string | null;
   executed_date: string | null;
-  is_corp_to_corp: boolean | null;
   // Document fields
   issuer_category: string | null;
   issuer_name: string | null;
@@ -340,35 +339,6 @@ export default function ReviewPage({ params }: PageProps) {
                         onChange={(e) => handleFieldChange("executed_date", e.target.value || null)}
                       />
                     </div>
-
-                    {formData.document_category === "CONTRACTOR" && (
-                      <div>
-                        <Label>Corp-to-Corp?</Label>
-                        <Select
-                          value={
-                            formData.is_corp_to_corp === true
-                              ? "yes"
-                              : formData.is_corp_to_corp === false
-                              ? "no"
-                              : ""
-                          }
-                          onValueChange={(v) =>
-                            handleFieldChange(
-                              "is_corp_to_corp",
-                              v === "yes" ? true : v === "no" ? false : null
-                            )
-                          }
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="yes">Yes</SelectItem>
-                            <SelectItem value="no">No</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    )}
 
                     <div>
                       <Label>Description (optional)</Label>
