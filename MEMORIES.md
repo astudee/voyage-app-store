@@ -1,7 +1,7 @@
 # Voyage App Store - Project Memories
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-23 (18/22 apps migrated + Jan 2025 assignments imported)
+> **Last updated:** 2026-01-28 (Document Manager 2.0 Phase 1 - R2 storage + basic upload/queue)
 
 ---
 
@@ -67,7 +67,7 @@
 
 ### Phase 1: Google Sheets → Snowflake Migration [COMPLETED]
 - Migrated configuration data from Google Sheets to Snowflake
-- Created 7 core tables:
+- Created 8 core tables:
   - `VC_STAFF` - Employee data (25 rows)
   - `VC_BENEFITS` - Benefits plans (43 rows)
   - `VC_COMMISSION_RULES` - Commission calculations (19 rows)
@@ -76,6 +76,7 @@
   - `VC_STAFF_ASSIGNMENTS` - Project allocations
   - `VC_FIXED_FEE_REVENUE` - Fixed-fee project revenue
   - `VC_PROJECTS` - Project data
+  - `VC_CLIENT_STATE_MAPPING` - Client-to-state associations by year (for revenue apportionment)
 - Connection tested and working as of 2026-01-22
 
 ### Phase 2: Config Tools in Vercel [COMPLETE]
@@ -305,6 +306,8 @@ This is where reference files are uploaded for Claude to review:
 - `POST /api/vercel/deploy` - Trigger production redeploy (requires VERCEL_TOKEN)
 - `GET /api/bigtime/clients?years=N` - Fetch BigTime clients and projects (N years of history)
 - `GET /api/project-health?status=X` - Fetch project health data (combines Pipedrive, Snowflake, BigTime)
+- `GET/POST /api/client-states` - Client-to-state mappings (for revenue apportionment)
+- `GET /api/reports/revenue-by-client?year=YYYY` - Revenue by client report from QuickBooks
 
 ---
 
@@ -594,6 +597,28 @@ This is where reference files are uploaded for Claude to review:
   - Eye icon changes between open (visible) and slashed (hidden) states
   - Hover effect on toggle button for better UX
 
+### 2026-01-25 - Revenue by Client Report with State Apportionment
+- **Created ad-hoc Revenue by Client report** at `/reports/revenue-by-client`:
+  - Fetches QuickBooks Consulting Income for a given year
+  - Groups transactions by client with name mapping applied
+  - Created new Snowflake table `VC_CLIENT_STATE_MAPPING` to store client-state associations:
+    - Columns: CLIENT_NAME, YEAR, STATE_CODE (2-letter), CREATED_AT, UPDATED_AT
+    - Primary key on CLIENT_NAME + YEAR (so same client can be in different states different years)
+  - Created `/api/client-states` endpoint (GET/POST) for managing state mappings
+  - Created `/api/reports/revenue-by-client` endpoint
+  - UI features:
+    - Summary cards: Total Revenue, Clients, Transactions, Avg per Client, Unassigned States
+    - **Revenue by State summary table** showing apportioned revenue with % breakdown
+    - **Client table with State dropdown** - select state for each client, auto-saves
+    - Unassigned clients highlighted in orange
+    - Expandable rows to see transaction details
+    - CSV download includes both client data and state summary
+    - **Sortable columns** - click column headers to sort (default: by revenue desc)
+    - Sort indicators (arrows) show current sort column and direction
+    - "Unassigned" always stays at bottom of state table regardless of sort
+- Added to Apps section in sidebar as "Revenue Apportionment"
+- Fixed sidebar missing from reports page (wrapped with AppLayout component)
+
 ### 2026-01-23 - Sales Snapshot Chart Enhancement
 - **Added Recharts pipeline chart** to Sales Snapshot app:
   - Installed `recharts` library for data visualization
@@ -608,6 +633,37 @@ This is where reference files are uploaded for Claude to review:
     - Legend in top right
     - Title with current date
   - Fixed TypeScript type issues with Recharts formatters
+
+### 2026-01-28 - Document Manager 2.0 Phase 1 Implementation
+- **Infrastructure Setup:**
+  - Created R2 utility at `src/lib/r2.ts` with upload, download, list, delete, and signed URL functions
+  - Uses AWS SDK S3 client (R2 is S3-compatible)
+  - Installed `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` packages
+
+- **API Routes Created:**
+  - `GET/POST /api/documents-v2` - List documents with filtering, create document records
+  - `GET/PUT/DELETE /api/documents-v2/[id]` - Get, update, soft/hard delete documents
+  - `POST /api/documents-v2/upload` - Upload file to R2, create Snowflake record with SHA-256 hash
+
+- **Pages Created:**
+  - `/documents-v2` - Redirects to queue
+  - `/documents-v2/queue` - Lists documents with status 'pending_review', shows summary cards
+  - `/documents-v2/upload` - Drag-drop file upload with duplicate detection
+  - `/documents-v2/archive` - Placeholder for future archive browsing
+
+- **Key Features:**
+  - Duplicate detection via SHA-256 file hash
+  - Files stored in R2 at `to-file/{uuid}.{ext}`
+  - Soft delete with 30-day retention before permanent deletion
+  - Document records stored in Snowflake DOCUMENTS table
+
+- **Environment Variables Required:**
+  - CLOUDFLARE_ACCOUNT_ID
+  - CLOUDFLARE_ACCESS_KEY_ID
+  - CLOUDFLARE_SECRET_ACCESS_KEY
+  - CLOUDFLARE_BUCKET_NAME=voyage-documents
+
+- Added Badge component via shadcn/ui
 
 ### 2026-01-23 - Snowflake Test & Commission Calculator Migration
 - **Migrated Snowflake Test (app 96)** to Vercel:
