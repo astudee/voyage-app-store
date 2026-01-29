@@ -16,7 +16,7 @@ interface Assignment {
 interface FixedFeeEntry {
   PROJECT_ID: number;
   MONTH_DATE: string | Date;
-  REVENUE: number;
+  REVENUE_AMOUNT: number;
 }
 
 interface PipedriveDeal {
@@ -126,9 +126,9 @@ async function fetchAssignments(): Promise<Assignment[]> {
 // Fetch fixed fee entries from Snowflake
 async function fetchFixedFee(): Promise<FixedFeeEntry[]> {
   const sql = `
-    SELECT PROJECT_ID, MONTH_DATE, REVENUE
-    FROM VC_FIXED_FEE
-    WHERE REVENUE > 0
+    SELECT PROJECT_ID, MONTH_DATE, REVENUE_AMOUNT
+    FROM VC_FIXED_FEE_REVENUE
+    WHERE REVENUE_AMOUNT > 0
   `;
   try {
     return await query<FixedFeeEntry>(sql);
@@ -363,7 +363,7 @@ export async function GET(request: NextRequest) {
       if (!fixedFeeLookup.has(projectId)) {
         fixedFeeLookup.set(projectId, new Map());
       }
-      fixedFeeLookup.get(projectId)!.set(month, entry.REVENUE);
+      fixedFeeLookup.get(projectId)!.set(month, entry.REVENUE_AMOUNT);
     }
 
     // Section 1: Hours-Based Revenue
