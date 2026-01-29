@@ -54,6 +54,12 @@ interface BookingData {
   wonTime: string;
 }
 
+interface ActualsData {
+  projectId: string;
+  staffActuals: { staffName: string; months: Record<string, number> }[];
+  months: string[];
+}
+
 export default function AssignmentsSettingsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
@@ -74,6 +80,8 @@ export default function AssignmentsSettingsPage() {
   const [yearError, setYearError] = useState<string>("");
   const [bookingData, setBookingData] = useState<BookingData | null>(null);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [actualsData, setActualsData] = useState<ActualsData | null>(null);
+  const [actualsLoading, setActualsLoading] = useState(false);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -133,6 +141,28 @@ export default function AssignmentsSettingsPage() {
     }
   }, []);
 
+  // Fetch actuals from BigTime
+  const fetchActuals = useCallback(async (projectId: string) => {
+    setActualsLoading(true);
+    try {
+      const response = await fetch(`/api/assignments/actuals?projectId=${projectId}`);
+      if (response.ok) {
+        const data: ActualsData = await response.json();
+        setActualsData(data);
+        return data;
+      } else {
+        setActualsData(null);
+        return null;
+      }
+    } catch (error) {
+      console.error("Error fetching actuals:", error);
+      setActualsData(null);
+      return null;
+    } finally {
+      setActualsLoading(false);
+    }
+  }, []);
+
   // Fetch assignments when project is selected
   const fetchAssignments = useCallback(async (projectId: string) => {
     if (!projectId) return;
@@ -157,14 +187,43 @@ export default function AssignmentsSettingsPage() {
       setSelectedProject(project || null);
       fetchAssignments(selectedProjectId);
       fetchBookingData(selectedProjectId);
+      fetchActuals(selectedProjectId);
     } else {
       setSelectedProject(null);
       setAssignments([]);
       setStaffRows([]);
       setMonths([]);
       setBookingData(null);
+      setActualsData(null);
     }
-  }, [selectedProjectId, projects, fetchAssignments, fetchBookingData]);
+  }, [selectedProjectId, projects, fetchAssignments, fetchBookingData, fetchActuals]);
+
+  // Auto-add missing months from actuals to the estimates table
+  useEffect(() => {
+    if (actualsData && actualsData.months.length > 0) {
+      const actualsMonths = actualsData.months;
+      const missingMonths = actualsMonths.filter((m) => !months.includes(m));
+
+      if (missingMonths.length > 0) {
+        // Add missing months and sort
+        const updatedMonths = [...months, ...missingMonths].sort();
+        setMonths(updatedMonths);
+
+        // Add empty entries for all staff rows for new months
+        setStaffRows((prev) =>
+          prev.map((row) => {
+            const newMonthsData = { ...row.months };
+            for (const m of missingMonths) {
+              if (!newMonthsData[m]) {
+                newMonthsData[m] = { assignmentId: null, hours: 0 };
+              }
+            }
+            return { ...row, months: newMonthsData };
+          })
+        );
+      }
+    }
+  }, [actualsData, months]);
 
   // Process flat assignment data into grid structure
   const processAssignments = (data: Assignment[]) => {
@@ -707,6 +766,83 @@ export default function AssignmentsSettingsPage() {
                   )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Actuals Table */}
+            <div className="mt-8">
+              <h2 className="text-xl font-semibold mb-2">Actual Hours (BigTime)</h2>
+              <p className="text-sm text-gray-500 mb-4">
+                Actual hours logged in BigTime for this project. Read-only.
+              </p>
+
+              {actualsLoading ? (
+                <div className="rounded-md border p-8 text-center text-gray-500">
+                  Loading actuals...
+                </div>
+              ) : actualsData && actualsData.staffActuals.length > 0 ? (
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="text-sm border-collapse">
+                    <thead className="bg-blue-50">
+                      <tr>
+                        <th className="sticky left-0 z-10 bg-blue-50 w-[180px] min-w-[180px] px-3 py-3 text-left font-medium border-r">
+                          Staff Member
+                        </th>
+                        {months.map((month) => (
+                          <th key={month} className="w-[85px] min-w-[85px] px-2 py-3 text-center font-medium">
+                            {formatMonth(month)}
+                          </th>
+                        ))}
+                        <th className="w-[90px] min-w-[90px] px-2 py-3 text-right font-medium">Total Hrs</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actualsData.staffActuals.map((staff) => {
+                        const totalHours = Object.values(staff.months).reduce((sum, h) => sum + h, 0);
+                        return (
+                          <tr key={staff.staffName} className="border-t hover:bg-blue-50/50">
+                            <td className="sticky left-0 z-10 bg-white w-[180px] min-w-[180px] px-3 py-2 font-medium border-r">
+                              {staff.staffName}
+                            </td>
+                            {months.map((month) => (
+                              <td key={month} className="w-[85px] min-w-[85px] px-2 py-2 text-center">
+                                {staff.months[month] ? staff.months[month].toLocaleString(undefined, { maximumFractionDigits: 1 }) : "-"}
+                              </td>
+                            ))}
+                            <td className="w-[90px] min-w-[90px] px-2 py-2 text-right font-medium">
+                              {totalHours.toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                            </td>
+                          </tr>
+                        );
+                      })}
+
+                      {/* Totals Row */}
+                      <tr className="border-t-2 bg-blue-100 font-bold">
+                        <td className="sticky left-0 z-10 bg-blue-100 w-[180px] min-w-[180px] px-3 py-3 border-r">TOTALS</td>
+                        {months.map((month) => {
+                          const monthTotal = actualsData.staffActuals.reduce(
+                            (sum, staff) => sum + (staff.months[month] || 0),
+                            0
+                          );
+                          return (
+                            <td key={month} className="w-[85px] min-w-[85px] px-2 py-3 text-center">
+                              {monthTotal > 0 ? monthTotal.toLocaleString(undefined, { maximumFractionDigits: 1 }) : "-"}
+                            </td>
+                          );
+                        })}
+                        <td className="w-[90px] min-w-[90px] px-2 py-3 text-right">
+                          {actualsData.staffActuals
+                            .reduce((sum, staff) => sum + Object.values(staff.months).reduce((s, h) => s + h, 0), 0)
+                            .toLocaleString(undefined, { maximumFractionDigits: 1 })}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed p-8 text-center text-gray-500">
+                  No actual hours found for this project in BigTime
+                </div>
+              )}
             </div>
           </>
         )}
