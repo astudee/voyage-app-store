@@ -11,10 +11,6 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Voyage App Store",
   description: "Voyage Consulting Configuration Management",
-  icons: {
-    icon: "/favicon.png",
-    apple: "/favicon.png",
-  },
 };
 
 export default function RootLayout({
