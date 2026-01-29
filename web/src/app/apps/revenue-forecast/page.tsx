@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -40,6 +40,13 @@ interface ForecastData {
 }
 
 type MetricType = "hours" | "revenue";
+type SortDirection = "asc" | "desc";
+type SortColumn = "client" | "project" | "stage" | "factor" | "total" | string; // string for month columns
+
+interface SortState {
+  column: SortColumn;
+  direction: SortDirection;
+}
 
 function getDefaultMonths(): { start: string; end: string } {
   const today = new Date();
@@ -71,6 +78,15 @@ export default function RevenueForecastPage() {
     section3: true,
     section4: true,
     section5: true,
+  });
+
+  // Sort state per section
+  const [sortStates, setSortStates] = useState<Record<string, SortState>>({
+    section1: { column: "client", direction: "asc" },
+    section2: { column: "client", direction: "asc" },
+    section3: { column: "client", direction: "asc" },
+    section4: { column: "client", direction: "asc" },
+    section5: { column: "client", direction: "asc" },
   });
 
   const generateForecast = async () => {
@@ -167,9 +183,74 @@ export default function RevenueForecastPage() {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const handleSort = (sectionKey: string, column: SortColumn) => {
+    setSortStates((prev) => {
+      const current = prev[sectionKey];
+      const newDirection: SortDirection =
+        current.column === column && current.direction === "asc" ? "desc" : "asc";
+      return { ...prev, [sectionKey]: { column, direction: newDirection } };
+    });
+  };
+
   const SectionTable = ({ section, sectionKey }: { section: Section; sectionKey: string }) => {
     const isExpanded = expandedSections[sectionKey];
     const grandTotal = Object.values(section.totals).reduce((sum, v) => sum + v, 0);
+    const sortState = sortStates[sectionKey];
+
+    // Sort rows
+    const sortedRows = useMemo(() => {
+      if (!section.rows.length) return section.rows;
+
+      return [...section.rows].sort((a, b) => {
+        let aVal: string | number;
+        let bVal: string | number;
+
+        if (sortState.column === "client") {
+          aVal = a.client.toLowerCase();
+          bVal = b.client.toLowerCase();
+        } else if (sortState.column === "project") {
+          aVal = a.project.toLowerCase();
+          bVal = b.project.toLowerCase();
+        } else if (sortState.column === "stage") {
+          aVal = (a.stage || "").toLowerCase();
+          bVal = (b.stage || "").toLowerCase();
+        } else if (sortState.column === "factor") {
+          aVal = parseInt(a.factor || "0");
+          bVal = parseInt(b.factor || "0");
+        } else if (sortState.column === "total") {
+          aVal = Object.values(a.monthly).reduce((sum, v) => sum + v, 0);
+          bVal = Object.values(b.monthly).reduce((sum, v) => sum + v, 0);
+        } else {
+          // Month column
+          aVal = a.monthly[sortState.column] || 0;
+          bVal = b.monthly[sortState.column] || 0;
+        }
+
+        if (aVal < bVal) return sortState.direction === "asc" ? -1 : 1;
+        if (aVal > bVal) return sortState.direction === "asc" ? 1 : -1;
+        return 0;
+      });
+    }, [section.rows, sortState]);
+
+    const SortHeader = ({ column, children, className = "" }: { column: SortColumn; children: React.ReactNode; className?: string }) => {
+      const isActive = sortState.column === column;
+      return (
+        <th
+          className={`pb-2 cursor-pointer hover:bg-gray-100 select-none ${className}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            handleSort(sectionKey, column);
+          }}
+        >
+          <div className="flex items-center gap-1">
+            {children}
+            <span className={`text-xs ${isActive ? "text-blue-600" : "text-gray-400"}`}>
+              {isActive ? (sortState.direction === "asc" ? "▲" : "▼") : "⇅"}
+            </span>
+          </div>
+        </th>
+      );
+    };
 
     return (
       <div className="bg-white rounded-xl border mb-6">
@@ -191,18 +272,45 @@ export default function RevenueForecastPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left border-b-2 border-gray-200">
-                  <th className="pb-2 sticky left-0 bg-white">Client</th>
-                  <th className="pb-2">Project</th>
-                  {section.rows[0]?.stage !== undefined && <th className="pb-2">Stage</th>}
-                  {section.rows[0]?.factor !== undefined && <th className="pb-2">Factor</th>}
+                  <SortHeader column="client" className="sticky left-0 bg-white">Client</SortHeader>
+                  <SortHeader column="project">Project</SortHeader>
+                  {section.rows[0]?.stage !== undefined && <SortHeader column="stage">Stage</SortHeader>}
+                  {section.rows[0]?.factor !== undefined && <SortHeader column="factor">Factor</SortHeader>}
                   {data?.months.map((month) => (
-                    <th key={month} className="pb-2 text-right px-2 whitespace-nowrap">{month}</th>
+                    <th
+                      key={month}
+                      className="pb-2 text-right px-2 whitespace-nowrap cursor-pointer hover:bg-gray-100 select-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleSort(sectionKey, month);
+                      }}
+                    >
+                      <div className="flex items-center justify-end gap-1">
+                        {month}
+                        <span className={`text-xs ${sortState.column === month ? "text-blue-600" : "text-gray-400"}`}>
+                          {sortState.column === month ? (sortState.direction === "asc" ? "▲" : "▼") : "⇅"}
+                        </span>
+                      </div>
+                    </th>
                   ))}
-                  <th className="pb-2 text-right font-bold">Total</th>
+                  <th
+                    className="pb-2 text-right font-bold cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSort(sectionKey, "total");
+                    }}
+                  >
+                    <div className="flex items-center justify-end gap-1">
+                      Total
+                      <span className={`text-xs ${sortState.column === "total" ? "text-blue-600" : "text-gray-400"}`}>
+                        {sortState.column === "total" ? (sortState.direction === "asc" ? "▲" : "▼") : "⇅"}
+                      </span>
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {section.rows.map((row, i) => {
+                {sortedRows.map((row, i) => {
                   const rowTotal = Object.values(row.monthly).reduce((sum, v) => sum + v, 0);
                   return (
                     <tr key={i} className="border-b border-gray-100">
