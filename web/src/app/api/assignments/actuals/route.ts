@@ -1,16 +1,42 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { query } from "@/lib/snowflake";
 
 const BIGTIME_API_KEY = process.env.BIGTIME_API_KEY;
 const BIGTIME_FIRM_ID = process.env.BIGTIME_FIRM_ID;
 const BIGTIME_REPORT_ID = "284796";
 
+interface StaffBillRate {
+  STAFF_NAME: string;
+  BILL_RATE: number;
+}
+
 interface ActualEntry {
   staffName: string;
   month: string;
   hours: number;
-  billRate: number;
+}
+
+// Fetch bill rates from Snowflake assignments for a project
+async function fetchBillRatesFromSnowflake(projectId: string): Promise<Map<string, number>> {
+  try {
+    const sql = `
+      SELECT STAFF_NAME, AVG(BILL_RATE) as BILL_RATE
+      FROM VC_STAFF_ASSIGNMENTS
+      WHERE PROJECT_ID = ? AND BILL_RATE > 0
+      GROUP BY STAFF_NAME
+    `;
+    const rows = await query<StaffBillRate>(sql, [projectId]);
+    const rateMap = new Map<string, number>();
+    for (const row of rows) {
+      rateMap.set(row.STAFF_NAME, Math.round(row.BILL_RATE));
+    }
+    return rateMap;
+  } catch (error) {
+    console.error("Error fetching bill rates from Snowflake:", error);
+    return new Map();
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -81,7 +107,6 @@ export async function GET(request: NextRequest) {
       const staffNameIdx = colIndex["tmstaffnm"] ?? colIndex["exstaffnm"] ?? colIndex["Staff_Name"] ?? colIndex["Staff Member"];
       const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
       const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
-      const billRateIdx = colIndex["tmbillrate"] ?? colIndex["BillRate"] ?? colIndex["Bill_Rate"] ?? colIndex["billrate"];
 
       if (projectIdIdx === undefined) {
         console.error("Missing project ID column. Available:", Object.keys(colIndex).join(", "));
@@ -106,7 +131,6 @@ export async function GET(request: NextRequest) {
         const staffName = String(row[staffNameIdx] || "Unknown");
         const hours = Number(row[hoursIdx]) || 0;
         const dateStr = String(row[dateIdx] || "");
-        const billRate = billRateIdx !== undefined ? (Number(row[billRateIdx]) || 0) : 0;
 
         if (hours === 0 || !dateStr) continue;
 
@@ -117,7 +141,6 @@ export async function GET(request: NextRequest) {
           staffName,
           month,
           hours,
-          billRate,
         });
       }
 
@@ -126,40 +149,31 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aggregate hours and bill rates by staff and month
-    const aggregated: Map<string, {
-      months: Map<string, number>;
-      totalHours: number;
-      weightedRateSum: number;
-    }> = new Map();
+    // Get bill rates from Snowflake
+    const billRates = await fetchBillRatesFromSnowflake(projectId);
+
+    // Aggregate hours by staff and month
+    const aggregated: Map<string, Map<string, number>> = new Map();
 
     for (const entry of allEntries) {
       if (!aggregated.has(entry.staffName)) {
-        aggregated.set(entry.staffName, {
-          months: new Map(),
-          totalHours: 0,
-          weightedRateSum: 0
-        });
+        aggregated.set(entry.staffName, new Map());
       }
-      const staffData = aggregated.get(entry.staffName)!;
-      staffData.months.set(entry.month, (staffData.months.get(entry.month) || 0) + entry.hours);
-      staffData.totalHours += entry.hours;
-      staffData.weightedRateSum += entry.hours * entry.billRate;
+      const staffMonths = aggregated.get(entry.staffName)!;
+      staffMonths.set(entry.month, (staffMonths.get(entry.month) || 0) + entry.hours);
     }
 
     // Convert to array format
     const result: { staffName: string; billRate: number; months: Record<string, number> }[] = [];
 
-    for (const [staffName, staffData] of aggregated) {
+    for (const [staffName, monthsMap] of aggregated) {
       const months: Record<string, number> = {};
-      for (const [month, hours] of staffData.months) {
+      for (const [month, hours] of monthsMap) {
         months[month] = Math.round(hours * 10) / 10; // Round to 1 decimal
       }
-      // Calculate weighted average bill rate
-      const avgBillRate = staffData.totalHours > 0
-        ? Math.round(staffData.weightedRateSum / staffData.totalHours)
-        : 0;
-      result.push({ staffName, billRate: avgBillRate, months });
+      // Get bill rate from Snowflake assignments
+      const billRate = billRates.get(staffName) || 0;
+      result.push({ staffName, billRate, months });
     }
 
     // Sort by staff name
