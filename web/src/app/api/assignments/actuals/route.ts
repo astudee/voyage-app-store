@@ -71,26 +71,13 @@ export async function GET(request: NextRequest) {
         colIndex[field.FieldNm] = idx;
       });
 
-      // Log ALL available columns for debugging (first year only)
-      if (year === currentYear) {
-        console.log(`BigTime report 284796 ALL columns:`, JSON.stringify(Object.keys(colIndex)));
-        // Also log any column that might contain "rate" or "bill"
-        const rateColumns = Object.keys(colIndex).filter(k =>
-          k.toLowerCase().includes('rate') || k.toLowerCase().includes('bill')
-        );
-        console.log(`BigTime columns with 'rate' or 'bill':`, JSON.stringify(rateColumns));
-      }
-
-      // Try multiple column names (different reports may use different names)
+      // Get column indices
       const projectIdIdx = colIndex["tmprojectnm_id"] ?? colIndex["tmprojectsid"] ?? colIndex["Project_ID"];
       const staffNameIdx = colIndex["tmstaffnm"] ?? colIndex["exstaffnm"] ?? colIndex["Staff_Name"] ?? colIndex["Staff Member"];
-      const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
+      const hoursIdx = colIndex["tmhrsbill"] ?? colIndex["tmhrsin"] ?? colIndex["Hours"]; // Prefer billable hours
       const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
-      // Try many possible bill rate column names
-      const billRateIdx = colIndex["tmbillrate"] ?? colIndex["tmrate"] ?? colIndex["BillRate"] ??
-                         colIndex["Bill Rate"] ?? colIndex["billrate"] ?? colIndex["Rate"] ??
-                         colIndex["HourlyRate"] ?? colIndex["Hourly Rate"] ?? colIndex["Bill_Rate"] ??
-                         colIndex["exbillrate"] ?? colIndex["tmbillratein"];
+      // Use billable amount to calculate rate (amount / hours)
+      const billAmountIdx = colIndex["tmchgbillbase"];
 
       if (projectIdIdx === undefined) {
         console.error("Missing project ID column. Available:", Object.keys(colIndex).join(", "));
@@ -105,29 +92,17 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
-      // Log if we found a bill rate column
-      if (year === currentYear) {
-        console.log(`BigTime bill rate column index:`, billRateIdx !== undefined ? billRateIdx : 'NOT FOUND');
-      }
-
       // Filter and aggregate by project
-      let matchCount = 0;
-      let sampleBillRate: unknown = null;
       for (const row of rows) {
         const rowProjectId = Number(row[projectIdIdx]) || 0;
         if (rowProjectId !== targetProjectId) continue;
 
-        matchCount++;
         const staffName = String(row[staffNameIdx] || "Unknown");
         const hours = Number(row[hoursIdx]) || 0;
         const dateStr = String(row[dateIdx] || "");
-        const billRate = billRateIdx !== undefined ? (Number(row[billRateIdx]) || 0) : 0;
-
-        // Log first bill rate we find for debugging
-        if (matchCount === 1 && billRateIdx !== undefined) {
-          sampleBillRate = row[billRateIdx];
-          console.log(`BigTime sample bill rate value:`, sampleBillRate, `parsed as:`, billRate);
-        }
+        // Calculate bill rate from amount / hours
+        const billAmount = billAmountIdx !== undefined ? (Number(row[billAmountIdx]) || 0) : 0;
+        const billRate = hours > 0 ? billAmount / hours : 0;
 
         if (hours === 0 || !dateStr) continue;
 
@@ -140,10 +115,6 @@ export async function GET(request: NextRequest) {
           hours,
           billRate,
         });
-      }
-
-      if (year === currentYear) {
-        console.log(`BigTime actuals for project ${targetProjectId}: found ${matchCount} rows in ${year}`);
       }
     }
 
