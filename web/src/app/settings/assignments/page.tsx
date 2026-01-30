@@ -56,7 +56,7 @@ interface BookingData {
 
 interface ActualsData {
   projectId: string;
-  staffActuals: { staffName: string; months: Record<string, number> }[];
+  staffActuals: { staffName: string; billRate: number; months: Record<string, number> }[];
   months: string[];
 }
 
@@ -787,6 +787,7 @@ export default function AssignmentsSettingsPage() {
                         <th className="sticky left-0 z-10 bg-blue-50 w-[180px] min-w-[180px] px-3 py-3 text-left font-medium border-r">
                           Staff Member
                         </th>
+                        <th className="w-[90px] min-w-[90px] px-2 py-3 text-center font-medium">Bill Rate</th>
                         {months.map((month) => (
                           <th key={month} className="w-[85px] min-w-[85px] px-2 py-3 text-center font-medium">
                             {formatMonth(month)}
@@ -803,6 +804,9 @@ export default function AssignmentsSettingsPage() {
                             <td className="sticky left-0 z-10 bg-white w-[180px] min-w-[180px] px-3 py-2 font-medium border-r">
                               {staff.staffName}
                             </td>
+                            <td className="w-[90px] min-w-[90px] px-2 py-2 text-center text-gray-600">
+                              {staff.billRate ? `$${staff.billRate}` : "-"}
+                            </td>
                             {months.map((month) => (
                               <td key={month} className="w-[85px] min-w-[85px] px-2 py-2 text-center">
                                 {staff.months[month] ? staff.months[month].toLocaleString(undefined, { maximumFractionDigits: 1 }) : "-"}
@@ -818,6 +822,7 @@ export default function AssignmentsSettingsPage() {
                       {/* Totals Row */}
                       <tr className="border-t-2 bg-blue-100 font-bold">
                         <td className="sticky left-0 z-10 bg-blue-100 w-[180px] min-w-[180px] px-3 py-3 border-r">TOTALS</td>
+                        <td className="w-[90px] min-w-[90px] px-2 py-3"></td>
                         {months.map((month) => {
                           const monthTotal = actualsData.staffActuals.reduce(
                             (sum, staff) => sum + (staff.months[month] || 0),

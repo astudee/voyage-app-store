@@ -10,6 +10,7 @@ interface ActualEntry {
   staffName: string;
   month: string;
   hours: number;
+  billRate: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -80,6 +81,7 @@ export async function GET(request: NextRequest) {
       const staffNameIdx = colIndex["tmstaffnm"] ?? colIndex["exstaffnm"] ?? colIndex["Staff_Name"] ?? colIndex["Staff Member"];
       const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
       const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
+      const billRateIdx = colIndex["tmbillrate"] ?? colIndex["BillRate"] ?? colIndex["Bill_Rate"] ?? colIndex["billrate"];
 
       if (projectIdIdx === undefined) {
         console.error("Missing project ID column. Available:", Object.keys(colIndex).join(", "));
@@ -104,6 +106,7 @@ export async function GET(request: NextRequest) {
         const staffName = String(row[staffNameIdx] || "Unknown");
         const hours = Number(row[hoursIdx]) || 0;
         const dateStr = String(row[dateIdx] || "");
+        const billRate = billRateIdx !== undefined ? (Number(row[billRateIdx]) || 0) : 0;
 
         if (hours === 0 || !dateStr) continue;
 
@@ -114,6 +117,7 @@ export async function GET(request: NextRequest) {
           staffName,
           month,
           hours,
+          billRate,
         });
       }
 
@@ -122,26 +126,40 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Aggregate hours by staff and month
-    const aggregated: Map<string, Map<string, number>> = new Map();
+    // Aggregate hours and bill rates by staff and month
+    const aggregated: Map<string, {
+      months: Map<string, number>;
+      totalHours: number;
+      weightedRateSum: number;
+    }> = new Map();
 
     for (const entry of allEntries) {
       if (!aggregated.has(entry.staffName)) {
-        aggregated.set(entry.staffName, new Map());
+        aggregated.set(entry.staffName, {
+          months: new Map(),
+          totalHours: 0,
+          weightedRateSum: 0
+        });
       }
-      const staffMonths = aggregated.get(entry.staffName)!;
-      staffMonths.set(entry.month, (staffMonths.get(entry.month) || 0) + entry.hours);
+      const staffData = aggregated.get(entry.staffName)!;
+      staffData.months.set(entry.month, (staffData.months.get(entry.month) || 0) + entry.hours);
+      staffData.totalHours += entry.hours;
+      staffData.weightedRateSum += entry.hours * entry.billRate;
     }
 
     // Convert to array format
-    const result: { staffName: string; months: Record<string, number> }[] = [];
+    const result: { staffName: string; billRate: number; months: Record<string, number> }[] = [];
 
-    for (const [staffName, monthsMap] of aggregated) {
+    for (const [staffName, staffData] of aggregated) {
       const months: Record<string, number> = {};
-      for (const [month, hours] of monthsMap) {
+      for (const [month, hours] of staffData.months) {
         months[month] = Math.round(hours * 10) / 10; // Round to 1 decimal
       }
-      result.push({ staffName, months });
+      // Calculate weighted average bill rate
+      const avgBillRate = staffData.totalHours > 0
+        ? Math.round(staffData.weightedRateSum / staffData.totalHours)
+        : 0;
+      result.push({ staffName, billRate: avgBillRate, months });
     }
 
     // Sort by staff name
