@@ -23,6 +23,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "projectId required" }, { status: 400 });
   }
 
+  // Normalize project ID for comparison (as number)
+  const targetProjectId = Number(projectId);
+
   if (!BIGTIME_API_KEY || !BIGTIME_FIRM_ID) {
     return NextResponse.json({ error: "BigTime API not configured" }, { status: 500 });
   }
@@ -67,21 +70,37 @@ export async function GET(request: NextRequest) {
         colIndex[field.FieldNm] = idx;
       });
 
-      const projectIdIdx = colIndex["tmprojectnm_id"] ?? colIndex["Project_ID"];
-      const staffNameIdx = colIndex["exstaffnm"] ?? colIndex["Staff_Name"];
+      // Log available columns for debugging (first year only)
+      if (year === currentYear) {
+        console.log(`BigTime actuals columns:`, Object.keys(colIndex).join(", "));
+      }
+
+      // Try multiple column names (different reports may use different names)
+      const projectIdIdx = colIndex["tmprojectnm_id"] ?? colIndex["tmprojectsid"] ?? colIndex["Project_ID"];
+      const staffNameIdx = colIndex["tmstaffnm"] ?? colIndex["exstaffnm"] ?? colIndex["Staff_Name"] ?? colIndex["Staff Member"];
       const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
       const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
 
-      if (projectIdIdx === undefined || staffNameIdx === undefined || hoursIdx === undefined || dateIdx === undefined) {
-        console.error("Missing required columns in BigTime report");
+      if (projectIdIdx === undefined) {
+        console.error("Missing project ID column. Available:", Object.keys(colIndex).join(", "));
+        continue;
+      }
+      if (staffNameIdx === undefined) {
+        console.error("Missing staff name column. Available:", Object.keys(colIndex).join(", "));
+        continue;
+      }
+      if (hoursIdx === undefined || dateIdx === undefined) {
+        console.error("Missing hours or date column. Available:", Object.keys(colIndex).join(", "));
         continue;
       }
 
       // Filter and aggregate by project
+      let matchCount = 0;
       for (const row of rows) {
-        const rowProjectId = String(row[projectIdIdx] || "");
-        if (rowProjectId !== projectId) continue;
+        const rowProjectId = Number(row[projectIdIdx]) || 0;
+        if (rowProjectId !== targetProjectId) continue;
 
+        matchCount++;
         const staffName = String(row[staffNameIdx] || "Unknown");
         const hours = Number(row[hoursIdx]) || 0;
         const dateStr = String(row[dateIdx] || "");
@@ -96,6 +115,10 @@ export async function GET(request: NextRequest) {
           month,
           hours,
         });
+      }
+
+      if (year === currentYear) {
+        console.log(`BigTime actuals for project ${targetProjectId}: found ${matchCount} rows in ${year}`);
       }
     }
 
