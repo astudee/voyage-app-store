@@ -580,7 +580,7 @@ export default function AssignmentsSettingsPage() {
               ) : bookingData ? (
                 <>
                   <div>
-                    <p className="text-sm text-gray-500">Booking (Pipedrive)</p>
+                    <p className="text-sm text-gray-500">Bookings (Pipedrive)</p>
                     <p className="text-xl font-bold text-blue-600">{formatCurrency(bookingData.dealValue)}</p>
                   </div>
                   <div>
@@ -772,7 +772,7 @@ export default function AssignmentsSettingsPage() {
             <div className="mt-8">
               <h2 className="text-xl font-semibold mb-2">Actual Hours (BigTime)</h2>
               <p className="text-sm text-gray-500 mb-4">
-                Actual hours logged in BigTime for this project. Read-only.
+                Actual hours logged and bill rates established in BigTime for this project. Read-only.
               </p>
 
               {actualsLoading ? (
