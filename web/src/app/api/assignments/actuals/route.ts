@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { query } from "@/lib/snowflake";
 
 const BIGTIME_API_KEY = process.env.BIGTIME_API_KEY;
 const BIGTIME_FIRM_ID = process.env.BIGTIME_FIRM_ID;
 const BIGTIME_REPORT_ID = "284796";
-
-interface StaffBillRate {
-  STAFF_NAME: string;
-  BILL_RATE: number;
-}
 
 interface ActualEntry {
   staffName: string;
@@ -18,25 +12,62 @@ interface ActualEntry {
   hours: number;
 }
 
-// Fetch bill rates from Snowflake assignments for a project
-async function fetchBillRatesFromSnowflake(projectId: string): Promise<Map<string, number>> {
+// Fetch bill rates from BigTime project staff assignments
+async function fetchBillRatesFromBigTime(projectId: string): Promise<Map<string, number>> {
+  const rateMap = new Map<string, number>();
+
   try {
-    const sql = `
-      SELECT STAFF_NAME, AVG(BILL_RATE) as BILL_RATE
-      FROM VC_STAFF_ASSIGNMENTS
-      WHERE PROJECT_ID = ? AND BILL_RATE > 0
-      GROUP BY STAFF_NAME
-    `;
-    const rows = await query<StaffBillRate>(sql, [projectId]);
-    const rateMap = new Map<string, number>();
-    for (const row of rows) {
-      rateMap.set(row.STAFF_NAME, Math.round(row.BILL_RATE));
+    // Fetch staff assignments for this project from BigTime
+    const response = await fetch(
+      `https://iq.bigtime.net/BigtimeData/api/v2/project/${projectId}/staff`,
+      {
+        method: "GET",
+        headers: {
+          "X-Auth-ApiToken": BIGTIME_API_KEY!,
+          "X-Auth-Realm": BIGTIME_FIRM_ID!,
+          Accept: "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`BigTime staff API error for project ${projectId}: ${response.status}`);
+      return rateMap;
     }
-    return rateMap;
+
+    const staffAssignments = await response.json();
+
+    // Log structure for debugging
+    console.log(`BigTime project ${projectId} staff assignments:`,
+      Array.isArray(staffAssignments) ? `${staffAssignments.length} entries` : typeof staffAssignments
+    );
+    if (Array.isArray(staffAssignments) && staffAssignments.length > 0) {
+      console.log("Sample staff assignment keys:", Object.keys(staffAssignments[0]).join(", "));
+      console.log("Sample staff assignment:", JSON.stringify(staffAssignments[0]));
+    }
+
+    // Process staff assignments - try various possible field names
+    if (Array.isArray(staffAssignments)) {
+      for (const staff of staffAssignments) {
+        // Try various field names for staff name
+        const staffName = staff.StaffNm || staff.Nm || staff.Name || staff.staffName ||
+                         staff.name || staff.StaffName || staff.Staff;
+        // Try various field names for bill rate
+        const billRate = staff.BillRate || staff.Rate || staff.HourlyRate || staff.billRate ||
+                        staff.rate || staff.hourlyRate || staff.Billrate || 0;
+
+        if (staffName && Number(billRate) > 0) {
+          rateMap.set(String(staffName), Math.round(Number(billRate)));
+        }
+      }
+    }
+
+    console.log(`BigTime bill rates found for project ${projectId}:`, rateMap.size);
   } catch (error) {
-    console.error("Error fetching bill rates from Snowflake:", error);
-    return new Map();
+    console.error("Error fetching bill rates from BigTime:", error);
   }
+
+  return rateMap;
 }
 
 export async function GET(request: NextRequest) {
@@ -149,8 +180,8 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get bill rates from Snowflake
-    const billRates = await fetchBillRatesFromSnowflake(projectId);
+    // Get bill rates from BigTime
+    const billRates = await fetchBillRatesFromBigTime(projectId);
 
     // Aggregate hours by staff and month
     const aggregated: Map<string, Map<string, number>> = new Map();
