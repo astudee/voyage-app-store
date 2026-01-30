@@ -95,24 +95,49 @@ export async function GET(request: NextRequest) {
       start = pagination?.next_start || 0;
     }
 
-    // Find deal with matching BigTime Project ID
+    // Find ALL deals with matching BigTime Project ID and sum their values
+    const searchProjectIdStr = String(projectId).trim();
+    const matchingDeals: PipedriveDeal[] = [];
+
     for (const deal of allDeals) {
       const dealProjectId = deal[bigTimeProjectIdKey];
-
-      // Handle various formats the project ID might be stored as
       const dealProjectIdStr = String(dealProjectId || "").trim();
-      const searchProjectIdStr = String(projectId).trim();
 
       if (dealProjectIdStr === searchProjectIdStr) {
-        return NextResponse.json({
-          found: true,
-          dealId: deal.id,
-          dealName: deal.title,
-          dealValue: deal.value || 0,
-          currency: deal.currency,
-          wonTime: deal.won_time,
-        });
+        matchingDeals.push(deal);
       }
+    }
+
+    if (matchingDeals.length > 0) {
+      // Sum all deal values
+      const totalValue = matchingDeals.reduce((sum, deal) => sum + (deal.value || 0), 0);
+
+      // Get the most recent won time
+      const sortedDeals = [...matchingDeals].sort((a, b) =>
+        new Date(b.won_time).getTime() - new Date(a.won_time).getTime()
+      );
+      const mostRecentDeal = sortedDeals[0];
+
+      // Build deal names summary
+      const dealNames = matchingDeals.map(d => d.title).join(", ");
+
+      return NextResponse.json({
+        found: true,
+        dealCount: matchingDeals.length,
+        dealId: mostRecentDeal.id,
+        dealName: matchingDeals.length > 1
+          ? `${matchingDeals.length} deals: ${dealNames}`
+          : mostRecentDeal.title,
+        dealValue: totalValue,
+        currency: mostRecentDeal.currency,
+        wonTime: mostRecentDeal.won_time,
+        deals: matchingDeals.map(d => ({
+          id: d.id,
+          title: d.title,
+          value: d.value || 0,
+          wonTime: d.won_time,
+        })),
+      });
     }
 
     // No matching deal found
