@@ -10,64 +10,7 @@ interface ActualEntry {
   staffName: string;
   month: string;
   hours: number;
-}
-
-// Fetch bill rates from BigTime project staff assignments
-async function fetchBillRatesFromBigTime(projectId: string): Promise<Map<string, number>> {
-  const rateMap = new Map<string, number>();
-
-  try {
-    // Fetch staff assignments for this project from BigTime
-    const response = await fetch(
-      `https://iq.bigtime.net/BigtimeData/api/v2/project/${projectId}/staff`,
-      {
-        method: "GET",
-        headers: {
-          "X-Auth-ApiToken": BIGTIME_API_KEY!,
-          "X-Auth-Realm": BIGTIME_FIRM_ID!,
-          Accept: "application/json",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.error(`BigTime staff API error for project ${projectId}: ${response.status}`);
-      return rateMap;
-    }
-
-    const staffAssignments = await response.json();
-
-    // Log structure for debugging
-    console.log(`BigTime project ${projectId} staff assignments:`,
-      Array.isArray(staffAssignments) ? `${staffAssignments.length} entries` : typeof staffAssignments
-    );
-    if (Array.isArray(staffAssignments) && staffAssignments.length > 0) {
-      console.log("Sample staff assignment keys:", Object.keys(staffAssignments[0]).join(", "));
-      console.log("Sample staff assignment:", JSON.stringify(staffAssignments[0]));
-    }
-
-    // Process staff assignments - try various possible field names
-    if (Array.isArray(staffAssignments)) {
-      for (const staff of staffAssignments) {
-        // Try various field names for staff name
-        const staffName = staff.StaffNm || staff.Nm || staff.Name || staff.staffName ||
-                         staff.name || staff.StaffName || staff.Staff;
-        // Try various field names for bill rate
-        const billRate = staff.BillRate || staff.Rate || staff.HourlyRate || staff.billRate ||
-                        staff.rate || staff.hourlyRate || staff.Billrate || 0;
-
-        if (staffName && Number(billRate) > 0) {
-          rateMap.set(String(staffName), Math.round(Number(billRate)));
-        }
-      }
-    }
-
-    console.log(`BigTime bill rates found for project ${projectId}:`, rateMap.size);
-  } catch (error) {
-    console.error("Error fetching bill rates from BigTime:", error);
-  }
-
-  return rateMap;
+  billRate: number;
 }
 
 export async function GET(request: NextRequest) {
@@ -128,9 +71,14 @@ export async function GET(request: NextRequest) {
         colIndex[field.FieldNm] = idx;
       });
 
-      // Log available columns for debugging (first year only)
+      // Log ALL available columns for debugging (first year only)
       if (year === currentYear) {
-        console.log(`BigTime actuals columns:`, Object.keys(colIndex).join(", "));
+        console.log(`BigTime report 284796 ALL columns:`, JSON.stringify(Object.keys(colIndex)));
+        // Also log any column that might contain "rate" or "bill"
+        const rateColumns = Object.keys(colIndex).filter(k =>
+          k.toLowerCase().includes('rate') || k.toLowerCase().includes('bill')
+        );
+        console.log(`BigTime columns with 'rate' or 'bill':`, JSON.stringify(rateColumns));
       }
 
       // Try multiple column names (different reports may use different names)
@@ -138,6 +86,11 @@ export async function GET(request: NextRequest) {
       const staffNameIdx = colIndex["tmstaffnm"] ?? colIndex["exstaffnm"] ?? colIndex["Staff_Name"] ?? colIndex["Staff Member"];
       const hoursIdx = colIndex["tmhrsin"] ?? colIndex["Hours"];
       const dateIdx = colIndex["tmdt"] ?? colIndex["Date"];
+      // Try many possible bill rate column names
+      const billRateIdx = colIndex["tmbillrate"] ?? colIndex["tmrate"] ?? colIndex["BillRate"] ??
+                         colIndex["Bill Rate"] ?? colIndex["billrate"] ?? colIndex["Rate"] ??
+                         colIndex["HourlyRate"] ?? colIndex["Hourly Rate"] ?? colIndex["Bill_Rate"] ??
+                         colIndex["exbillrate"] ?? colIndex["tmbillratein"];
 
       if (projectIdIdx === undefined) {
         console.error("Missing project ID column. Available:", Object.keys(colIndex).join(", "));
@@ -152,8 +105,14 @@ export async function GET(request: NextRequest) {
         continue;
       }
 
+      // Log if we found a bill rate column
+      if (year === currentYear) {
+        console.log(`BigTime bill rate column index:`, billRateIdx !== undefined ? billRateIdx : 'NOT FOUND');
+      }
+
       // Filter and aggregate by project
       let matchCount = 0;
+      let sampleBillRate: unknown = null;
       for (const row of rows) {
         const rowProjectId = Number(row[projectIdIdx]) || 0;
         if (rowProjectId !== targetProjectId) continue;
@@ -162,6 +121,13 @@ export async function GET(request: NextRequest) {
         const staffName = String(row[staffNameIdx] || "Unknown");
         const hours = Number(row[hoursIdx]) || 0;
         const dateStr = String(row[dateIdx] || "");
+        const billRate = billRateIdx !== undefined ? (Number(row[billRateIdx]) || 0) : 0;
+
+        // Log first bill rate we find for debugging
+        if (matchCount === 1 && billRateIdx !== undefined) {
+          sampleBillRate = row[billRateIdx];
+          console.log(`BigTime sample bill rate value:`, sampleBillRate, `parsed as:`, billRate);
+        }
 
         if (hours === 0 || !dateStr) continue;
 
@@ -172,6 +138,7 @@ export async function GET(request: NextRequest) {
           staffName,
           month,
           hours,
+          billRate,
         });
       }
 
@@ -180,31 +147,40 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Get bill rates from BigTime
-    const billRates = await fetchBillRatesFromBigTime(projectId);
-
-    // Aggregate hours by staff and month
-    const aggregated: Map<string, Map<string, number>> = new Map();
+    // Aggregate hours and bill rates by staff and month
+    const aggregated: Map<string, {
+      months: Map<string, number>;
+      totalHours: number;
+      weightedRateSum: number;
+    }> = new Map();
 
     for (const entry of allEntries) {
       if (!aggregated.has(entry.staffName)) {
-        aggregated.set(entry.staffName, new Map());
+        aggregated.set(entry.staffName, {
+          months: new Map(),
+          totalHours: 0,
+          weightedRateSum: 0
+        });
       }
-      const staffMonths = aggregated.get(entry.staffName)!;
-      staffMonths.set(entry.month, (staffMonths.get(entry.month) || 0) + entry.hours);
+      const staffData = aggregated.get(entry.staffName)!;
+      staffData.months.set(entry.month, (staffData.months.get(entry.month) || 0) + entry.hours);
+      staffData.totalHours += entry.hours;
+      staffData.weightedRateSum += entry.hours * entry.billRate;
     }
 
     // Convert to array format
     const result: { staffName: string; billRate: number; months: Record<string, number> }[] = [];
 
-    for (const [staffName, monthsMap] of aggregated) {
+    for (const [staffName, staffData] of aggregated) {
       const months: Record<string, number> = {};
-      for (const [month, hours] of monthsMap) {
+      for (const [month, hours] of staffData.months) {
         months[month] = Math.round(hours * 10) / 10; // Round to 1 decimal
       }
-      // Get bill rate from Snowflake assignments
-      const billRate = billRates.get(staffName) || 0;
-      result.push({ staffName, billRate, months });
+      // Calculate weighted average bill rate from BigTime data
+      const avgBillRate = staffData.totalHours > 0
+        ? Math.round(staffData.weightedRateSum / staffData.totalHours)
+        : 0;
+      result.push({ staffName, billRate: avgBillRate, months });
     }
 
     // Sort by staff name
