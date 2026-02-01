@@ -1,7 +1,7 @@
-# Voyage App Store - Project Memories
+# Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-01-28 (Document Manager 2.0 Phase 1 - R2 storage + basic upload/queue)
+> **Last updated:** 2026-02-01 (Document Manager 2.0 Major Refactor)
 
 ---
 
@@ -794,6 +794,34 @@ This is where reference files are uploaded for Claude to review:
     - Tier color coding: Green (Tier 1), Yellow (Tier 2), Blue (Tier 3)
     - **Export options:** Download Excel, Download PDF, Email Report
 
+### 2026-01-30 - Payroll Helper Decimal Fix
+- **Fixed decimal precision in Payroll Helper app:**
+  - Changed all hour values from `.toFixed(1)` to `.toFixed(2)`
+  - Now shows 2 decimal places to match BigTime and Gusto payroll system
+  - Affects: Regular hours, Paid Leave, Sick Leave, Holiday, Unpaid Leave columns
+  - Both Hourly/TFT/PTE and Full-Time employee tables updated
+- Deployed to production
+
+### 2026-01-30 - Assignments Page Save Error Fix
+- **Investigated "Failed to save changes" error on assignments page:**
+  - User reported changes not storing and getting error messages
+  - Added proper `response.ok` check to `handleRateChange` (was missing)
+  - Improved error messages in both frontend and API to show actual Snowflake errors
+  - API now returns detailed error messages (e.g., "Failed to update assignment: [Snowflake error]")
+  - Frontend now shows server error message in toast instead of generic "Failed to save"
+  - Added validation for assignment ID to catch invalid values early
+- **Root cause found: Snowflake doesn't support `RETURNING` clause**
+  - Error: `SQL compilation error: syntax error line 5 at position 6 unexpected 'RETURNING'`
+  - Fixed all 6 API routes that used `RETURNING`:
+    - `/api/assignments/route.ts` - now queries back using PROJECT_ID + STAFF_NAME + MONTH_DATE
+    - `/api/assignments/bulk/route.ts` - same fix
+    - `/api/commission-rules/route.ts` - now uses `SELECT MAX(RULE_ID)`
+    - `/api/benefits/route.ts` - now queries back using CODE field
+    - `/api/offsets/route.ts` - now uses `SELECT MAX(OFFSET_ID)`
+    - `/api/mapping/route.ts` - now uses `SELECT MAX(MAPPING_ID)`
+    - `/api/fixed-fee/route.ts` - now queries back using PROJECT_ID + MONTH_DATE
+- **Deployed fix to production** - assignments page should now save correctly
+
 ---
 
 ## Notes for Future Sessions
@@ -1109,3 +1137,189 @@ EOF
 ```bash
 curl https://apps.voyage.xyz/api/test-snowflake
 ```
+
+---
+
+## Document Manager 2.0 - Major Refactor (2026-02-01)
+
+### Overview of Changes
+
+This refactor modernized Document Manager 2.0 with the following changes:
+
+| Before | After |
+|--------|-------|
+| UUID (36 chars) | NanoID (10 chars alphanumeric) |
+| counterparty | party |
+| sub_entity | sub_party |
+| description | notes |
+| AI on upload | AI via "Process Selected" button |
+| 2 tabs (Queue, Archive) | 3 tabs (Import, Review, Archive) |
+| status: pending_review | status: uploaded → pending_approval → archived |
+| One-at-a-time approval | Batch approval with checkboxes |
+| No delete before processing | Delete available in Import tab |
+
+### Database Schema
+
+**Table:** `VOYAGE_APP_STORE.PUBLIC.DOCUMENTS`
+
+```sql
+CREATE TABLE DOCUMENTS (
+    id VARCHAR(10) PRIMARY KEY,  -- NanoID, 10 chars alphanumeric
+    original_filename VARCHAR(500) NOT NULL,
+    file_path VARCHAR(1000) NOT NULL,
+    file_size_bytes NUMBER,
+    file_hash VARCHAR(64),
+
+    status VARCHAR(20) NOT NULL DEFAULT 'uploaded',
+    -- Values: uploaded (waiting for AI), pending_approval (AI done), archived, deleted
+
+    is_contract BOOLEAN,
+
+    -- Contract fields
+    document_category VARCHAR(20),  -- EMPLOYEE, CONTRACTOR, COMPANY
+    contract_type VARCHAR(50),
+    party VARCHAR(500),           -- Renamed from counterparty
+    sub_party VARCHAR(500),       -- Renamed from sub_entity
+    executed_date DATE,
+
+    -- Document fields
+    issuer_category VARCHAR(30),
+    document_type VARCHAR(100),
+    period_end_date DATE,
+    letter_date DATE,
+    account_last4 VARCHAR(10),
+
+    -- Shared
+    notes TEXT,                   -- Renamed from description
+
+    -- AI processing
+    ai_extracted_text TEXT,
+    ai_confidence_score DECIMAL(3,2),
+    ai_raw_response VARIANT,
+    ai_model_used VARCHAR(50),
+    ai_processed_at TIMESTAMP_NTZ,
+
+    -- Duplicate handling, source tracking, audit fields...
+);
+```
+
+### NanoID Implementation
+
+Created `web/src/lib/nanoid.ts` for generating 10-character alphanumeric IDs:
+- Uses customAlphabet: `0-9A-Za-z`
+- Collision detection with retry (up to 5 attempts)
+- Package: `nanoid` (installed via npm)
+
+### Three Tab Structure
+
+**Routes:**
+- `/documents-v2` → redirects to `/documents-v2/import`
+- `/documents-v2/import` → Import tab (upload + unprocessed files)
+- `/documents-v2/review` → Review tab (pending approval, batch UI)
+- `/documents-v2/archive` → Archive tab (approved documents)
+- `/documents-v2/review/[id]` → Detail view with embedded PDF
+
+**Status Flow:**
+```
+uploaded → pending_approval → archived
+              ↓
+           deleted
+```
+
+### Import Tab Features
+
+- Drag-drop upload zone
+- Lists documents with status='uploaded' (not yet AI processed)
+- Checkboxes to select files
+- "Process Selected" button triggers AI processing on selected files
+- "Delete" button deletes selected files without processing
+- Shows source (upload vs email) and relative time
+
+### Review Tab Features
+
+Gmail-style batch approval:
+- Checkboxes for batch selection
+- "Select All" checkbox
+- "Approve Selected" button → moves all to Archive
+- "Delete" button → soft deletes selected
+- Party column shows: `party (sub_party)` format
+- Type column: contract_type for contracts, document_type for documents
+- Date column: executed_date for contracts, letter_date/period_end_date for documents
+- Click row to view details
+- Dropdown menu per row: View Details, Approve, Delete
+
+### Archive Tab Features
+
+- Read-only list of archived documents
+- Search functionality
+- Download and view options
+- No checkboxes (read-only)
+
+### API Endpoints
+
+**New/Updated:**
+- `POST /api/documents-v2/reset-schema` - Drop and recreate DOCUMENTS table
+- `POST /api/documents-v2/process` - Process selected documents with AI
+  - Body: `{ ids: string[] }`
+  - Sets status to 'pending_approval', ai_processed_at to now
+- `POST /api/documents-v2/batch` - Batch operations
+  - Body: `{ action: 'approve' | 'delete', ids: string[] }`
+  - Approve: set status='archived', reviewed_at=now
+  - Delete: set status='deleted', deleted_at=now
+
+**Existing (updated):**
+- `POST /api/documents-v2/upload` - Uses NanoID, sets status='uploaded', no auto AI
+- `GET /api/documents-v2?status=X` - List by status (uploaded|pending_approval|archived)
+- `GET/PUT/DELETE /api/documents-v2/[id]` - CRUD with party/sub_party/notes fields
+
+### AI Classification Prompt
+
+Updated to use new field names:
+
+**For CONTRACTS:**
+- `party`: Company or person name
+- `sub_party`:
+  - CONTRACTOR: individual name "Last, First" (e.g., "Alam, Shah")
+  - COMPANY with government/large org: department/agency name
+  - EMPLOYEE: null
+- `notes`: Brief description if helpful
+
+**For DOCUMENTS:**
+- `party`: issuer name (bank, government entity, company)
+- `sub_party`:
+  - GOVERNMENT_STATE/FEDERAL: agency name
+  - Large company with division: division name
+  - Otherwise: null
+- `account_last4`: Put in this field, NOT in notes
+
+Removed `is_corp_to_corp` field entirely.
+
+### Testing Checklist
+
+1. Upload a PDF via drag-drop → should appear in Import tab with status 'uploaded'
+2. Select file(s) → click "Process Selected" → AI runs → files move to Review tab
+3. Select file(s) in Import → click "Delete" → files disappear
+4. Review tab shows AI-extracted party/type/date in columns
+5. Click row in Review → opens detail view with embedded PDF and editable form
+6. Select multiple in Review → click "Approve Selected" → all move to Archive
+7. Archive tab shows approved documents
+8. All IDs should be 10-character alphanumeric NanoIDs
+
+### Files Modified
+
+**New Files:**
+- `web/src/lib/nanoid.ts` - NanoID generator
+- `web/src/app/api/documents-v2/reset-schema/route.ts` - Schema reset endpoint
+- `web/src/app/api/documents-v2/process/route.ts` - Batch AI processing
+- `web/src/app/api/documents-v2/batch/route.ts` - Batch approve/delete
+- `web/src/app/documents-v2/import/page.tsx` - Import tab
+- `web/src/app/documents-v2/review/page.tsx` - Review tab (list view)
+
+**Updated Files:**
+- `web/src/app/api/documents-v2/route.ts` - party/sub_party/notes fields
+- `web/src/app/api/documents-v2/[id]/route.ts` - party/sub_party/notes fields
+- `web/src/app/api/documents-v2/upload/route.ts` - NanoID, no auto AI
+- `web/src/app/api/documents-v2/[id]/process/route.ts` - Updated AI prompt
+- `web/src/app/documents-v2/page.tsx` - Redirect to /import
+- `web/src/app/documents-v2/archive/page.tsx` - Updated with new UI
+- `web/src/app/documents-v2/review/[id]/page.tsx` - party/sub_party/notes form fields

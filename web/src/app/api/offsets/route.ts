@@ -43,12 +43,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const result = await query<{ OFFSET_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_COMMISSION_OFFSETS (
         EFFECTIVE_DATE, SALESPERSON, CATEGORY, AMOUNT, NOTE,
         CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING OFFSET_ID`,
+      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         body.effective_date,
         body.salesperson,
@@ -58,7 +58,12 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ offset_id: result[0].OFFSET_ID }, { status: 201 });
+    // Query back for the ID using MAX (auto-increment)
+    const result = await query<{ OFFSET_ID: number }>(
+      `SELECT MAX(OFFSET_ID) as OFFSET_ID FROM VC_COMMISSION_OFFSETS`
+    );
+
+    return NextResponse.json({ offset_id: result[0]?.OFFSET_ID }, { status: 201 });
   } catch (error) {
     console.error("Error creating offset:", error);
     return NextResponse.json(

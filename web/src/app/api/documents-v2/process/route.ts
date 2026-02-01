@@ -5,10 +5,6 @@ import { query, execute } from "@/lib/snowflake";
 const GEMINI_MODEL = "gemini-2.0-flash";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
-interface RouteParams {
-  params: Promise<{ id: string }>;
-}
-
 // Classification prompt for AI - updated to use party/sub_party
 function getClassificationPrompt(): string {
   return `You are a document classification and filing assistant for Voyage Advisory.
@@ -272,60 +268,48 @@ async function analyzeFile(pdfBase64: string): Promise<Analysis | null> {
   return analyzeWithClaude(pdfBase64);
 }
 
-// POST - Process a single document with AI
-export async function POST(request: NextRequest, { params }: RouteParams) {
-  const startTime = Date.now();
+interface ProcessResult {
+  id: string;
+  success: boolean;
+  error?: string;
+  is_contract?: boolean;
+  ai_model_used?: string;
+  confidence_score?: number;
+}
 
+async function processDocument(docId: string, filePath: string, originalFilename: string): Promise<ProcessResult> {
   try {
-    const { id } = await params;
-    console.log(`[process] Starting AI processing for document ${id}`);
-
-    // Get document record
-    const docs = await query<{
-      ID: string;
-      FILE_PATH: string;
-      STATUS: string;
-      ORIGINAL_FILENAME: string;
-    }>(`SELECT ID, FILE_PATH, STATUS, ORIGINAL_FILENAME FROM DOCUMENTS WHERE ID = ?`, [id]);
-
-    if (docs.length === 0) {
-      return NextResponse.json({ error: "Document not found" }, { status: 404 });
-    }
-
-    const doc = docs[0];
-    console.log(`[process] Found document: ${doc.ORIGINAL_FILENAME}, status: ${doc.STATUS}`);
+    console.log(`[process] Processing document ${docId}: ${originalFilename}`);
 
     // Download file from R2
-    console.log(`[process] Downloading from R2: ${doc.FILE_PATH}`);
     let fileBuffer: Buffer;
     try {
-      fileBuffer = await downloadFromR2(doc.FILE_PATH);
+      fileBuffer = await downloadFromR2(filePath);
       console.log(`[process] Downloaded ${fileBuffer.length} bytes`);
     } catch (r2Error) {
       console.error("[process] R2 download failed:", r2Error);
-      return NextResponse.json(
-        { error: `Failed to download file from storage: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}` },
-        { status: 500 }
-      );
+      return {
+        id: docId,
+        success: false,
+        error: `Failed to download file: ${r2Error instanceof Error ? r2Error.message : String(r2Error)}`,
+      };
     }
 
     // Convert to base64 for AI APIs
     const pdfBase64 = fileBuffer.toString("base64");
 
     // Analyze with AI
-    console.log("[process] Starting AI analysis...");
     const analysis = await analyzeFile(pdfBase64);
 
     if (!analysis) {
-      console.log("[process] AI analysis failed - both Gemini and Claude returned null");
-      return NextResponse.json(
-        { error: "AI analysis failed. Please check API keys and try again." },
-        { status: 500 }
-      );
+      return {
+        id: docId,
+        success: false,
+        error: "AI analysis failed - both Gemini and Claude returned null",
+      };
     }
 
     const aiUsed = analysis._aiUsed || "Unknown";
-    console.log(`[process] AI analysis complete using ${aiUsed}`);
 
     // Build update query based on analysis type
     const updateFields: string[] = [];
@@ -395,7 +379,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");
-    updateValues.push(id);
+    updateValues.push(docId);
 
     const updateSql = `
       UPDATE DOCUMENTS
@@ -403,20 +387,87 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       WHERE ID = ?
     `;
 
-    console.log("[process] Updating document record...");
     await execute(updateSql, updateValues);
 
-    const duration = Date.now() - startTime;
-    console.log(`[process] Processing complete in ${duration}ms`);
-
-    return NextResponse.json({
+    return {
+      id: docId,
       success: true,
-      id,
       is_contract: analysis.is_contract,
       ai_model_used: aiUsed,
       confidence_score: analysis.confidence_score,
-      analysis: analysis,
+    };
+  } catch (error) {
+    console.error(`[process] Error processing document ${docId}:`, error);
+    return {
+      id: docId,
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// POST - Process selected documents with AI
+// Body: { ids: string[] }
+export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+
+  try {
+    const body = await request.json();
+    const { ids } = body as { ids: string[] };
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: "Missing required field: ids (array of document IDs)" },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[process] Processing ${ids.length} documents...`);
+
+    // Get documents from database
+    const placeholders = ids.map(() => "?").join(", ");
+    const docs = await query<{
+      ID: string;
+      FILE_PATH: string;
+      ORIGINAL_FILENAME: string;
+      STATUS: string;
+    }>(`SELECT ID, FILE_PATH, ORIGINAL_FILENAME, STATUS FROM DOCUMENTS WHERE ID IN (${placeholders})`, ids);
+
+    if (docs.length === 0) {
+      return NextResponse.json(
+        { error: "No documents found with the provided IDs" },
+        { status: 404 }
+      );
+    }
+
+    // Process each document
+    const results: ProcessResult[] = [];
+    for (const doc of docs) {
+      // Skip if already processed (not in 'uploaded' status)
+      if (doc.STATUS !== "uploaded") {
+        results.push({
+          id: doc.ID,
+          success: false,
+          error: `Document already processed (status: ${doc.STATUS})`,
+        });
+        continue;
+      }
+
+      const result = await processDocument(doc.ID, doc.FILE_PATH, doc.ORIGINAL_FILENAME);
+      results.push(result);
+    }
+
+    const processed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+    const duration = Date.now() - startTime;
+
+    console.log(`[process] Complete: ${processed} processed, ${failed} failed in ${duration}ms`);
+
+    return NextResponse.json({
+      processed,
+      failed,
       duration_ms: duration,
+      results,
     });
   } catch (error) {
     const duration = Date.now() - startTime;

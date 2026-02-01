@@ -66,7 +66,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     if (!project_id || !staff_name || !month_date) {
       return NextResponse.json(
-        { error: "project_id, staff_name, and month_date are required" },
+        { error: `Missing required fields: ${!project_id ? 'project_id ' : ''}${!staff_name ? 'staff_name ' : ''}${!month_date ? 'month_date' : ''}`.trim() },
+        { status: 400 }
+      );
+    }
+
+    // Validate id is a valid number
+    const assignmentId = parseInt(id);
+    if (isNaN(assignmentId)) {
+      return NextResponse.json(
+        { error: `Invalid assignment ID: ${id}` },
         { status: 400 }
       );
     }
@@ -88,15 +97,16 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         allocated_hours || 0,
         bill_rate || 0,
         notes || null,
-        parseInt(id),
+        assignmentId,
       ]
     );
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error updating assignment:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to update assignment" },
+      { error: `Failed to update assignment: ${errorMessage}` },
       { status: 500 }
     );
   }

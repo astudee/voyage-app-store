@@ -52,12 +52,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const result = await query<{ REVENUE_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_FIXED_FEE_REVENUE (
         PROJECT_ID, MONTH_DATE, REVENUE_AMOUNT,
         CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING REVENUE_ID`,
+      ) VALUES (?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         body.project_id,
         body.month_date,
@@ -65,7 +65,13 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ revenue_id: result[0].REVENUE_ID }, { status: 201 });
+    // Query back for the ID using the unique PROJECT_ID + MONTH_DATE combination
+    const result = await query<{ REVENUE_ID: number }>(
+      `SELECT REVENUE_ID FROM VC_FIXED_FEE_REVENUE WHERE PROJECT_ID = ? AND MONTH_DATE = ?`,
+      [body.project_id, body.month_date]
+    );
+
+    return NextResponse.json({ revenue_id: result[0]?.REVENUE_ID }, { status: 201 });
   } catch (error) {
     console.error("Error creating fixed fee revenue:", error);
     return NextResponse.json(

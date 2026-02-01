@@ -269,11 +269,11 @@ export default function PayrollHelperPage() {
                         <tr key={i} className="border-b border-gray-100">
                           <td className="py-2">{emp.name}</td>
                           <td className="py-2">{emp.type}</td>
-                          <td className="py-2 text-right">{emp.regular.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.paidLeave.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.sickLeave.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.holiday.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.unpaidLeave.toFixed(1)}</td>
+                          <td className="py-2 text-right">{emp.regular.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.paidLeave.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.sickLeave.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.holiday.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.unpaidLeave.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -307,10 +307,10 @@ export default function PayrollHelperPage() {
                         <tr key={i} className="border-b border-gray-100">
                           <td className="py-2">{emp.name}</td>
                           <td className="py-2">{emp.type}</td>
-                          <td className="py-2 text-right">{emp.paidLeave.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.sickLeave.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.holiday.toFixed(1)}</td>
-                          <td className="py-2 text-right">{emp.unpaidLeave.toFixed(1)}</td>
+                          <td className="py-2 text-right">{emp.paidLeave.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.sickLeave.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.holiday.toFixed(2)}</td>
+                          <td className="py-2 text-right">{emp.unpaidLeave.toFixed(2)}</td>
                         </tr>
                       ))}
                     </tbody>

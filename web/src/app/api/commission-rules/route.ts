@@ -47,12 +47,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const result = await query<{ RULE_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_COMMISSION_RULES (
         RULE_SCOPE, CLIENT_OR_RESOURCE, SALESPERSON, CATEGORY, RATE,
         START_DATE, END_DATE, NOTE, IS_ACTIVE, CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING RULE_ID`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         body.rule_scope,
         body.client_or_resource,
@@ -66,7 +66,12 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ rule_id: result[0].RULE_ID }, { status: 201 });
+    // Query back for the ID using MAX (auto-increment)
+    const result = await query<{ RULE_ID: number }>(
+      `SELECT MAX(RULE_ID) as RULE_ID FROM VC_COMMISSION_RULES`
+    );
+
+    return NextResponse.json({ rule_id: result[0]?.RULE_ID }, { status: 201 });
   } catch (error) {
     console.error("Error creating commission rule:", error);
     return NextResponse.json(

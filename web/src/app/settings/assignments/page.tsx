@@ -300,7 +300,10 @@ export default function AssignmentsSettingsPage() {
             bill_rate: row.billRate,
           }),
         });
-        if (!response.ok) throw new Error("Failed to update");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Failed to update (${response.status})`);
+        }
       } else {
         // Create new
         const response = await fetch("/api/assignments", {
@@ -314,7 +317,10 @@ export default function AssignmentsSettingsPage() {
             bill_rate: row.billRate,
           }),
         });
-        if (!response.ok) throw new Error("Failed to create");
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `Failed to create (${response.status})`);
+        }
       }
 
       // Refresh data
@@ -322,7 +328,7 @@ export default function AssignmentsSettingsPage() {
       toast.success("Updated");
     } catch (error) {
       console.error("Error saving:", error);
-      toast.error("Failed to save changes");
+      toast.error(error instanceof Error ? error.message : "Failed to save changes");
     } finally {
       setSaving(false);
     }
@@ -342,7 +348,7 @@ export default function AssignmentsSettingsPage() {
       for (const month of Object.keys(row.months)) {
         const monthData = row.months[month];
         if (monthData.assignmentId) {
-          await fetch(`/api/assignments/${monthData.assignmentId}`, {
+          const response = await fetch(`/api/assignments/${monthData.assignmentId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -353,6 +359,10 @@ export default function AssignmentsSettingsPage() {
               bill_rate: newRate,
             }),
           });
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Failed to update (${response.status})`);
+          }
         }
       }
 
@@ -360,7 +370,7 @@ export default function AssignmentsSettingsPage() {
       toast.success("Rate updated");
     } catch (error) {
       console.error("Error updating rate:", error);
-      toast.error("Failed to update rate");
+      toast.error(error instanceof Error ? error.message : "Failed to update rate");
     } finally {
       setSaving(false);
     }

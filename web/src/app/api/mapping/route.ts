@@ -42,12 +42,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const result = await query<{ MAPPING_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_CLIENT_NAME_MAPPING (
         BEFORE_NAME, AFTER_NAME, SOURCE_SYSTEM, IS_ACTIVE,
         CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING MAPPING_ID`,
+      ) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         body.before_name,
         body.after_name,
@@ -56,7 +56,12 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ mapping_id: result[0].MAPPING_ID }, { status: 201 });
+    // Query back for the ID using MAX (auto-increment)
+    const result = await query<{ MAPPING_ID: number }>(
+      `SELECT MAX(MAPPING_ID) as MAPPING_ID FROM VC_CLIENT_NAME_MAPPING`
+    );
+
+    return NextResponse.json({ mapping_id: result[0]?.MAPPING_ID }, { status: 201 });
   } catch (error) {
     console.error("Error creating mapping:", error);
     return NextResponse.json(

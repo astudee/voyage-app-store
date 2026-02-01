@@ -78,17 +78,17 @@ export async function POST(request: NextRequest) {
 
     if (!project_id || !staff_name || !month_date) {
       return NextResponse.json(
-        { error: "project_id, staff_name, and month_date are required" },
+        { error: `Missing required fields: ${!project_id ? 'project_id ' : ''}${!staff_name ? 'staff_name ' : ''}${!month_date ? 'month_date' : ''}`.trim() },
         { status: 400 }
       );
     }
 
-    const result = await query<{ ASSIGNMENT_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_STAFF_ASSIGNMENTS (
         PROJECT_ID, STAFF_NAME, MONTH_DATE, ALLOCATED_HOURS, BILL_RATE, NOTES,
         CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING ASSIGNMENT_ID`,
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         project_id,
         staff_name,
@@ -99,11 +99,20 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ assignment_id: result[0].ASSIGNMENT_ID }, { status: 201 });
+    // Query back to get the assignment ID using the unique key
+    const result = await query<{ ASSIGNMENT_ID: number }>(
+      `SELECT ASSIGNMENT_ID FROM VC_STAFF_ASSIGNMENTS
+       WHERE PROJECT_ID = ? AND STAFF_NAME = ? AND MONTH_DATE = ?`,
+      [project_id, staff_name, month_date]
+    );
+
+    const assignmentId = result[0]?.ASSIGNMENT_ID;
+    return NextResponse.json({ assignment_id: assignmentId }, { status: 201 });
   } catch (error) {
     console.error("Error creating assignment:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to create assignment" },
+      { error: `Failed to create assignment: ${errorMessage}` },
       { status: 500 }
     );
   }

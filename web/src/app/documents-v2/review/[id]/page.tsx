@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -25,26 +26,18 @@ interface Document {
   // Contract fields
   document_category: string | null;
   contract_type: string | null;
-  counterparty: string | null;
-  sub_entity: string | null;
+  party: string | null;
+  sub_party: string | null;
   executed_date: string | null;
   // Document fields
   issuer_category: string | null;
-  issuer_name: string | null;
-  country: string | null;
-  state: string | null;
   document_type: string | null;
   period_end_date: string | null;
   letter_date: string | null;
   account_last4: string | null;
-  employee_name: string | null;
-  // Invoice fields
-  invoice_type: string | null;
-  amount: number | null;
-  currency: string | null;
-  due_date: string | null;
+  // Shared
+  notes: string | null;
   // AI fields
-  description: string | null;
   ai_confidence_score: number | null;
   ai_model_used: string | null;
 }
@@ -53,7 +46,7 @@ interface PageProps {
   params: Promise<{ id: string }>;
 }
 
-export default function ReviewPage({ params }: PageProps) {
+export default function ReviewDetailPage({ params }: PageProps) {
   const { id } = use(params);
   const router = useRouter();
 
@@ -126,10 +119,10 @@ export default function ReviewPage({ params }: PageProps) {
       const res = await fetch(`/api/documents-v2/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, status: "archived" }),
+        body: JSON.stringify({ ...formData, status: "archived", reviewed_at: new Date().toISOString() }),
       });
       if (!res.ok) throw new Error("Failed to approve");
-      router.push("/documents-v2/queue");
+      router.push("/documents-v2/review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Approve failed");
       setSaving(false);
@@ -142,7 +135,7 @@ export default function ReviewPage({ params }: PageProps) {
     try {
       const res = await fetch(`/api/documents-v2/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
-      router.push("/documents-v2/queue");
+      router.push("/documents-v2/review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
       setSaving(false);
@@ -167,8 +160,8 @@ export default function ReviewPage({ params }: PageProps) {
             <CardContent className="py-8">
               <p className="text-center text-red-500">{error || "Document not found"}</p>
               <div className="mt-4 flex justify-center">
-                <Button onClick={() => router.push("/documents-v2/queue")}>
-                  Back to Queue
+                <Button onClick={() => router.push("/documents-v2/review")}>
+                  Back to Review
                 </Button>
               </div>
             </CardContent>
@@ -292,11 +285,11 @@ export default function ReviewPage({ params }: PageProps) {
                           ? "Contractor Company"
                           : formData.document_category === "EMPLOYEE"
                           ? "Employee Name"
-                          : "Counterparty"}
+                          : "Party"}
                       </Label>
                       <Input
-                        value={formData.counterparty || ""}
-                        onChange={(e) => handleFieldChange("counterparty", e.target.value || null)}
+                        value={formData.party || ""}
+                        onChange={(e) => handleFieldChange("party", e.target.value || null)}
                         placeholder={
                           formData.document_category === "CONTRACTOR"
                             ? "Company name (e.g., Acme Consulting LLC)"
@@ -312,15 +305,15 @@ export default function ReviewPage({ params }: PageProps) {
                         {formData.document_category === "CONTRACTOR"
                           ? "Individual Name"
                           : formData.document_category === "COMPANY"
-                          ? "Sub-Entity (optional)"
-                          : "Sub-Entity"}
+                          ? "Sub-Party (optional)"
+                          : "Sub-Party"}
                       </Label>
                       <Input
-                        value={formData.sub_entity || ""}
-                        onChange={(e) => handleFieldChange("sub_entity", e.target.value || null)}
+                        value={formData.sub_party || ""}
+                        onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
                         placeholder={
                           formData.document_category === "CONTRACTOR"
-                            ? "Last, First (e.g., Shah, Alam)"
+                            ? "Last, First (e.g., Alam, Shah)"
                             : "Department or division"
                         }
                       />
@@ -341,11 +334,12 @@ export default function ReviewPage({ params }: PageProps) {
                     </div>
 
                     <div>
-                      <Label>Description (optional)</Label>
-                      <Input
-                        value={formData.description || ""}
-                        onChange={(e) => handleFieldChange("description", e.target.value || null)}
+                      <Label>Notes (optional)</Label>
+                      <Textarea
+                        value={formData.notes || ""}
+                        onChange={(e) => handleFieldChange("notes", e.target.value || null)}
                         placeholder="Brief description"
+                        rows={3}
                       />
                     </div>
                   </>
@@ -377,10 +371,10 @@ export default function ReviewPage({ params }: PageProps) {
                     </div>
 
                     <div>
-                      <Label>Issuer Name</Label>
+                      <Label>Party (Issuer Name)</Label>
                       <Input
-                        value={formData.issuer_name || ""}
-                        onChange={(e) => handleFieldChange("issuer_name", e.target.value || null)}
+                        value={formData.party || ""}
+                        onChange={(e) => handleFieldChange("party", e.target.value || null)}
                         placeholder={
                           formData.issuer_category === "GOVERNMENT_STATE"
                             ? "State of {StateName}"
@@ -392,10 +386,10 @@ export default function ReviewPage({ params }: PageProps) {
                     </div>
 
                     <div>
-                      <Label>Sub-Entity (optional)</Label>
+                      <Label>Sub-Party (optional)</Label>
                       <Input
-                        value={formData.sub_entity || ""}
-                        onChange={(e) => handleFieldChange("sub_entity", e.target.value || null)}
+                        value={formData.sub_party || ""}
+                        onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
                         placeholder={
                           formData.issuer_category === "GOVERNMENT_STATE" ||
                           formData.issuer_category === "GOVERNMENT_FEDERAL"
@@ -413,30 +407,6 @@ export default function ReviewPage({ params }: PageProps) {
                         placeholder="e.g., Statement, Invoice, Notice"
                       />
                     </div>
-
-                    {(formData.issuer_category === "GOVERNMENT_STATE" ||
-                      formData.issuer_category === "GOVERNMENT_FEDERAL") && (
-                      <>
-                        <div>
-                          <Label>Country</Label>
-                          <Input
-                            value={formData.country || ""}
-                            onChange={(e) => handleFieldChange("country", e.target.value || null)}
-                            placeholder="e.g., US"
-                          />
-                        </div>
-                        {formData.issuer_category === "GOVERNMENT_STATE" && (
-                          <div>
-                            <Label>State</Label>
-                            <Input
-                              value={formData.state || ""}
-                              onChange={(e) => handleFieldChange("state", e.target.value || null)}
-                              placeholder="Full state name"
-                            />
-                          </div>
-                        )}
-                      </>
-                    )}
 
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -463,67 +433,19 @@ export default function ReviewPage({ params }: PageProps) {
                         value={formData.account_last4 || ""}
                         onChange={(e) => handleFieldChange("account_last4", e.target.value || null)}
                         placeholder="Last 4 digits"
-                        maxLength={4}
+                        maxLength={10}
                       />
                     </div>
 
                     <div>
-                      <Label>Employee Name</Label>
-                      <Input
-                        value={formData.employee_name || ""}
-                        onChange={(e) => handleFieldChange("employee_name", e.target.value || null)}
-                        placeholder="Last, First (if applicable)"
+                      <Label>Notes (optional)</Label>
+                      <Textarea
+                        value={formData.notes || ""}
+                        onChange={(e) => handleFieldChange("notes", e.target.value || null)}
+                        placeholder="Additional context"
+                        rows={3}
                       />
                     </div>
-
-                    {formData.issuer_category === "INVOICE" && (
-                      <>
-                        <div>
-                          <Label>Invoice Type</Label>
-                          <Select
-                            value={formData.invoice_type || ""}
-                            onValueChange={(v) => handleFieldChange("invoice_type", v || null)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="VENDOR">Vendor (bill we received)</SelectItem>
-                              <SelectItem value="CLIENT">Client (invoice we sent)</SelectItem>
-                              <SelectItem value="CONTRACTOR">Contractor (contractor invoice)</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label>Amount</Label>
-                            <Input
-                              type="number"
-                              step="0.01"
-                              value={formData.amount || ""}
-                              onChange={(e) =>
-                                handleFieldChange("amount", e.target.value ? parseFloat(e.target.value) : null)
-                              }
-                            />
-                          </div>
-                          <div>
-                            <Label>Currency</Label>
-                            <Input
-                              value={formData.currency || "USD"}
-                              onChange={(e) => handleFieldChange("currency", e.target.value || null)}
-                            />
-                          </div>
-                        </div>
-                        <div>
-                          <Label>Due Date</Label>
-                          <Input
-                            type="date"
-                            value={formData.due_date || ""}
-                            onChange={(e) => handleFieldChange("due_date", e.target.value || null)}
-                          />
-                        </div>
-                      </>
-                    )}
                   </>
                 )}
               </div>
@@ -534,7 +456,7 @@ export default function ReviewPage({ params }: PageProps) {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/documents-v2/queue")}
+                  onClick={() => router.push("/documents-v2/review")}
                   disabled={saving}
                 >
                   Cancel

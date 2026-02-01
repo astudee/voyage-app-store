@@ -1,0 +1,128 @@
+import { NextRequest, NextResponse } from "next/server";
+import { query, execute } from "@/lib/snowflake";
+import { deleteFromR2 } from "@/lib/r2";
+
+interface BatchResult {
+  id: string;
+  success: boolean;
+  error?: string;
+}
+
+// POST - Batch operations: approve or delete documents
+// Body: { action: 'approve' | 'delete', ids: string[] }
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { action, ids } = body as { action: "approve" | "delete"; ids: string[] };
+
+    if (!action || !["approve", "delete"].includes(action)) {
+      return NextResponse.json(
+        { error: "Invalid action. Must be 'approve' or 'delete'" },
+        { status: 400 }
+      );
+    }
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        { error: "Missing required field: ids (array of document IDs)" },
+        { status: 400 }
+      );
+    }
+
+    console.log(`[batch] ${action} ${ids.length} documents...`);
+
+    const results: BatchResult[] = [];
+
+    if (action === "approve") {
+      // Approve: set status='archived', reviewed_at=now
+      for (const id of ids) {
+        try {
+          await execute(
+            `UPDATE DOCUMENTS
+             SET STATUS = 'archived',
+                 REVIEWED_AT = CURRENT_TIMESTAMP(),
+                 UPDATED_AT = CURRENT_TIMESTAMP()
+             WHERE ID = ? AND STATUS = 'pending_approval'`,
+            [id]
+          );
+          results.push({ id, success: true });
+        } catch (error) {
+          console.error(`[batch] Error approving ${id}:`, error);
+          results.push({
+            id,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    } else if (action === "delete") {
+      // Delete: soft delete - set status='deleted', deleted_at=now
+      for (const id of ids) {
+        try {
+          // Get document info first
+          const docs = await query<{ FILE_PATH: string; STATUS: string }>(
+            `SELECT FILE_PATH, STATUS FROM DOCUMENTS WHERE ID = ?`,
+            [id]
+          );
+
+          if (docs.length === 0) {
+            results.push({ id, success: false, error: "Document not found" });
+            continue;
+          }
+
+          const doc = docs[0];
+
+          // If already deleted, do hard delete (permanent)
+          if (doc.STATUS === "deleted") {
+            try {
+              await deleteFromR2(doc.FILE_PATH);
+            } catch (r2Error) {
+              console.error(`[batch] R2 delete failed for ${id}:`, r2Error);
+              // Continue with DB deletion
+            }
+            await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
+            results.push({ id, success: true });
+          } else {
+            // Soft delete
+            await execute(
+              `UPDATE DOCUMENTS
+               SET STATUS = 'deleted',
+                   DELETED_AT = CURRENT_TIMESTAMP(),
+                   UPDATED_AT = CURRENT_TIMESTAMP()
+               WHERE ID = ?`,
+              [id]
+            );
+            results.push({ id, success: true });
+          }
+        } catch (error) {
+          console.error(`[batch] Error deleting ${id}:`, error);
+          results.push({
+            id,
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    const success = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success).length;
+
+    console.log(`[batch] Complete: ${success} succeeded, ${failed} failed`);
+
+    return NextResponse.json({
+      success,
+      failed,
+      results,
+    });
+  } catch (error) {
+    console.error("[batch] Error:", error);
+    return NextResponse.json(
+      {
+        error: "Batch operation failed",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}

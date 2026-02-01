@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -16,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,7 +26,6 @@ import {
 interface Document {
   id: string;
   original_filename: string;
-  file_path: string;
   is_contract: boolean | null;
   document_category: string | null;
   contract_type: string | null;
@@ -37,8 +36,7 @@ interface Document {
   document_type: string | null;
   period_end_date: string | null;
   letter_date: string | null;
-  notes: string | null;
-  reviewed_at: string | null;
+  ai_confidence_score: number | null;
   created_at: string;
 }
 
@@ -76,23 +74,23 @@ function getDateDisplay(doc: Document): string {
   return formatDate(doc.letter_date || doc.period_end_date);
 }
 
-export default function ArchivePage() {
+export default function ReviewPage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [approving, setApproving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchDocuments = async () => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/documents-v2?status=archived&limit=500");
+      const res = await fetch("/api/documents-v2?status=pending_approval");
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
-      setFilteredDocuments(data.documents);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -104,25 +102,95 @@ export default function ArchivePage() {
     fetchDocuments();
   }, []);
 
-  useEffect(() => {
-    if (!searchTerm) {
-      setFilteredDocuments(documents);
-      return;
-    }
-
-    const term = searchTerm.toLowerCase();
-    const filtered = documents.filter((doc) => {
-      return (
-        doc.party?.toLowerCase().includes(term) ||
-        doc.sub_party?.toLowerCase().includes(term) ||
-        doc.original_filename.toLowerCase().includes(term) ||
-        doc.contract_type?.toLowerCase().includes(term) ||
-        doc.document_type?.toLowerCase().includes(term) ||
-        doc.notes?.toLowerCase().includes(term)
-      );
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
     });
-    setFilteredDocuments(filtered);
-  }, [searchTerm, documents]);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === documents.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(documents.map((d) => d.id)));
+    }
+  };
+
+  const handleApproveSelected = async () => {
+    if (selectedIds.size === 0) return;
+
+    setApproving(true);
+    try {
+      const res = await fetch("/api/documents-v2/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", ids: Array.from(selectedIds) }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Approve failed");
+      }
+
+      setSelectedIds(new Set());
+      fetchDocuments();
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} document(s)?`)) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/documents-v2/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Delete failed");
+      }
+
+      setSelectedIds(new Set());
+      fetchDocuments();
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleApproveOne = async (id: string) => {
+    try {
+      const res = await fetch("/api/documents-v2/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "approve", ids: [id] }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Approve failed");
+      }
+
+      fetchDocuments();
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    }
+  };
 
   const handleDeleteOne = async (id: string) => {
     if (!confirm("Delete this document?")) return;
@@ -145,46 +213,68 @@ export default function ArchivePage() {
     }
   };
 
-  const handleDownload = async (doc: Document) => {
-    try {
-      const res = await fetch(`/api/documents-v2/${doc.id}/view-url`);
-      if (!res.ok) throw new Error("Failed to get download URL");
-      const data = await res.json();
-      window.open(data.url, "_blank");
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+  const handleRowClick = (e: React.MouseEvent, id: string) => {
+    // Don't navigate if clicking on checkbox or dropdown
+    if ((e.target as HTMLElement).closest('[data-no-navigate]')) {
+      return;
     }
+    router.push(`/documents-v2/review/${id}`);
   };
 
   return (
     <AppLayout>
       <div className="p-8">
         {/* Tab Navigation */}
-        <div className="mb-6 flex items-center justify-between border-b">
-          <div className="flex gap-2">
-            <Link href="/documents-v2/import">
-              <Button variant="ghost" className="rounded-none">
-                Import
-              </Button>
-            </Link>
-            <Link href="/documents-v2/review">
-              <Button variant="ghost" className="rounded-none">
-                Review
-              </Button>
-            </Link>
-            <Link href="/documents-v2/archive">
-              <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
-                Archive ({documents.length})
-              </Button>
-            </Link>
-          </div>
-          <div className="pb-2">
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64"
+        <div className="mb-6 flex gap-2 border-b">
+          <Link href="/documents-v2/import">
+            <Button variant="ghost" className="rounded-none">
+              Import
+            </Button>
+          </Link>
+          <Link href="/documents-v2/review">
+            <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
+              Review ({documents.length})
+            </Button>
+          </Link>
+          <Link href="/documents-v2/archive">
+            <Button variant="ghost" className="rounded-none">
+              Archive
+            </Button>
+          </Link>
+        </div>
+
+        {/* Actions Bar */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2" data-no-navigate>
+            <Checkbox
+              checked={selectedIds.size === documents.length && documents.length > 0}
+              onCheckedChange={toggleSelectAll}
             />
+            <span className="text-sm text-gray-500">
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select All"}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            {selectedIds.size > 0 && (
+              <>
+                <Button
+                  onClick={handleApproveSelected}
+                  disabled={approving || deleting}
+                >
+                  {approving ? "Approving..." : `Approve Selected (${selectedIds.size})`}
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteSelected}
+                  disabled={approving || deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              </>
+            )}
+            <Button variant="outline" onClick={fetchDocuments} disabled={loading}>
+              Refresh
+            </Button>
           </div>
         </div>
 
@@ -206,14 +296,17 @@ export default function ArchivePage() {
               <p className="text-center text-gray-500">Loading documents...</p>
             </CardContent>
           </Card>
-        ) : filteredDocuments.length === 0 ? (
+        ) : documents.length === 0 ? (
           <Card>
             <CardContent className="py-8">
               <p className="text-center text-gray-500">
-                {searchTerm
-                  ? "No documents match your search."
-                  : "No archived documents yet."}
+                No documents pending approval.
               </p>
+              <div className="mt-4 flex justify-center">
+                <Link href="/documents-v2/import">
+                  <Button>Go to Import</Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
         ) : (
@@ -221,20 +314,26 @@ export default function ArchivePage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10" data-no-navigate></TableHead>
                   <TableHead>Party</TableHead>
                   <TableHead className="w-32">Type</TableHead>
                   <TableHead className="w-32">Date</TableHead>
-                  <TableHead className="w-48">Notes</TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDocuments.map((doc) => (
+                {documents.map((doc) => (
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
-                    onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
+                    onClick={(e) => handleRowClick(e, doc.id)}
                   >
+                    <TableCell data-no-navigate>
+                      <Checkbox
+                        checked={selectedIds.has(doc.id)}
+                        onCheckedChange={() => toggleSelect(doc.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-medium">{getPartyDisplay(doc)}</span>
@@ -257,10 +356,7 @@ export default function ArchivePage() {
                     <TableCell className="text-gray-600">
                       {getDateDisplay(doc)}
                     </TableCell>
-                    <TableCell className="text-gray-500 text-sm truncate max-w-[12rem]" title={doc.notes || ""}>
-                      {doc.notes || "-"}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell data-no-navigate>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm">
@@ -271,10 +367,10 @@ export default function ArchivePage() {
                           <DropdownMenuItem
                             onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
                           >
-                            View
+                            View Details
                           </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleDownload(doc)}>
-                            Download
+                          <DropdownMenuItem onClick={() => handleApproveOne(doc.id)}>
+                            Approve
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-red-600"

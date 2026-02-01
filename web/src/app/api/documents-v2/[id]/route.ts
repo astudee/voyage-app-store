@@ -45,34 +45,22 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       "is_contract",
       "document_category",
       "contract_type",
-      "counterparty",
-      "sub_entity",
+      "party",
+      "sub_party",
       "executed_date",
-      "contractor_company",
-      "contractor_individual",
-      "is_corp_to_corp",
       "issuer_category",
-      "issuer_name",
-      "country",
-      "state",
-      "agency_name",
       "document_type",
       "period_end_date",
       "letter_date",
       "account_last4",
-      "employee_name",
-      "invoice_type",
-      "amount",
-      "currency",
-      "due_date",
-      "description",
+      "notes",
       "ai_extracted_text",
       "ai_confidence_score",
       "ai_raw_response",
       "ai_model_used",
+      "ai_processed_at",
       "duplicate_of_id",
       "deleted_at",
-      "permanent_delete_after",
       "reviewed_by",
       "reviewed_at",
     ];
@@ -153,12 +141,11 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
       return NextResponse.json({ status: "permanently_deleted" });
     } else {
-      // Soft delete: mark as deleted with 30-day retention
+      // Soft delete: mark as deleted
       await execute(
         `UPDATE DOCUMENTS
          SET STATUS = 'deleted',
              DELETED_AT = CURRENT_TIMESTAMP(),
-             PERMANENT_DELETE_AFTER = DATEADD(day, 30, CURRENT_TIMESTAMP()),
              UPDATED_AT = CURRENT_TIMESTAMP()
          WHERE ID = ?`,
         [id]

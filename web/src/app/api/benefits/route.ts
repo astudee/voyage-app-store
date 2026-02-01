@@ -50,14 +50,14 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const result = await query<{ BENEFIT_ID: number }>(
+    // Insert the record (Snowflake doesn't support RETURNING)
+    await query(
       `INSERT INTO VC_BENEFITS (
         DESCRIPTION, CODE, BENEFIT_TYPE, IS_FORMULA_BASED,
         TOTAL_MONTHLY_COST, EE_MONTHLY_COST, FIRM_MONTHLY_COST,
         COVERAGE_PERCENTAGE, MAX_WEEKLY_BENEFIT, MAX_MONTHLY_BENEFIT,
         RATE_PER_UNIT, IS_ACTIVE, CREATED_AT, UPDATED_AT
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-      RETURNING BENEFIT_ID`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
       [
         body.description,
         body.code,
@@ -74,7 +74,13 @@ export async function POST(request: NextRequest) {
       ]
     );
 
-    return NextResponse.json({ benefit_id: result[0].BENEFIT_ID }, { status: 201 });
+    // Query back for the ID using the unique CODE field
+    const result = await query<{ BENEFIT_ID: number }>(
+      `SELECT BENEFIT_ID FROM VC_BENEFITS WHERE CODE = ?`,
+      [body.code]
+    );
+
+    return NextResponse.json({ benefit_id: result[0]?.BENEFIT_ID }, { status: 201 });
   } catch (error) {
     console.error("Error creating benefit:", error);
     return NextResponse.json(

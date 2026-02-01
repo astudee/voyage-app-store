@@ -69,13 +69,12 @@ export async function POST(request: NextRequest) {
         );
         results.push({ assignment_id, action: "updated" });
       } else {
-        // Create new
-        const result = await query<{ ASSIGNMENT_ID: number }>(
+        // Create new (Snowflake doesn't support RETURNING)
+        await query(
           `INSERT INTO VC_STAFF_ASSIGNMENTS (
             PROJECT_ID, STAFF_NAME, MONTH_DATE, ALLOCATED_HOURS, BILL_RATE, NOTES,
             CREATED_AT, UPDATED_AT
-          ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
-          RETURNING ASSIGNMENT_ID`,
+          ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())`,
           [
             project_id,
             staff_name,
@@ -85,7 +84,13 @@ export async function POST(request: NextRequest) {
             notes || null,
           ]
         );
-        results.push({ assignment_id: result[0].ASSIGNMENT_ID, action: "created" });
+        // Query back for the ID
+        const result = await query<{ ASSIGNMENT_ID: number }>(
+          `SELECT ASSIGNMENT_ID FROM VC_STAFF_ASSIGNMENTS
+           WHERE PROJECT_ID = ? AND STAFF_NAME = ? AND MONTH_DATE = ?`,
+          [project_id, staff_name, month_date]
+        );
+        results.push({ assignment_id: result[0]?.ASSIGNMENT_ID, action: "created" });
       }
     }
 
