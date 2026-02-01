@@ -18,6 +18,6 @@ export const config = {
      * - /_next/image (image optimization files)
      * - /favicon.ico
      */
-    "/((?!login|api/auth|api/test-snowflake|api/documents-v2/reset-schema|_next/static|_next/image|favicon.ico).*)",
+    "/((?!login|api/auth|api/test-snowflake|api/documents-v2/reset-schema|api/documents-v2/cleanup|_next/static|_next/image|favicon.ico).*)",
   ],
 };
