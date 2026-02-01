@@ -30,6 +30,7 @@ STEP 1: DETERMINE THE DOCUMENT TYPE
 **INVOICE** = Bills to pay or invoices sent:
 - Bills/invoices received from vendors (PAYABLE)
 - Invoices Voyage sent to clients (RECEIVABLE)
+- Look for: "Invoice", "Bill", "Amount Due", "Total Due", "Payment Due"
 
 STEP 2: EXTRACT FIELDS
 
@@ -46,10 +47,19 @@ Return JSON only:
   // CONTRACT only:
   "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
   "contract_type": "MSA" | "SOW" | "NDA" | "SubK" | "CSOW" | "Offer Letter" | etc.,
-  // INVOICE only:
-  "amount": number,
+  // INVOICE only (REQUIRED for invoices):
+  "amount": 1234.56,
   "due_date": "YYYY-MM-DD"
 }
+
+**INVOICE EXTRACTION RULES (CRITICAL):**
+- For invoices, you MUST extract "amount" and "due_date"
+- "amount" = the total amount due as a NUMBER (not a string). Examples: 1500.00, 250, 10000.50
+- "due_date" = the payment due date in YYYY-MM-DD format
+- "document_date" = the invoice date (when it was issued)
+- If amount has currency symbol or commas, remove them: "$1,500.00" → 1500.00
+- If no due date is visible, use null
+- "party" = the vendor or company that sent the invoice (NOT Voyage Advisory)
 
 **CRITICAL RULE - PARTY IDENTIFICATION:**
 
@@ -127,6 +137,24 @@ interface Analysis {
   _aiUsed?: string;
 }
 
+// Normalize AI analysis - parse amounts, clean up fields
+function normalizeAnalysis(analysis: Analysis): void {
+  // Parse amount if it's a string (e.g., "$1,500.00" or "1,500")
+  if (analysis.amount !== undefined && analysis.amount !== null) {
+    if (typeof analysis.amount === "string") {
+      // Remove currency symbols, commas, and whitespace
+      const cleaned = (analysis.amount as unknown as string).replace(/[$,\s]/g, "");
+      const parsed = parseFloat(cleaned);
+      analysis.amount = isNaN(parsed) ? undefined : parsed;
+    }
+  }
+
+  // Log invoice detection for debugging
+  if (analysis.document_type_category === "invoice") {
+    console.log("[process] Invoice detected - amount:", analysis.amount, "due_date:", analysis.due_date, "document_date:", analysis.document_date);
+  }
+}
+
 async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -187,6 +215,7 @@ async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
 
     const analysis = JSON.parse(match[0]) as Analysis;
     analysis._aiUsed = "Gemini";
+    normalizeAnalysis(analysis);
     console.log("[process] Gemini analysis successful");
     return analysis;
   } catch (err) {
@@ -259,6 +288,7 @@ async function analyzeWithClaude(pdfBase64: string): Promise<Analysis | null> {
 
     const analysis = JSON.parse(match[0]) as Analysis;
     analysis._aiUsed = "Claude";
+    normalizeAnalysis(analysis);
     console.log("[process] Claude analysis successful");
     return analysis;
   } catch (err) {
