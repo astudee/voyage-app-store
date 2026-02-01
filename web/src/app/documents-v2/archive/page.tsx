@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -27,16 +27,20 @@ interface Document {
   id: string;
   original_filename: string;
   file_path: string;
-  is_contract: boolean | null;
+  document_type_category: "contract" | "document" | "invoice" | null;
+  is_contract: boolean | null; // Legacy
   document_category: string | null;
   contract_type: string | null;
   party: string | null;
   sub_party: string | null;
-  executed_date: string | null;
-  issuer_category: string | null;
   document_type: string | null;
-  period_end_date: string | null;
+  ai_summary: string | null;
+  executed_date: string | null;
   letter_date: string | null;
+  period_end_date: string | null;
+  amount: number | null;
+  due_date: string | null;
+  invoice_type: string | null;
   notes: string | null;
   reviewed_at: string | null;
   created_at: string;
@@ -45,6 +49,13 @@ interface Document {
 interface DocumentsResponse {
   documents: Document[];
   total: number;
+}
+
+interface SearchResponse {
+  results: Document[];
+  total: number;
+  query: string;
+  search_type?: string;
 }
 
 function formatDate(dateString: string | null): string {
@@ -63,26 +74,46 @@ function getPartyDisplay(doc: Document): string {
 }
 
 function getTypeDisplay(doc: Document): string {
-  if (doc.is_contract) {
-    return doc.contract_type || "-";
+  if (doc.document_type_category === "contract" || doc.is_contract) {
+    return doc.contract_type || "Contract";
   }
-  return doc.document_type || "-";
+  if (doc.document_type_category === "invoice") {
+    return doc.amount ? `Invoice $${doc.amount.toLocaleString()}` : "Invoice";
+  }
+  return doc.document_type || "Document";
 }
 
 function getDateDisplay(doc: Document): string {
-  if (doc.is_contract) {
+  if (doc.document_type_category === "contract" || doc.is_contract) {
     return formatDate(doc.executed_date);
   }
+  if (doc.document_type_category === "invoice") {
+    return formatDate(doc.due_date);
+  }
   return formatDate(doc.letter_date || doc.period_end_date);
+}
+
+function getTypeBadgeColor(doc: Document): string {
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
+    return "bg-purple-100 text-purple-800";
+  }
+  if (category === "invoice") {
+    return "bg-amber-100 text-amber-800";
+  }
+  return "bg-teal-100 text-teal-800";
 }
 
 export default function ArchivePage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
-  const [filteredDocuments, setFilteredDocuments] = useState<Document[]>([]);
+  const [displayedDocuments, setDisplayedDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [isSmartSearch, setIsSmartSearch] = useState(false);
+  const [searchType, setSearchType] = useState<string | null>(null);
 
   const fetchDocuments = async () => {
     try {
@@ -92,7 +123,8 @@ export default function ArchivePage() {
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
-      setFilteredDocuments(data.documents);
+      setDisplayedDocuments(data.documents);
+      setSearchType(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -104,25 +136,106 @@ export default function ArchivePage() {
     fetchDocuments();
   }, []);
 
-  useEffect(() => {
-    if (!searchTerm) {
-      setFilteredDocuments(documents);
+  // Local text filtering (instant)
+  const performLocalFilter = useCallback(
+    (term: string) => {
+      if (!term) {
+        setDisplayedDocuments(documents);
+        setSearchType(null);
+        return;
+      }
+
+      const lowerTerm = term.toLowerCase();
+      const filtered = documents.filter((doc) => {
+        return (
+          doc.party?.toLowerCase().includes(lowerTerm) ||
+          doc.sub_party?.toLowerCase().includes(lowerTerm) ||
+          doc.original_filename.toLowerCase().includes(lowerTerm) ||
+          doc.contract_type?.toLowerCase().includes(lowerTerm) ||
+          doc.document_type?.toLowerCase().includes(lowerTerm) ||
+          doc.ai_summary?.toLowerCase().includes(lowerTerm) ||
+          doc.notes?.toLowerCase().includes(lowerTerm)
+        );
+      });
+      setDisplayedDocuments(filtered);
+      setSearchType("local");
+    },
+    [documents]
+  );
+
+  // AI-powered search
+  const performSmartSearch = async (query: string) => {
+    if (!query || query.length < 2) {
+      setDisplayedDocuments(documents);
+      setSearchType(null);
       return;
     }
 
-    const term = searchTerm.toLowerCase();
-    const filtered = documents.filter((doc) => {
-      return (
-        doc.party?.toLowerCase().includes(term) ||
-        doc.sub_party?.toLowerCase().includes(term) ||
-        doc.original_filename.toLowerCase().includes(term) ||
-        doc.contract_type?.toLowerCase().includes(term) ||
-        doc.document_type?.toLowerCase().includes(term) ||
-        doc.notes?.toLowerCase().includes(term)
-      );
-    });
-    setFilteredDocuments(filtered);
-  }, [searchTerm, documents]);
+    setSearching(true);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/documents-v2/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: query }),
+      });
+
+      const data: SearchResponse = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.query || "Search failed");
+      }
+
+      setDisplayedDocuments(data.results);
+      setSearchType(data.search_type || "ai");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Search failed");
+      setDisplayedDocuments([]);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  // Handle search input change
+  const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+
+    if (!isSmartSearch) {
+      performLocalFilter(value);
+    }
+  };
+
+  // Handle search submit (for smart search)
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isSmartSearch && searchTerm) {
+      performSmartSearch(searchTerm);
+    }
+  };
+
+  // Toggle smart search
+  const toggleSmartSearch = () => {
+    const newValue = !isSmartSearch;
+    setIsSmartSearch(newValue);
+
+    if (newValue) {
+      // Switching to smart search - clear results until user searches
+      if (searchTerm) {
+        performSmartSearch(searchTerm);
+      }
+    } else {
+      // Switching to local filter
+      performLocalFilter(searchTerm);
+    }
+  };
+
+  // Clear search
+  const clearSearch = () => {
+    setSearchTerm("");
+    setDisplayedDocuments(documents);
+    setSearchType(null);
+  };
 
   const handleDeleteOne = async (id: string) => {
     if (!confirm("Delete this document?")) return;
@@ -178,15 +291,57 @@ export default function ArchivePage() {
               </Button>
             </Link>
           </div>
-          <div className="pb-2">
-            <Input
-              placeholder="Search..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-64"
-            />
-          </div>
         </div>
+
+        {/* Search Bar */}
+        <Card className="mb-6">
+          <CardContent className="py-4">
+            <form onSubmit={handleSearchSubmit} className="flex gap-3 items-center">
+              <div className="flex-1 relative">
+                <Input
+                  placeholder={
+                    isSmartSearch
+                      ? "Ask a question about your documents... (e.g., 'NDAs with Acme Corp', 'invoices over $5000')"
+                      : "Filter by party, filename, type..."
+                  }
+                  value={searchTerm}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="pr-20"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={clearSearch}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant={isSmartSearch ? "default" : "outline"}
+                onClick={toggleSmartSearch}
+                className="whitespace-nowrap"
+              >
+                {isSmartSearch ? "✨ Smart Search" : "Smart Search"}
+              </Button>
+              {isSmartSearch && (
+                <Button type="submit" disabled={searching || !searchTerm}>
+                  {searching ? "Searching..." : "Search"}
+                </Button>
+              )}
+            </form>
+            {searchType && (
+              <div className="mt-2 text-xs text-gray-500">
+                {searchType === "ai" && "AI-powered semantic search"}
+                {searchType === "text" && "Text-based search (AI unavailable)"}
+                {searchType === "local" && "Instant filter"}
+                {displayedDocuments.length > 0 && ` • ${displayedDocuments.length} results`}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Document List */}
         {error ? (
@@ -206,7 +361,7 @@ export default function ArchivePage() {
               <p className="text-center text-gray-500">Loading documents...</p>
             </CardContent>
           </Card>
-        ) : filteredDocuments.length === 0 ? (
+        ) : displayedDocuments.length === 0 ? (
           <Card>
             <CardContent className="py-8">
               <p className="text-center text-gray-500">
@@ -214,6 +369,13 @@ export default function ArchivePage() {
                   ? "No documents match your search."
                   : "No archived documents yet."}
               </p>
+              {searchTerm && (
+                <div className="mt-4 flex justify-center">
+                  <Button variant="outline" onClick={clearSearch}>
+                    Clear Search
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -222,14 +384,14 @@ export default function ArchivePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Party</TableHead>
-                  <TableHead className="w-32">Type</TableHead>
+                  <TableHead className="w-40">Type</TableHead>
                   <TableHead className="w-32">Date</TableHead>
-                  <TableHead className="w-48">Notes</TableHead>
+                  <TableHead className="w-64">Summary</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredDocuments.map((doc) => (
+                {displayedDocuments.map((doc) => (
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
@@ -238,27 +400,25 @@ export default function ArchivePage() {
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="font-medium">{getPartyDisplay(doc)}</span>
-                        <span className="text-xs text-gray-500 truncate max-w-md" title={doc.original_filename}>
+                        <span
+                          className="text-xs text-gray-500 truncate max-w-md"
+                          title={doc.original_filename}
+                        >
                           {doc.original_filename}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={
-                          doc.is_contract
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-teal-100 text-teal-800"
-                        }
-                      >
+                      <Badge className={getTypeBadgeColor(doc)}>
                         {getTypeDisplay(doc)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600">
-                      {getDateDisplay(doc)}
-                    </TableCell>
-                    <TableCell className="text-gray-500 text-sm truncate max-w-[12rem]" title={doc.notes || ""}>
-                      {doc.notes || "-"}
+                    <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
+                    <TableCell
+                      className="text-gray-500 text-sm truncate max-w-[16rem]"
+                      title={doc.ai_summary || doc.notes || ""}
+                    >
+                      {doc.ai_summary || doc.notes || "-"}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>

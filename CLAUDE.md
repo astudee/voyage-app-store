@@ -1353,6 +1353,145 @@ Removed `is_corp_to_corp` field entirely.
 7. Archive tab shows approved documents
 8. All IDs should be 10-character alphanumeric NanoIDs
 
+---
+
+## Document Manager 2.0 - Phase 2 Updates
+
+### Overview
+
+Phase 2 simplifies the type system and adds AI-powered search capabilities:
+1. **Simplified document types**: Contract / Document / Invoice
+2. **AI Summary field**: 2-4 sentence descriptions for searchability
+3. **AI-powered archive search**: Semantic search using Gemini
+4. **Duplicate detection**: Warns before archiving potential duplicates
+5. **Three-folder R2 structure**: import/ → review/ → archive/
+
+### Type System
+
+**Top-level `document_type_category`:**
+- `contract` - Signatures, commitments, agreements
+- `document` - Informational correspondence
+- `invoice` - Bills to pay or invoices sent
+
+**For Contracts only, sub-categories (`document_category`):**
+- EMPLOYEE (offer letters, bonus plans, CNAPs)
+- CONTRACTOR (SubK, CSOW)
+- VENDOR (MSAs, NDAs with vendors)
+- CLIENT (MSAs, SOWs with clients)
+
+**For Documents:** No sub-categories. Uses:
+- `party` (who it's from)
+- `sub_party` (agency/department)
+- `document_type` (Statement, Notice, Letter, etc.)
+
+**For Invoices:** Uses:
+- `party` (vendor or client name)
+- `document_type` (Invoice)
+- `amount`, `due_date` fields
+- `invoice_type` (PAYABLE or RECEIVABLE)
+
+### New Database Fields
+
+```sql
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS document_type_category VARCHAR(20);
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS amount DECIMAL(12,2);
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS due_date DATE;
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(20);
+```
+
+Run migration: `POST /api/documents-v2/migrate-schema`
+
+### AI Classification Prompt (Phase 2)
+
+The AI now returns:
+```json
+{
+  "document_type_category": "contract" | "document" | "invoice",
+  "party": "...",
+  "sub_party": "..." or null,
+  "document_type": "...",
+  "ai_summary": "2-4 sentence summary for searching...",
+  "confidence_score": 0.0-1.0,
+  // Contract-specific:
+  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT",
+  "contract_type": "...",
+  "executed_date": "YYYY-MM-DD",
+  // Invoice-specific:
+  "amount": 5000.00,
+  "due_date": "YYYY-MM-DD",
+  "invoice_type": "PAYABLE" | "RECEIVABLE"
+}
+```
+
+### New API Endpoints (Phase 2)
+
+**Schema Migration:**
+- `POST /api/documents-v2/migrate-schema` - Add new columns (non-destructive)
+- `GET /api/documents-v2/migrate-schema` - Check current schema
+
+**AI-Powered Search:**
+- `POST /api/documents-v2/search` - Semantic search using Gemini
+  - Body: `{ q: "search query" }`
+  - Searches: filename, party, sub_party, document_type, ai_summary, notes, amounts
+  - Falls back to text search if Gemini unavailable
+
+**Duplicate Detection:**
+- `POST /api/documents-v2/check-duplicates` - Check for similar documents
+  - Body: `{ id: "document_id" }`
+  - Returns similar documents with similarity reasons
+  - Called automatically before archiving
+
+**Scan Inbox:**
+- `POST /api/documents-v2/scan-inbox` - Create DB records for R2 files without records
+- `GET /api/documents-v2/scan-inbox` - Preview what would be found (dry run)
+
+### R2 Folder Structure
+
+```
+voyage-documents/
+├── import/     ← Files land here (upload, email, direct R2)
+├── review/     ← After AI processing, renamed to {nanoid}.pdf
+└── archive/    ← After approval
+```
+
+**File Flow:**
+1. Upload/email → `import/{nanoid}.pdf`
+2. AI processing → moves to `review/{nanoid}.pdf`
+3. Approval → moves to `archive/{nanoid}.pdf`
+
+### UI Changes (Phase 2)
+
+**Review Detail Page:**
+- Shows original filename in header: "Review: {original_filename}"
+- Document Type dropdown: Contract / Document / Invoice
+- AI Summary displayed in read-only box
+- Contract: shows Category (EMPLOYEE/CONTRACTOR/VENDOR/CLIENT)
+- Invoice: shows Amount, Due Date, Invoice Type (PAYABLE/RECEIVABLE)
+- Duplicate detection modal before archiving
+
+**Archive Page:**
+- Smart Search toggle button
+- Local filtering (instant) vs AI search (semantic)
+- Summary column shows ai_summary
+- Type badges: purple (contract), amber (invoice), teal (document)
+
+### Files Modified (Phase 2)
+
+**New Files:**
+- `web/src/app/api/documents-v2/migrate-schema/route.ts` - Schema migration
+- `web/src/app/api/documents-v2/search/route.ts` - AI-powered search
+- `web/src/app/api/documents-v2/check-duplicates/route.ts` - Duplicate detection
+- `web/src/app/api/documents-v2/scan-inbox/route.ts` - Scan for R2 orphans
+
+**Updated Files:**
+- `web/src/app/api/documents-v2/process/route.ts` - New AI prompt with document_type_category
+- `web/src/app/documents-v2/review/[id]/page.tsx` - New form fields, duplicate modal
+- `web/src/app/documents-v2/archive/page.tsx` - Smart search UI
+- `web/src/app/documents-v2/import/page.tsx` - Scan inbox button
+
+---
+
 ### Files Modified
 
 **New Files:**

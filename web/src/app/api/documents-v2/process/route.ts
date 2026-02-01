@@ -5,119 +5,137 @@ import { query, execute } from "@/lib/snowflake";
 const GEMINI_MODEL = "gemini-2.0-flash";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
-// Classification prompt for AI - updated to use party/sub_party
+// Classification prompt for AI - Phase 2: contract/document/invoice types
 function getClassificationPrompt(): string {
   return `You are a document classification and filing assistant for Voyage Advisory.
 
-STEP 1: DETERMINE IF THIS IS A CONTRACT OR A DOCUMENT
+STEP 1: DETERMINE THE DOCUMENT TYPE
 
 **CONTRACT** = Documents with signatures, commitments, or agreements:
 - Signed agreements between Voyage and another party
-- Employee documents: offer letters, CNAPs, bonus plans, direct deposit forms, benefits enrollment forms
+- Employee documents: offer letters, CNAPs, bonus plans, direct deposit forms, benefits enrollment
 - Contractor documents: contractor agreements, contractor SOWs
-- Company contracts: MSAs, SOWs, NDAs, teaming agreements, referral agreements
+- Vendor/Client contracts: MSAs, SOWs, NDAs, teaming agreements, referral agreements
 - Email PDFs showing approvals or commitments
-- Anything on Voyage letterhead with signatures or binding commitments
+- Anything with signatures or binding commitments
 
-**DOCUMENT** = Informational correspondence without signatures or commitments:
+**DOCUMENT** = Informational correspondence without commitments:
 - Bank statements and credit card statements
 - Tax notices and government correspondence
 - Utility bills
 - Insurance statements
 - Government licenses and renewals
-- Invoices and bills received
-- Any informational letter or notice that does NOT require a signature
+- Any informational letter or notice without signatures
 
-STEP 2: EXTRACT APPROPRIATE INFORMATION
+**INVOICE** = Bills to pay or invoices sent:
+- Bills/invoices received from vendors (PAYABLE)
+- Invoices Voyage sent to clients (RECEIVABLE)
 
-If CONTRACT, return JSON:
-{
-  "is_contract": true,
-  "document_category": "EMPLOYEE" | "CONTRACTOR" | "COMPANY",
-  "party": "See rules below",
-  "sub_party": "See rules below",
-  "executed_date": "YYYY-MM-DD",
-  "contract_type": "See codes below",
-  "notes": "Brief description if helpful, otherwise empty string",
-  "confidence_score": 0.0 to 1.0
-}
+STEP 2: EXTRACT FIELDS BASED ON TYPE
 
-**PARTY AND SUB_PARTY RULES BY CATEGORY:**
+For ALL types, include:
+- party: Primary entity name (company, person, or issuer)
+- sub_party: Secondary entity if relevant (use "Last, First" format for people)
+- document_type: Specific type (e.g., "MSA", "Statement", "Invoice")
+- ai_summary: 2-4 sentence description for easy searching. Include key names, dates, amounts, and purpose.
+- confidence_score: 0.0 to 1.0
 
-For COMPANY contracts:
-- party = Client/partner company name (e.g., "State of North Dakota", "Acme Corp")
-- sub_party = Department or division if mentioned (e.g., "Department of Workforce Safety Insurance"), otherwise null
+For CONTRACTS additionally include:
+- document_category: "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT"
+- contract_type: MSA, SOW, NDA, SubK, CSOW, Offer Letter, Bonus Plan, etc.
+- executed_date: Date signed (YYYY-MM-DD)
 
-For CONTRACTOR contracts:
-- party = Contractor's company name (e.g., "Acme Consulting LLC")
-- sub_party = Individual contractor name in "Last, First" format (e.g., "Alam, Shah")
-- This allows searching by either company OR individual name
+For DOCUMENTS additionally include:
+- letter_date: Date of the document (YYYY-MM-DD)
+- period_end_date: For statements, the period end date (YYYY-MM-DD)
+- account_last4: Last 4 digits of account if applicable
+
+For INVOICES additionally include:
+- amount: Dollar amount as number (e.g., 5000.00)
+- due_date: Payment due date (YYYY-MM-DD)
+- invoice_type: "PAYABLE" (bill to pay) | "RECEIVABLE" (invoice we sent)
+
+**PARTY AND SUB_PARTY RULES:**
 
 For EMPLOYEE contracts:
-- party = Employee name in "Last, First" format (e.g., "Smith, John")
-- sub_party = null (not used for employees)
+- party = Employee name in "Last, First" format
+- sub_party = null
 
-CONTRACT TYPE CODES:
-- COMPANY: CSA, MSA, SOW, NDA, TA (Teaming Agreement), RA (Referral Agreement), MOD# (modification number)
-- CONTRACTOR: SubK (contractor agreement), CSOW (contractor SOW)
-- EMPLOYEE: "Offer Letter", "Bonus Plan", "CNAP", "Direct Deposit Form", "Benefits Selection", etc.
+For CONTRACTOR contracts:
+- party = Contractor's company name
+- sub_party = Individual contractor name in "Last, First" format
 
-If DOCUMENT, return JSON:
-{
-  "is_contract": false,
-  "issuer_category": "BANK" | "CREDIT_CARD" | "UTILITY" | "INSURER" | "GOVERNMENT_STATE" | "GOVERNMENT_FEDERAL" | "INVOICE" | "OTHER",
-  "party": "Top-level entity name (bank, company, or government entity)",
-  "sub_party": "Department, agency, or division name if applicable",
-  "document_type": "Short description (e.g., 'Statement', 'Tax Notice', 'Invoice')",
-  "period_end_date": "YYYY-MM-DD or null",
-  "letter_date": "YYYY-MM-DD or null",
-  "account_last4": "Last 4 digits if applicable - put ONLY in this field, NOT in notes",
-  "notes": "Additional context only if needed",
-  "confidence_score": 0.0 to 1.0
-}
+For VENDOR contracts:
+- party = Vendor company name
+- sub_party = null or department
 
-**DOCUMENT PARTY AND SUB_PARTY RULES:**
-- For GOVERNMENT_STATE: party = "State of {StateName}", sub_party = specific agency/department
-- For GOVERNMENT_FEDERAL: party = "US Government" or country name, sub_party = specific agency (e.g., "IRS", "SSA")
-- For BANK/CREDIT_CARD/UTILITY/INSURER: party = company name, sub_party = division if applicable
-- For INVOICE: party = vendor/client company name
+For CLIENT contracts:
+- party = Client company name
+- sub_party = Department or division if mentioned
+
+For DOCUMENTS:
+- party = Issuing entity (bank, government, utility)
+- sub_party = Specific agency or department
+
+For INVOICES:
+- party = Vendor (if payable) or Client (if receivable)
+- sub_party = null or specific department
 
 CRITICAL RULES:
-1. Use STRICT "Last, First" format for person names (e.g., "Smith, John" not "John Smith")
+1. Use STRICT "Last, First" format for person names
 2. Never use forward slashes (/) anywhere in values
-3. For contracts, the executed_date is the latest signature date
-4. Do NOT duplicate information across fields
-5. Put account_last4 ONLY in the account_last4 field, NOT in notes
-6. The confidence_score should reflect how certain you are about the classification (1.0 = very certain)
+3. The ai_summary should be searchable - include key terms
+4. For contracts, executed_date is the latest signature date
+5. Return ONLY valid JSON, no markdown formatting
 
-Return ONLY valid JSON, no markdown formatting.`;
+Return JSON:
+{
+  "document_type_category": "contract" | "document" | "invoice",
+  "party": "...",
+  "sub_party": "..." or null,
+  "document_type": "...",
+  "ai_summary": "2-4 sentence summary with key details...",
+  "confidence_score": 0.0-1.0,
+  // Contract-specific (only if contract):
+  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT",
+  "contract_type": "...",
+  "executed_date": "YYYY-MM-DD",
+  // Document-specific (only if document):
+  "letter_date": "YYYY-MM-DD",
+  "period_end_date": "YYYY-MM-DD",
+  "account_last4": "1234",
+  // Invoice-specific (only if invoice):
+  "amount": 5000.00,
+  "due_date": "YYYY-MM-DD",
+  "invoice_type": "PAYABLE" | "RECEIVABLE"
+}`;
 }
 
-interface ContractAnalysis {
-  is_contract: true;
-  document_category?: string;
-  party?: string;
-  sub_party?: string;
-  executed_date?: string;
-  contract_type?: string;
-  notes?: string;
-  confidence_score?: number;
-}
-
-interface DocumentAnalysis {
-  is_contract: false;
-  issuer_category?: string;
+// Phase 2: Unified analysis interface with document_type_category
+interface Analysis {
+  document_type_category: "contract" | "document" | "invoice";
   party?: string;
   sub_party?: string;
   document_type?: string;
-  period_end_date?: string;
-  letter_date?: string;
-  account_last4?: string;
-  notes?: string;
+  ai_summary?: string;
   confidence_score?: number;
+  // Contract-specific
+  document_category?: string; // EMPLOYEE, CONTRACTOR, VENDOR, CLIENT
+  contract_type?: string;
+  executed_date?: string;
+  // Document-specific
+  letter_date?: string;
+  period_end_date?: string;
+  account_last4?: string;
+  // Invoice-specific
+  amount?: number;
+  due_date?: string;
+  invoice_type?: string; // PAYABLE, RECEIVABLE
+  // Legacy field for backwards compatibility
+  is_contract?: boolean;
+  // Internal
+  _aiUsed?: string;
 }
-
-type Analysis = (ContractAnalysis | DocumentAnalysis) & { _aiUsed?: string };
 
 async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -311,12 +329,19 @@ async function processDocument(docId: string, filePath: string, originalFilename
 
     const aiUsed = analysis._aiUsed || "Unknown";
 
+    // Determine is_contract from document_type_category for backwards compatibility
+    const isContract = analysis.document_type_category === "contract";
+
     // Build update query based on analysis type
     const updateFields: string[] = [];
     const updateValues: (string | number | boolean | null)[] = [];
 
+    // Core fields
+    updateFields.push("DOCUMENT_TYPE_CATEGORY = ?");
+    updateValues.push(analysis.document_type_category);
+
     updateFields.push("IS_CONTRACT = ?");
-    updateValues.push(analysis.is_contract);
+    updateValues.push(isContract);
 
     updateFields.push("AI_MODEL_USED = ?");
     updateValues.push(aiUsed);
@@ -327,55 +352,52 @@ async function processDocument(docId: string, filePath: string, originalFilename
     updateFields.push("AI_CONFIDENCE_SCORE = ?");
     updateValues.push(analysis.confidence_score ?? null);
 
+    updateFields.push("AI_SUMMARY = ?");
+    updateValues.push(analysis.ai_summary ?? null);
+
     updateFields.push("AI_PROCESSED_AT = CURRENT_TIMESTAMP()");
 
     // Set status to pending_approval
     updateFields.push("STATUS = 'pending_approval'");
 
-    if (analysis.is_contract) {
-      const ca = analysis as ContractAnalysis;
+    // Common fields for all types
+    updateFields.push("PARTY = ?");
+    updateValues.push(analysis.party ?? null);
+
+    updateFields.push("SUB_PARTY = ?");
+    updateValues.push(analysis.sub_party ?? null);
+
+    updateFields.push("DOCUMENT_TYPE = ?");
+    updateValues.push(analysis.document_type ?? null);
+
+    // Type-specific fields
+    if (analysis.document_type_category === "contract") {
       updateFields.push("DOCUMENT_CATEGORY = ?");
-      updateValues.push(ca.document_category ?? null);
+      updateValues.push(analysis.document_category ?? null);
 
       updateFields.push("CONTRACT_TYPE = ?");
-      updateValues.push(ca.contract_type ?? null);
-
-      updateFields.push("PARTY = ?");
-      updateValues.push(ca.party ?? null);
-
-      updateFields.push("SUB_PARTY = ?");
-      updateValues.push(ca.sub_party ?? null);
+      updateValues.push(analysis.contract_type ?? null);
 
       updateFields.push("EXECUTED_DATE = ?");
-      updateValues.push(ca.executed_date ?? null);
-
-      updateFields.push("NOTES = ?");
-      updateValues.push(ca.notes ?? null);
-    } else {
-      const da = analysis as DocumentAnalysis;
-      updateFields.push("ISSUER_CATEGORY = ?");
-      updateValues.push(da.issuer_category ?? null);
-
-      updateFields.push("PARTY = ?");
-      updateValues.push(da.party ?? null);
-
-      updateFields.push("SUB_PARTY = ?");
-      updateValues.push(da.sub_party ?? null);
-
-      updateFields.push("DOCUMENT_TYPE = ?");
-      updateValues.push(da.document_type ?? null);
+      updateValues.push(analysis.executed_date ?? null);
+    } else if (analysis.document_type_category === "document") {
+      updateFields.push("LETTER_DATE = ?");
+      updateValues.push(analysis.letter_date ?? null);
 
       updateFields.push("PERIOD_END_DATE = ?");
-      updateValues.push(da.period_end_date ?? null);
-
-      updateFields.push("LETTER_DATE = ?");
-      updateValues.push(da.letter_date ?? null);
+      updateValues.push(analysis.period_end_date ?? null);
 
       updateFields.push("ACCOUNT_LAST4 = ?");
-      updateValues.push(da.account_last4 ?? null);
+      updateValues.push(analysis.account_last4 ?? null);
+    } else if (analysis.document_type_category === "invoice") {
+      updateFields.push("AMOUNT = ?");
+      updateValues.push(analysis.amount ?? null);
 
-      updateFields.push("NOTES = ?");
-      updateValues.push(da.notes ?? null);
+      updateFields.push("DUE_DATE = ?");
+      updateValues.push(analysis.due_date ?? null);
+
+      updateFields.push("INVOICE_TYPE = ?");
+      updateValues.push(analysis.invoice_type ?? null);
     }
 
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");
