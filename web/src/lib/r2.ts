@@ -11,7 +11,7 @@ const r2Client = new S3Client({
   },
 });
 
-const BUCKET_NAME = process.env.R2_BUCKET_NAME || "voyage-documents";
+const BUCKET_NAME = process.env.R2_BUCKET_NAME!;
 
 export interface R2File {
   key: string;
