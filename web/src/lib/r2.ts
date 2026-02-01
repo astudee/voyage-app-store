@@ -4,14 +4,14 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // R2 is S3-compatible, so we use the AWS SDK
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY!,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
   },
 });
 
-const BUCKET_NAME = process.env.CLOUDFLARE_BUCKET_NAME || "voyage-documents";
+const BUCKET_NAME = process.env.R2_BUCKET_NAME || "voyage-documents";
 
 export interface R2File {
   key: string;

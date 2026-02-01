@@ -658,10 +658,10 @@ This is where reference files are uploaded for Claude to review:
   - Document records stored in Snowflake DOCUMENTS table
 
 - **Environment Variables Required:**
-  - CLOUDFLARE_ACCOUNT_ID
-  - CLOUDFLARE_ACCESS_KEY_ID
-  - CLOUDFLARE_SECRET_ACCESS_KEY
-  - CLOUDFLARE_BUCKET_NAME=voyage-documents
+  - R2_ACCOUNT_ID
+  - R2_ACCESS_KEY_ID
+  - R2_SECRET_ACCESS_KEY
+  - R2_BUCKET_NAME=voyage-documents
 
 - Added Badge component via shadcn/ui
 
