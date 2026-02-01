@@ -1439,23 +1439,23 @@ The AI now returns:
   "party": "...",
   "sub_party": "..." or null,
   "document_type": "...",
+  "document_date": "YYYY-MM-DD",  // Unified date field for all types
   "ai_summary": "2-4 sentence summary for searching...",
   "notes": "Additional context" or null,
   "confidence_score": 0.0-1.0,
   // Contract-specific:
   "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
   "contract_type": "...",
-  "executed_date": "YYYY-MM-DD",
-  // Document-specific:
-  "letter_date": "YYYY-MM-DD",
-  "period_end_date": "YYYY-MM-DD",
-  "account_last4": "1234",
   // Invoice-specific:
   "amount": 5000.00,
-  "due_date": "YYYY-MM-DD",
-  "invoice_type": "PAYABLE" | "RECEIVABLE"
+  "due_date": "YYYY-MM-DD"
 }
 ```
+
+**Note:** The `document_date` field is the single date field returned by AI for all document types:
+- For contracts: the signed/executed date
+- For documents: the letter date or statement period date
+- For invoices: the invoice date (due_date is a separate field)
 
 ### Smart Download Filenames
 
@@ -1466,11 +1466,11 @@ Rules:
 - If sub_party exists: `3TR Advisors LLC (Charwinsky, John) - 2025.09.27 - Contractor Agreement.pdf`
 - If no sub_party: `Chase - 2026.01.15 - Statement.pdf`
 - If no date: `Smith, John - Offer Letter.pdf`
-- Date uses executed_date for contracts, letter_date or period_end_date for documents, due_date for invoices
+- Date uses unified `document_date` field (falls back to legacy fields for older documents)
 - Notes appended if present and short: `Chase - 2026.01.15 - Statement - xxxx4521.pdf`
 - Sanitized: characters not safe for filenames (/ \ : * ? " < > |) replaced with underscore
 
-The `GET /api/documents-v2/{id}/view-url` endpoint now returns `download_filename` in addition to `url`.
+Use `GET /api/documents-v2/{id}/download` to download with proper Content-Disposition header.
 
 ### New API Endpoints (Phase 2)
 
@@ -1567,3 +1567,58 @@ voyage-documents/
 - `web/src/app/documents-v2/page.tsx` - Redirect to /import
 - `web/src/app/documents-v2/archive/page.tsx` - Updated with new UI
 - `web/src/app/documents-v2/review/[id]/page.tsx` - party/sub_party/notes form fields
+
+---
+
+## Document Manager 2.0 - Phase 3 Bug Fixes (2026-02-01)
+
+### Bug Fixes Completed
+
+| Bug | Issue | Fix |
+|-----|-------|-----|
+| Bug 1 | Smart download filename not working | Created dedicated `/api/documents-v2/[id]/download` endpoint with Content-Disposition header |
+| Bug 2 | Save changes not persisting on Review tab | Added all new fields to PUT endpoint's allowedFields array |
+| Bug 3 | Multiple date fields confusing | Unified to single `document_date` column, AI returns one date |
+| Bug 4 | Too many form fields on detail page | Simplified to show only specified fields per document type |
+| Bug 5 | Archive tab missing checkboxes/actions | Added checkboxes, bulk Download/Delete actions to match Review tab |
+| Bug 6 | Inconsistent labels | Changed all to "Party" and "Sub-Party" |
+| Bug 7 | Detail page showed wrong view initially | Form now renders correct fields based on document_type_category immediately |
+
+### New Database Fields
+
+```sql
+ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS document_date DATE;
+-- Migration updates existing documents:
+UPDATE DOCUMENTS SET document_date = COALESCE(executed_date, letter_date, period_end_date) WHERE document_date IS NULL;
+```
+
+### Files Modified (Phase 3)
+
+**New Files:**
+- `web/src/app/api/documents-v2/[id]/download/route.ts` - Download endpoint with smart filename
+
+**Updated Files:**
+- `web/src/app/api/documents-v2/migrate-schema/route.ts` - Added document_date migration
+- `web/src/app/api/documents-v2/[id]/route.ts` - Fixed allowedFields for PUT
+- `web/src/app/api/documents-v2/process/route.ts` - Simplified AI prompt with document_date
+- `web/src/app/documents-v2/review/[id]/page.tsx` - Simplified form fields
+- `web/src/app/documents-v2/review/page.tsx` - Updated to use document_date
+- `web/src/app/documents-v2/archive/page.tsx` - Added checkboxes, bulk actions, uses document_date
+
+### Detail Page Form Fields
+
+**All Document Types:**
+- Document Type: dropdown (Contract / Document / Invoice)
+- Party: text input
+- Sub-Party: text input
+- Date: date picker (unified `document_date`)
+- Notes: textarea
+- AI Summary: read-only display
+
+**Contract Only (additional):**
+- Category: dropdown (EMPLOYEE / CONTRACTOR / VENDOR / CLIENT / PARTNER)
+- Contract Type: text input (e.g., MSA, SOW, NDA, Offer Letter)
+
+**Invoice Only (additional):**
+- Amount: currency input
+- Due Date: date picker

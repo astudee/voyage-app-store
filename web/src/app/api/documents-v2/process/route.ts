@@ -5,7 +5,7 @@ import { query, execute } from "@/lib/snowflake";
 const GEMINI_MODEL = "gemini-2.0-flash";
 const CLAUDE_MODEL = "claude-sonnet-4-20250514";
 
-// Classification prompt for AI - Phase 2: contract/document/invoice types
+// Classification prompt for AI - Simplified with unified document_date
 function getClassificationPrompt(): string {
   return `You are a document classification and filing assistant for Voyage Advisory.
 
@@ -31,30 +31,25 @@ STEP 1: DETERMINE THE DOCUMENT TYPE
 - Bills/invoices received from vendors (PAYABLE)
 - Invoices Voyage sent to clients (RECEIVABLE)
 
-STEP 2: EXTRACT FIELDS BASED ON TYPE
+STEP 2: EXTRACT FIELDS
 
-For ALL types, include:
-- party: Primary entity name (company, person, or issuer)
-- sub_party: Secondary entity if relevant (use "Last, First" format for people)
-- document_type: Specific type (e.g., "MSA", "Statement", "Invoice")
-- ai_summary: 2-4 sentence description for easy searching. Include key names, dates, amounts, and purpose.
-- notes: Additional context like account numbers, reference numbers, etc. (put account_last4 in its own field, NOT here)
-- confidence_score: 0.0 to 1.0
-
-For CONTRACTS additionally include:
-- document_category: "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER"
-- contract_type: MSA, SOW, NDA, SubK, CSOW, Offer Letter, Bonus Plan, TA (Teaming Agreement), etc.
-- executed_date: Date signed (YYYY-MM-DD)
-
-For DOCUMENTS additionally include:
-- letter_date: Date of the document (YYYY-MM-DD)
-- period_end_date: For statements, the period end date (YYYY-MM-DD)
-- account_last4: Last 4 digits of account if applicable (put here, NOT in notes)
-
-For INVOICES additionally include:
-- amount: Dollar amount as number (e.g., 5000.00)
-- due_date: Payment due date (YYYY-MM-DD)
-- invoice_type: "PAYABLE" (bill to pay) | "RECEIVABLE" (invoice we sent)
+Return JSON only:
+{
+  "document_type_category": "contract" | "document" | "invoice",
+  "party": "Primary entity - see rules below",
+  "sub_party": "Secondary entity or null - see rules below",
+  "document_type": "Specific type (MSA, SOW, Statement, Notice, Invoice, etc.)",
+  "document_date": "YYYY-MM-DD - the most relevant date (signed date for contracts, letter date for documents, invoice date for invoices)",
+  "ai_summary": "2-4 sentence description for searching later. Include key names, dates, amounts, and purpose.",
+  "notes": "Additional context like account numbers, reference numbers, etc.",
+  "confidence_score": 0.0-1.0,
+  // CONTRACT only:
+  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
+  "contract_type": "MSA" | "SOW" | "NDA" | "SubK" | "CSOW" | "Offer Letter" | etc.,
+  // INVOICE only:
+  "amount": number,
+  "due_date": "YYYY-MM-DD"
+}
 
 **CRITICAL RULE - PARTY IDENTIFICATION:**
 
@@ -64,7 +59,7 @@ The party should be the OTHER party in the relationship:
 
 - For contracts: party = the other company or person (client, vendor, contractor, employee)
 - For documents: party = the issuer/sender (bank, government, utility)
-- For invoices: party = the vendor billing us or the client we're billing
+- For invoices: party = the vendor billing us
 
 The ONLY exceptions where party = "Voyage Advisory" are internal documents like:
 - Operating agreements
@@ -72,109 +67,61 @@ The ONLY exceptions where party = "Voyage Advisory" are internal documents like:
 - Standard operating procedures
 - Internal policies
 
-If a document is between Voyage Advisory and another entity, the party is ALWAYS the other entity, not Voyage.
-
 Examples:
 - MSA between Voyage Advisory and Acme Corp → party = "Acme Corp"
-- SOW where Voyage is performing work for State of North Dakota → party = "State of North Dakota"
+- SOW where Voyage performs work for State of North Dakota → party = "State of North Dakota"
 - SubK between Voyage and Lightwater Consulting → party = "Lightwater Consulting LLC"
 - Offer letter from Voyage to John Smith → party = "Smith, John"
 - Chase bank statement → party = "Chase"
 - Voyage operating agreement → party = "Voyage Advisory LLC" (exception)
 
-**PARTY AND SUB_PARTY RULES BY CATEGORY:**
-
-For EMPLOYEE contracts:
-- party = Employee name in "Last, First" format (e.g., "Smith, John")
-- sub_party = null
-- NEVER set party to "Voyage Advisory" for employee documents
-
-For CONTRACTOR contracts:
-- If the contractor operates through a company (LLC, Inc, Corp, etc.):
+**CONTRACTOR PARTY RULES:**
+- If contractor operates through a company (LLC, Inc, Corp, etc.):
   - party = The contractor's company name (e.g., "Jill Hanson Consulting LLC")
-  - sub_party = The individual contractor's name in "Last, First" format (e.g., "Hanson, Jill")
-- If the contractor is an individual with no company entity:
-  - party = The individual's name in "Last, First" format (e.g., "Wise, Marc")
+  - sub_party = The individual in "Last, First" format (e.g., "Hanson, Jill")
+- If contractor is an individual with no company entity:
+  - party = The individual in "Last, First" format (e.g., "Wise, Marc")
   - sub_party = null
 - NEVER set party to "Voyage Advisory" for contractor documents
 
-For VENDOR contracts:
-- party = Vendor company name
-- sub_party = null or department
+**EMPLOYEE PARTY RULES:**
+- party = Employee name in "Last, First" format (e.g., "Smith, John")
+- sub_party = null
 
-For CLIENT contracts:
-- party = Client company name
-- sub_party = Department or division if mentioned
-
-For PARTNER contracts (teaming agreements, joint ventures, referral agreements):
-- party = Partner company name
-- sub_party = null or specific contact/department
-
-For DOCUMENTS:
-- party = Issuing entity (bank, government, utility)
-- For government: party = "State of {Name}" or "US Government"
-- sub_party = Specific agency or department
-- For banks/companies: party = company name, sub_party = division if applicable
-- For individuals: party = name in "Last, First" format
-
-For INVOICES:
-- party = Vendor (if payable) or Client (if receivable)
-- sub_party = null or specific department
+**DOCUMENT PARTY RULES:**
+- Government: party = "State of {Name}" or "US Government", sub_party = agency name
+- Banks/companies: party = company name, sub_party = division if applicable
+- Individuals: party = name in "Last, First" format
 
 CRITICAL RULES:
 1. Use STRICT "Last, First" format for person names
 2. Never use forward slashes (/) anywhere in values
 3. The ai_summary should be searchable - include key terms
-4. For contracts, executed_date is the latest signature date
-5. Return ONLY valid JSON, no markdown formatting
-6. NEVER set party to "Voyage Advisory" unless it's an internal company document
-
-Return JSON:
-{
-  "document_type_category": "contract" | "document" | "invoice",
-  "party": "...",
-  "sub_party": "..." or null,
-  "document_type": "...",
-  "ai_summary": "2-4 sentence summary with key details...",
-  "notes": "..." or null,
-  "confidence_score": 0.0-1.0,
-  // Contract-specific (only if contract):
-  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
-  "contract_type": "...",
-  "executed_date": "YYYY-MM-DD",
-  // Document-specific (only if document):
-  "letter_date": "YYYY-MM-DD",
-  "period_end_date": "YYYY-MM-DD",
-  "account_last4": "1234",
-  // Invoice-specific (only if invoice):
-  "amount": 5000.00,
-  "due_date": "YYYY-MM-DD",
-  "invoice_type": "PAYABLE" | "RECEIVABLE"
-}`;
+4. Return ONLY valid JSON, no markdown formatting`;
 }
 
-// Phase 2: Unified analysis interface with document_type_category
+// Simplified analysis interface with unified document_date
 interface Analysis {
   document_type_category: "contract" | "document" | "invoice";
   party?: string;
   sub_party?: string;
   document_type?: string;
+  document_date?: string; // Unified date field
   ai_summary?: string;
   notes?: string;
   confidence_score?: number;
   // Contract-specific
   document_category?: string; // EMPLOYEE, CONTRACTOR, VENDOR, CLIENT, PARTNER
   contract_type?: string;
-  executed_date?: string;
-  // Document-specific
-  letter_date?: string;
-  period_end_date?: string;
-  account_last4?: string;
   // Invoice-specific
   amount?: number;
   due_date?: string;
-  invoice_type?: string; // PAYABLE, RECEIVABLE
-  // Legacy field for backwards compatibility
+  // Legacy fields for backwards compatibility (no longer returned by AI)
+  executed_date?: string;
+  letter_date?: string;
+  period_end_date?: string;
+  account_last4?: string;
+  invoice_type?: string;
   is_contract?: boolean;
   // Internal
   _aiUsed?: string;
@@ -416,6 +363,10 @@ async function processDocument(docId: string, filePath: string, originalFilename
     updateFields.push("NOTES = ?");
     updateValues.push(analysis.notes ?? null);
 
+    // Unified document_date field for all types
+    updateFields.push("DOCUMENT_DATE = ?");
+    updateValues.push(analysis.document_date ?? null);
+
     // Type-specific fields
     if (analysis.document_type_category === "contract") {
       updateFields.push("DOCUMENT_CATEGORY = ?");
@@ -423,27 +374,12 @@ async function processDocument(docId: string, filePath: string, originalFilename
 
       updateFields.push("CONTRACT_TYPE = ?");
       updateValues.push(analysis.contract_type ?? null);
-
-      updateFields.push("EXECUTED_DATE = ?");
-      updateValues.push(analysis.executed_date ?? null);
-    } else if (analysis.document_type_category === "document") {
-      updateFields.push("LETTER_DATE = ?");
-      updateValues.push(analysis.letter_date ?? null);
-
-      updateFields.push("PERIOD_END_DATE = ?");
-      updateValues.push(analysis.period_end_date ?? null);
-
-      updateFields.push("ACCOUNT_LAST4 = ?");
-      updateValues.push(analysis.account_last4 ?? null);
     } else if (analysis.document_type_category === "invoice") {
       updateFields.push("AMOUNT = ?");
       updateValues.push(analysis.amount ?? null);
 
       updateFields.push("DUE_DATE = ?");
       updateValues.push(analysis.due_date ?? null);
-
-      updateFields.push("INVOICE_TYPE = ?");
-      updateValues.push(analysis.invoice_type ?? null);
     }
 
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");

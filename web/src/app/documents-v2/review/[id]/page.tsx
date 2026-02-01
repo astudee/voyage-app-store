@@ -40,30 +40,28 @@ interface Document {
   original_filename: string;
   file_path: string;
   status: string;
-  // Phase 2 fields
+  // Core fields
   document_type_category: "contract" | "document" | "invoice" | null;
-  is_contract: boolean | null; // Legacy, derived from document_type_category
-  // Common fields
   party: string | null;
   sub_party: string | null;
   document_type: string | null;
-  ai_summary: string | null;
+  document_date: string | null;
   notes: string | null;
-  // Contract fields
-  document_category: string | null; // EMPLOYEE, CONTRACTOR, VENDOR, CLIENT
+  ai_summary: string | null;
+  // Contract-specific
+  document_category: string | null;
   contract_type: string | null;
-  executed_date: string | null;
-  // Document fields
-  letter_date: string | null;
-  period_end_date: string | null;
-  account_last4: string | null;
-  // Invoice fields
+  // Invoice-specific
   amount: number | null;
   due_date: string | null;
-  invoice_type: string | null; // PAYABLE, RECEIVABLE
   // AI fields
   ai_confidence_score: number | null;
   ai_model_used: string | null;
+  // Legacy - kept for backwards compatibility but not shown in UI
+  is_contract: boolean | null;
+  executed_date: string | null;
+  letter_date: string | null;
+  period_end_date: string | null;
 }
 
 interface PageProps {
@@ -98,6 +96,12 @@ export default function ReviewDetailPage({ params }: PageProps) {
       const res = await fetch(`/api/documents-v2/${id}`);
       if (!res.ok) throw new Error("Failed to fetch document");
       const data = await res.json();
+
+      // Migrate legacy date fields to document_date if needed
+      if (!data.document_date && (data.executed_date || data.letter_date || data.period_end_date)) {
+        data.document_date = data.executed_date || data.letter_date || data.period_end_date;
+      }
+
       setDocument(data);
       setFormData(data);
     } catch (err) {
@@ -220,6 +224,10 @@ export default function ReviewDetailPage({ params }: PageProps) {
     }
   };
 
+  const handleDownload = async () => {
+    window.open(`/api/documents-v2/${id}/download`, "_blank");
+  };
+
   if (loading) {
     return (
       <AppLayout>
@@ -264,8 +272,11 @@ export default function ReviewDetailPage({ params }: PageProps) {
               <CardTitle className="text-sm">
                 <div className="flex items-center justify-between">
                   <span className="truncate font-semibold" title={document?.original_filename}>
-                    Review: {document?.original_filename}
+                    {document?.original_filename}
                   </span>
+                  <Button variant="outline" size="sm" onClick={handleDownload}>
+                    Download
+                  </Button>
                 </div>
                 <div className="mt-2 flex items-center gap-2">
                   {formData.ai_model_used && (
@@ -316,7 +327,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
                 </div>
               )}
               <div className="space-y-4">
-                {/* Document Type Category */}
+                {/* Document Type Category - ALWAYS SHOWN */}
                 <div>
                   <Label>Document Type</Label>
                   <Select
@@ -336,7 +347,120 @@ export default function ReviewDetailPage({ params }: PageProps) {
                   </Select>
                 </div>
 
-                {/* AI Summary (read-only) */}
+                {/* CONTRACT-SPECIFIC: Category */}
+                {docTypeCategory === "contract" && (
+                  <div>
+                    <Label>Category</Label>
+                    <Select
+                      value={formData.document_category || ""}
+                      onValueChange={(v) => handleFieldChange("document_category", v || null)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select category" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="EMPLOYEE">Employee</SelectItem>
+                        <SelectItem value="CONTRACTOR">Contractor</SelectItem>
+                        <SelectItem value="VENDOR">Vendor</SelectItem>
+                        <SelectItem value="CLIENT">Client</SelectItem>
+                        <SelectItem value="PARTNER">Partner</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* CONTRACT-SPECIFIC: Contract Type */}
+                {docTypeCategory === "contract" && (
+                  <div>
+                    <Label>Contract Type</Label>
+                    <Input
+                      value={formData.contract_type || ""}
+                      onChange={(e) => handleFieldChange("contract_type", e.target.value || null)}
+                      placeholder="e.g., MSA, SOW, NDA, SubK, Offer Letter"
+                    />
+                  </div>
+                )}
+
+                {/* Party - ALWAYS SHOWN */}
+                <div>
+                  <Label>Party</Label>
+                  <Input
+                    value={formData.party || ""}
+                    onChange={(e) => handleFieldChange("party", e.target.value || null)}
+                    placeholder="Company or person name"
+                  />
+                </div>
+
+                {/* Sub-Party - ALWAYS SHOWN */}
+                <div>
+                  <Label>Sub-Party</Label>
+                  <Input
+                    value={formData.sub_party || ""}
+                    onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
+                    placeholder="Secondary entity (e.g., individual name, department)"
+                  />
+                </div>
+
+                {/* Document Type (specific type like Statement, Notice) - ALWAYS SHOWN */}
+                <div>
+                  <Label>Type</Label>
+                  <Input
+                    value={formData.document_type || ""}
+                    onChange={(e) => handleFieldChange("document_type", e.target.value || null)}
+                    placeholder="e.g., Statement, Notice, Letter, Invoice"
+                  />
+                </div>
+
+                {/* Document Date - ALWAYS SHOWN */}
+                <div>
+                  <Label>Document Date</Label>
+                  <Input
+                    type="date"
+                    value={formData.document_date || ""}
+                    onChange={(e) => handleFieldChange("document_date", e.target.value || null)}
+                  />
+                </div>
+
+                {/* INVOICE-SPECIFIC: Amount */}
+                {docTypeCategory === "invoice" && (
+                  <div>
+                    <Label>Amount ($)</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={formData.amount || ""}
+                      onChange={(e) =>
+                        handleFieldChange("amount", e.target.value ? parseFloat(e.target.value) : null)
+                      }
+                      placeholder="0.00"
+                    />
+                  </div>
+                )}
+
+                {/* INVOICE-SPECIFIC: Due Date */}
+                {docTypeCategory === "invoice" && (
+                  <div>
+                    <Label>Due Date</Label>
+                    <Input
+                      type="date"
+                      value={formData.due_date || ""}
+                      onChange={(e) => handleFieldChange("due_date", e.target.value || null)}
+                    />
+                  </div>
+                )}
+
+                {/* Notes - ALWAYS SHOWN */}
+                <div>
+                  <Label>Notes</Label>
+                  <Textarea
+                    value={formData.notes || ""}
+                    onChange={(e) => handleFieldChange("notes", e.target.value || null)}
+                    placeholder="Additional context"
+                    rows={3}
+                  />
+                </div>
+
+                {/* AI Summary (read-only) - ALWAYS SHOWN IF PRESENT */}
                 {formData.ai_summary && (
                   <div>
                     <Label>AI Summary</Label>
@@ -345,240 +469,6 @@ export default function ReviewDetailPage({ params }: PageProps) {
                     </div>
                   </div>
                 )}
-
-                {/* CONTRACT FIELDS */}
-                {docTypeCategory === "contract" && (
-                  <>
-                    <div>
-                      <Label>Category</Label>
-                      <Select
-                        value={formData.document_category || ""}
-                        onValueChange={(v) => handleFieldChange("document_category", v || null)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="EMPLOYEE">Employee</SelectItem>
-                          <SelectItem value="CONTRACTOR">Contractor</SelectItem>
-                          <SelectItem value="VENDOR">Vendor</SelectItem>
-                          <SelectItem value="CLIENT">Client</SelectItem>
-                          <SelectItem value="PARTNER">Partner</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label>Contract Type</Label>
-                      <Input
-                        value={formData.contract_type || ""}
-                        onChange={(e) => handleFieldChange("contract_type", e.target.value || null)}
-                        placeholder="e.g., MSA, SOW, NDA, Offer Letter"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>
-                        {formData.document_category === "CONTRACTOR"
-                          ? "Contractor Company"
-                          : formData.document_category === "EMPLOYEE"
-                          ? "Employee Name"
-                          : "Party"}
-                      </Label>
-                      <Input
-                        value={formData.party || ""}
-                        onChange={(e) => handleFieldChange("party", e.target.value || null)}
-                        placeholder={
-                          formData.document_category === "CONTRACTOR"
-                            ? "Company name (e.g., Acme Consulting LLC)"
-                            : formData.document_category === "EMPLOYEE"
-                            ? "Last, First"
-                            : "Company name"
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <Label>
-                        {formData.document_category === "CONTRACTOR"
-                          ? "Individual Name"
-                          : "Sub-Party (optional)"}
-                      </Label>
-                      <Input
-                        value={formData.sub_party || ""}
-                        onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
-                        placeholder={
-                          formData.document_category === "CONTRACTOR"
-                            ? "Last, First (e.g., Alam, Shah)"
-                            : "Department or division"
-                        }
-                      />
-                      {formData.document_category === "CONTRACTOR" && (
-                        <p className="mt-1 text-xs text-gray-500">
-                          Individual contractor name for searchability
-                        </p>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label>Executed Date</Label>
-                      <Input
-                        type="date"
-                        value={formData.executed_date || ""}
-                        onChange={(e) => handleFieldChange("executed_date", e.target.value || null)}
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* DOCUMENT FIELDS */}
-                {docTypeCategory === "document" && (
-                  <>
-                    <div>
-                      <Label>Party (Issuer)</Label>
-                      <Input
-                        value={formData.party || ""}
-                        onChange={(e) => handleFieldChange("party", e.target.value || null)}
-                        placeholder="Bank, company, or government entity"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Sub-Party (optional)</Label>
-                      <Input
-                        value={formData.sub_party || ""}
-                        onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
-                        placeholder="Agency, department, or division"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Document Type</Label>
-                      <Input
-                        value={formData.document_type || ""}
-                        onChange={(e) => handleFieldChange("document_type", e.target.value || null)}
-                        placeholder="e.g., Statement, Notice, Letter"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Letter Date</Label>
-                        <Input
-                          type="date"
-                          value={formData.letter_date || ""}
-                          onChange={(e) => handleFieldChange("letter_date", e.target.value || null)}
-                        />
-                      </div>
-                      <div>
-                        <Label>Period End Date</Label>
-                        <Input
-                          type="date"
-                          value={formData.period_end_date || ""}
-                          onChange={(e) => handleFieldChange("period_end_date", e.target.value || null)}
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label>Account Last 4</Label>
-                      <Input
-                        value={formData.account_last4 || ""}
-                        onChange={(e) => handleFieldChange("account_last4", e.target.value || null)}
-                        placeholder="Last 4 digits"
-                        maxLength={10}
-                      />
-                    </div>
-                  </>
-                )}
-
-                {/* INVOICE FIELDS */}
-                {docTypeCategory === "invoice" && (
-                  <>
-                    <div>
-                      <Label>Invoice Type</Label>
-                      <Select
-                        value={formData.invoice_type || ""}
-                        onValueChange={(v) => handleFieldChange("invoice_type", v || null)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="PAYABLE">Payable (Bill to Pay)</SelectItem>
-                          <SelectItem value="RECEIVABLE">Receivable (Invoice We Sent)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div>
-                      <Label>
-                        {formData.invoice_type === "PAYABLE" ? "Vendor" : "Client"}
-                      </Label>
-                      <Input
-                        value={formData.party || ""}
-                        onChange={(e) => handleFieldChange("party", e.target.value || null)}
-                        placeholder={
-                          formData.invoice_type === "PAYABLE"
-                            ? "Vendor company name"
-                            : "Client company name"
-                        }
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Sub-Party (optional)</Label>
-                      <Input
-                        value={formData.sub_party || ""}
-                        onChange={(e) => handleFieldChange("sub_party", e.target.value || null)}
-                        placeholder="Department or contact"
-                      />
-                    </div>
-
-                    <div>
-                      <Label>Document Type</Label>
-                      <Input
-                        value={formData.document_type || ""}
-                        onChange={(e) => handleFieldChange("document_type", e.target.value || null)}
-                        placeholder="e.g., Invoice"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label>Amount ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={formData.amount || ""}
-                          onChange={(e) =>
-                            handleFieldChange("amount", e.target.value ? parseFloat(e.target.value) : null)
-                          }
-                          placeholder="0.00"
-                        />
-                      </div>
-                      <div>
-                        <Label>Due Date</Label>
-                        <Input
-                          type="date"
-                          value={formData.due_date || ""}
-                          onChange={(e) => handleFieldChange("due_date", e.target.value || null)}
-                        />
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {/* Notes (for all types) */}
-                <div>
-                  <Label>Notes (optional)</Label>
-                  <Textarea
-                    value={formData.notes || ""}
-                    onChange={(e) => handleFieldChange("notes", e.target.value || null)}
-                    placeholder="Additional context"
-                    rows={3}
-                  />
-                </div>
               </div>
             </CardContent>
 
@@ -642,7 +532,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
                     <p className="mt-2 text-sm text-gray-600 line-clamp-2">{doc.ai_summary}</p>
                   )}
                   <p className="mt-2 text-xs text-amber-600 font-medium">
-                    ⚠️ {doc.similarity_reason}
+                    {doc.similarity_reason}
                   </p>
                 </div>
               ))}

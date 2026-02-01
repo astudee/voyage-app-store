@@ -32,6 +32,7 @@ interface Document {
   contract_type: string | null;
   party: string | null;
   sub_party: string | null;
+  document_date: string | null;
   executed_date: string | null;
   issuer_category: string | null;
   document_type: string | null;
@@ -79,6 +80,11 @@ function getTypeDisplay(doc: Document): string {
 }
 
 function getDateDisplay(doc: Document): string {
+  // Use unified document_date first, then fall back to legacy fields
+  if (doc.document_date) {
+    return formatDate(doc.document_date);
+  }
+  // Legacy fallback
   const category = doc.document_type_category;
   if (category === "contract" || doc.is_contract) {
     return formatDate(doc.executed_date);
@@ -90,6 +96,11 @@ function getDateDisplay(doc: Document): string {
 }
 
 function getDateValue(doc: Document): Date | null {
+  // Use unified document_date first
+  if (doc.document_date) {
+    return new Date(doc.document_date);
+  }
+  // Legacy fallback
   const category = doc.document_type_category;
   if (category === "contract" || doc.is_contract) {
     return doc.executed_date ? new Date(doc.executed_date) : null;

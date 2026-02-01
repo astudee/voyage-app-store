@@ -27,6 +27,14 @@ export async function POST() {
         name: "Add invoice_type column",
         sql: `ALTER TABLE VOYAGE_APP_STORE.PUBLIC.DOCUMENTS ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(20)`,
       },
+      {
+        name: "Add document_date column (unified date field)",
+        sql: `ALTER TABLE VOYAGE_APP_STORE.PUBLIC.DOCUMENTS ADD COLUMN IF NOT EXISTS document_date DATE`,
+      },
+      {
+        name: "Migrate existing dates to document_date",
+        sql: `UPDATE VOYAGE_APP_STORE.PUBLIC.DOCUMENTS SET document_date = COALESCE(executed_date, letter_date, period_end_date) WHERE document_date IS NULL`,
+      },
     ];
 
     const results: { name: string; status: string; error?: string }[] = [];

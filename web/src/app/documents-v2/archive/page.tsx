@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,7 @@ interface Document {
   sub_party: string | null;
   document_type: string | null;
   ai_summary: string | null;
+  document_date: string | null;
   executed_date: string | null;
   letter_date: string | null;
   period_end_date: string | null;
@@ -87,6 +89,11 @@ function getTypeDisplay(doc: Document): string {
 }
 
 function getDateDisplay(doc: Document): string {
+  // Use unified document_date first, then fall back to legacy fields
+  if (doc.document_date) {
+    return formatDate(doc.document_date);
+  }
+  // Legacy fallback
   if (doc.document_type_category === "contract" || doc.is_contract) {
     return formatDate(doc.executed_date);
   }
@@ -108,6 +115,11 @@ function getTypeBadgeColor(doc: Document): string {
 }
 
 function getDateValue(doc: Document): Date | null {
+  // Use unified document_date first
+  if (doc.document_date) {
+    return new Date(doc.document_date);
+  }
+  // Legacy fallback
   const category = doc.document_type_category;
   if (category === "contract" || doc.is_contract) {
     return doc.executed_date ? new Date(doc.executed_date) : null;
@@ -131,6 +143,8 @@ export default function ArchivePage() {
   const [searchType, setSearchType] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [deleting, setDeleting] = useState(false);
 
   // Sort displayed documents
   const sortedDocuments = useMemo(() => {
@@ -212,6 +226,7 @@ export default function ArchivePage() {
       setDocuments(data.documents);
       setDisplayedDocuments(data.documents);
       setSearchType(null);
+      setSelectedIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -222,6 +237,27 @@ export default function ArchivePage() {
   useEffect(() => {
     fetchDocuments();
   }, []);
+
+  // Selection handlers
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedDocuments.length && sortedDocuments.length > 0) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(sortedDocuments.map((d) => d.id)));
+    }
+  };
 
   // Local text filtering (instant)
   const performLocalFilter = useCallback(
@@ -246,6 +282,7 @@ export default function ArchivePage() {
       });
       setDisplayedDocuments(filtered);
       setSearchType("local");
+      setSelectedIds(new Set()); // Clear selection on filter
     },
     [documents]
   );
@@ -276,6 +313,7 @@ export default function ArchivePage() {
 
       setDisplayedDocuments(data.results);
       setSearchType(data.search_type || "ai");
+      setSelectedIds(new Set()); // Clear selection on search
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setDisplayedDocuments([]);
@@ -322,6 +360,7 @@ export default function ArchivePage() {
     setSearchTerm("");
     setDisplayedDocuments(documents);
     setSearchType(null);
+    setSelectedIds(new Set());
   };
 
   const handleDeleteOne = async (id: string) => {
@@ -345,15 +384,67 @@ export default function ArchivePage() {
     }
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} document(s)?`)) return;
+
+    setDeleting(true);
+    try {
+      const res = await fetch("/api/documents-v2/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Delete failed");
+      }
+
+      setSelectedIds(new Set());
+      fetchDocuments();
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleDownload = async (doc: Document) => {
     try {
-      const res = await fetch(`/api/documents-v2/${doc.id}/view-url`);
-      if (!res.ok) throw new Error("Failed to get download URL");
-      const data = await res.json();
-      window.open(data.url, "_blank");
+      // Use the download endpoint for proper Content-Disposition
+      window.location.href = `/api/documents-v2/${doc.id}/download`;
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
+  };
+
+  const handleDownloadSelected = async () => {
+    if (selectedIds.size === 0) return;
+
+    // Download each selected document
+    for (const id of selectedIds) {
+      const doc = sortedDocuments.find((d) => d.id === id);
+      if (doc) {
+        // Create a temporary link for each download
+        const link = document.createElement("a");
+        link.href = `/api/documents-v2/${id}/download`;
+        link.download = "";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        // Small delay between downloads
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+    }
+  };
+
+  const handleRowClick = (e: React.MouseEvent, id: string) => {
+    // Don't navigate if clicking on checkbox or dropdown
+    if ((e.target as HTMLElement).closest("[data-no-navigate]")) {
+      return;
+    }
+    router.push(`/documents-v2/review/${id}`);
   };
 
   return (
@@ -430,6 +521,41 @@ export default function ArchivePage() {
           </CardContent>
         </Card>
 
+        {/* Actions Bar */}
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex items-center gap-2" data-no-navigate>
+            <Checkbox
+              checked={selectedIds.size === sortedDocuments.length && sortedDocuments.length > 0}
+              onCheckedChange={toggleSelectAll}
+            />
+            <span className="text-sm text-gray-500">
+              {selectedIds.size > 0 ? `${selectedIds.size} selected` : "Select All"}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            {selectedIds.size > 0 && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleDownloadSelected}
+                >
+                  Download Selected ({selectedIds.size})
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </Button>
+              </>
+            )}
+            <Button variant="outline" onClick={fetchDocuments} disabled={loading}>
+              Refresh
+            </Button>
+          </div>
+        </div>
+
         {/* Document List */}
         {error ? (
           <Card>
@@ -470,6 +596,7 @@ export default function ArchivePage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10" data-no-navigate></TableHead>
                   <TableHead
                     className="cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => handleSort("party")}
@@ -477,24 +604,24 @@ export default function ArchivePage() {
                     Party{getSortIndicator("party")}
                   </TableHead>
                   <TableHead
-                    className="w-40 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("type")}
-                  >
-                    Type{getSortIndicator("type")}
-                  </TableHead>
-                  <TableHead
-                    className="w-32 cursor-pointer hover:bg-gray-100 select-none"
+                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => handleSort("date")}
                   >
                     Date{getSortIndicator("date")}
                   </TableHead>
                   <TableHead
-                    className="w-64 cursor-pointer hover:bg-gray-100 select-none"
+                    className="w-32 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("type")}
+                  >
+                    Type{getSortIndicator("type")}
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => handleSort("notes")}
                   >
                     Notes{getSortIndicator("notes")}
                   </TableHead>
-                  <TableHead className="w-10"></TableHead>
+                  <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -502,24 +629,29 @@ export default function ArchivePage() {
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
-                    onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
+                    onClick={(e) => handleRowClick(e, doc.id)}
                   >
+                    <TableCell data-no-navigate>
+                      <Checkbox
+                        checked={selectedIds.has(doc.id)}
+                        onCheckedChange={() => toggleSelect(doc.id)}
+                      />
+                    </TableCell>
                     <TableCell>
                       <span className="font-medium">{getPartyDisplay(doc)}</span>
                     </TableCell>
+                    <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
                     <TableCell>
                       <Badge className={getTypeBadgeColor(doc)}>
                         {getTypeDisplay(doc)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
-                    <TableCell
-                      className="text-gray-500 text-sm truncate max-w-[16rem]"
-                      title={doc.notes || ""}
-                    >
-                      {doc.notes || "-"}
+                    <TableCell className="text-gray-500 text-sm max-w-xs">
+                      <span className="line-clamp-2" title={doc.notes || ""}>
+                        {doc.notes || "-"}
+                      </span>
                     </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell data-no-navigate>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="sm">
@@ -530,7 +662,7 @@ export default function ArchivePage() {
                           <DropdownMenuItem
                             onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
                           >
-                            View
+                            View Details
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDownload(doc)}>
                             Download
