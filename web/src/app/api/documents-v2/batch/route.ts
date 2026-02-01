@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, execute } from "@/lib/snowflake";
-import { deleteFromR2 } from "@/lib/r2";
+import { deleteFromR2, moveFileInR2 } from "@/lib/r2";
 
 interface BatchResult {
   id: string;
@@ -34,16 +34,43 @@ export async function POST(request: NextRequest) {
     const results: BatchResult[] = [];
 
     if (action === "approve") {
-      // Approve: set status='archived', reviewed_at=now
+      // Approve: move file to archive/, set status='archived', reviewed_at=now
       for (const id of ids) {
         try {
+          // Get document file path
+          const docs = await query<{ FILE_PATH: string }>(
+            `SELECT FILE_PATH FROM DOCUMENTS WHERE ID = ? AND STATUS = 'pending_approval'`,
+            [id]
+          );
+
+          if (docs.length === 0) {
+            results.push({ id, success: false, error: "Document not found or not pending approval" });
+            continue;
+          }
+
+          const filePath = docs[0].FILE_PATH;
+          let newFilePath = filePath;
+
+          // Move file from review/ to archive/
+          if (filePath.startsWith("review/")) {
+            newFilePath = filePath.replace("review/", "archive/");
+            try {
+              await moveFileInR2(filePath, newFilePath);
+              console.log(`[batch] Moved file from ${filePath} to ${newFilePath}`);
+            } catch (moveError) {
+              console.error(`[batch] Failed to move file for ${id}:`, moveError);
+              // Continue anyway - update DB even if move fails
+            }
+          }
+
           await execute(
             `UPDATE DOCUMENTS
              SET STATUS = 'archived',
+                 FILE_PATH = ?,
                  REVIEWED_AT = CURRENT_TIMESTAMP(),
                  UPDATED_AT = CURRENT_TIMESTAMP()
-             WHERE ID = ? AND STATUS = 'pending_approval'`,
-            [id]
+             WHERE ID = ?`,
+            [newFilePath, id]
           );
           results.push({ id, success: true });
         } catch (error) {

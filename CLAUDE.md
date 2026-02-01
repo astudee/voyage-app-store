@@ -224,6 +224,11 @@ This is where reference files are uploaded for Claude to review:
 
 **Environment Variables on Vercel:** All Snowflake vars configured (SNOWFLAKE_ACCOUNT, USER, PASSWORD, WAREHOUSE, DATABASE, SCHEMA)
 
+**Environment Variables in Codespace:** The following are also set as GitHub Codespace secrets:
+- `VERCEL_TOKEN` - For CLI deployments and API access
+- `EMAIL_WEBHOOK_SECRET` - Shared secret for Cloudflare email worker webhook
+- `CLOUDFLARE_API_TOKEN` - For Wrangler CLI (same token used for multiple Cloudflare services)
+
 **Next.js App Location:** `/workspaces/voyage-app-store/web/`
 
 ---
@@ -661,7 +666,8 @@ This is where reference files are uploaded for Claude to review:
   - R2_ACCOUNT_ID
   - R2_ACCESS_KEY_ID
   - R2_SECRET_ACCESS_KEY
-  - R2_BUCKET_NAME=voyage-documents
+  - R2_BUCKET_NAME
+  - EMAIL_WEBHOOK_SECRET - Shared secret for Cloudflare email worker webhook (in Vercel + Codespace)
 
 - Added Badge component via shadcn/ui
 
@@ -1271,6 +1277,48 @@ Gmail-style batch approval:
 - `POST /api/documents-v2/upload` - Uses NanoID, sets status='uploaded', no auto AI
 - `GET /api/documents-v2?status=X` - List by status (uploaded|pending_approval|archived)
 - `GET/PUT/DELETE /api/documents-v2/[id]` - CRUD with party/sub_party/notes fields
+
+**Email Integration:**
+- `POST /api/documents-v2/from-email` - Webhook called by Cloudflare email worker
+  - Requires Bearer token matching EMAIL_WEBHOOK_SECRET
+  - Creates document record with source='email'
+  - Email address: voyagevault@studeesandbox.com
+- `GET/POST /api/documents-v2/cleanup` - List/delete orphaned R2 files
+
+### Cloudflare Email Worker
+
+**Location:** `/workers/email-receiver/`
+
+**Worker Name:** `voyage-email-receiver`
+
+**How it works:**
+1. Emails sent to `voyagevault@studeesandbox.com` are routed to the worker via Cloudflare Email Routing
+2. Worker parses email using `postal-mime` library
+3. If email has PDF attachments → uploads each PDF to R2
+4. If no PDF attachments → converts email body to simple PDF and uploads
+5. Calls `/api/documents-v2/from-email` to create database record for each file
+
+**Worker Bindings:**
+- `VOYAGE_DOCUMENTS` - R2 bucket binding to `voyage-documents`
+- `API_URL` - `https://apps.voyage.xyz`
+- `API_SECRET` - Same value as EMAIL_WEBHOOK_SECRET (set via `wrangler secret put API_SECRET`)
+
+**Deployment:**
+```bash
+cd workers/email-receiver
+export CLOUDFLARE_API_TOKEN="<token>"
+npx wrangler deploy
+```
+
+**Debugging:**
+```bash
+export CLOUDFLARE_API_TOKEN="<token>"
+npx wrangler tail voyage-email-receiver --format pretty
+```
+
+**Key Files:**
+- `workers/email-receiver/src/index.ts` - Main worker code
+- `workers/email-receiver/wrangler.toml` - Worker configuration
 
 ### AI Classification Prompt
 

@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
     });
 
     const fileExtension = getFileExtension(file.name);
-    filePath = `to-file/${fileId}${fileExtension}`;
+    filePath = `import/${fileId}${fileExtension}`;
     console.log(`[upload] Generated file path: ${filePath}`);
 
     // Upload to R2

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { downloadFromR2 } from "@/lib/r2";
+import { downloadFromR2, moveFileInR2 } from "@/lib/r2";
 import { query, execute } from "@/lib/snowflake";
 
 const GEMINI_MODEL = "gemini-2.0-flash";
@@ -380,6 +380,22 @@ async function processDocument(docId: string, filePath: string, originalFilename
 
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");
     updateValues.push(docId);
+
+    // Move file from import/ to review/
+    let newFilePath = filePath;
+    if (filePath.startsWith("import/")) {
+      newFilePath = filePath.replace("import/", "review/");
+      try {
+        await moveFileInR2(filePath, newFilePath);
+        console.log(`[process] Moved file from ${filePath} to ${newFilePath}`);
+        // Add FILE_PATH update
+        updateFields.push("FILE_PATH = ?");
+        updateValues.splice(-1, 0, newFilePath); // Insert before docId
+      } catch (moveError) {
+        console.error("[process] Failed to move file:", moveError);
+        // Continue anyway - file location mismatch is not critical
+      }
+    }
 
     const updateSql = `
       UPDATE DOCUMENTS

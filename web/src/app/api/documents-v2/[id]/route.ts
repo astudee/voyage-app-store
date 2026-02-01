@@ -67,8 +67,23 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
     for (const field of allowedFields) {
       if (field in body) {
+        let value = body[field];
+
+        // Handle special field types
+        if (field === "ai_raw_response" && typeof value === "object") {
+          value = JSON.stringify(value);
+        }
+
+        // Handle timestamp fields - Snowflake expects specific format
+        if ((field === "reviewed_at" || field === "ai_processed_at" || field === "deleted_at") && value) {
+          // Convert ISO string to Snowflake-compatible format
+          if (typeof value === "string" && value.includes("T")) {
+            value = value.replace("T", " ").replace("Z", "").split(".")[0];
+          }
+        }
+
         updateFields.push(`${field.toUpperCase()} = ?`);
-        values.push(body[field]);
+        values.push(value);
       }
     }
 
@@ -103,8 +118,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json(normalizeDocument(rows[0]));
   } catch (error) {
     console.error("Error updating document:", error);
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
-      { error: "Failed to update document" },
+      { error: `Failed to update document: ${message}` },
       { status: 500 }
     );
   }

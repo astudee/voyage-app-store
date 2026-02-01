@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectCommand, CopyObjectCommand, HeadObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
 // R2 is S3-compatible, so we use the AWS SDK
@@ -157,7 +157,7 @@ export async function getSignedUploadUrl(
  */
 export async function fileExistsInR2(key: string): Promise<boolean> {
   try {
-    const command = new GetObjectCommand({
+    const command = new HeadObjectCommand({
       Bucket: BUCKET_NAME,
       Key: key,
     });
@@ -165,5 +165,64 @@ export async function fileExistsInR2(key: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Move a file within R2 (copy + delete)
+ * @param sourceKey - The source file path
+ * @param destKey - The destination file path
+ * @returns The new key
+ */
+export async function moveFileInR2(sourceKey: string, destKey: string): Promise<string> {
+  // Copy to new location
+  const copyCommand = new CopyObjectCommand({
+    Bucket: BUCKET_NAME,
+    CopySource: `${BUCKET_NAME}/${sourceKey}`,
+    Key: destKey,
+  });
+  await r2Client.send(copyCommand);
+
+  // Delete original
+  await deleteFromR2(sourceKey);
+
+  return destKey;
+}
+
+/**
+ * Copy a file within R2
+ * @param sourceKey - The source file path
+ * @param destKey - The destination file path
+ * @returns The new key
+ */
+export async function copyFileInR2(sourceKey: string, destKey: string): Promise<string> {
+  const copyCommand = new CopyObjectCommand({
+    Bucket: BUCKET_NAME,
+    CopySource: `${BUCKET_NAME}/${sourceKey}`,
+    Key: destKey,
+  });
+  await r2Client.send(copyCommand);
+  return destKey;
+}
+
+/**
+ * Get file metadata without downloading content
+ * @param key - The file path/key in R2
+ * @returns File metadata or null if not found
+ */
+export async function getFileMetadata(key: string): Promise<{size: number; contentType?: string; lastModified?: Date} | null> {
+  try {
+    const command = new HeadObjectCommand({
+      Bucket: BUCKET_NAME,
+      Key: key,
+    });
+    const response = await r2Client.send(command);
+    return {
+      size: response.ContentLength || 0,
+      contentType: response.ContentType,
+      lastModified: response.LastModified,
+    };
+  } catch {
+    return null;
   }
 }
