@@ -79,11 +79,16 @@ export async function POST(request: NextRequest) {
 
     // Generate NanoID for file storage (10-char alphanumeric)
     fileId = await generateDocumentId(async (testId: string) => {
-      const exists = await query<{ ID: string }>(
-        `SELECT ID FROM DOCUMENTS WHERE ID = ?`,
-        [testId]
-      );
-      return exists.length > 0;
+      try {
+        const exists = await query<{ ID: string }>(
+          `SELECT ID FROM DOCUMENTS WHERE ID = ?`,
+          [testId]
+        );
+        return exists.length > 0;
+      } catch {
+        // Table might not exist yet - treat as no collision
+        return false;
+      }
     });
 
     const fileExtension = getFileExtension(file.name);

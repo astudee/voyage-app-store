@@ -114,34 +114,43 @@ export default function ImportPage() {
           body: formData,
         });
 
+        const data = await res.json();
         if (!res.ok && res.status !== 409) {
-          const data = await res.json();
-          console.error("Upload failed:", data.error);
+          console.error("Upload failed:", data.error || data);
+          setError(`Upload failed: ${data.error || "Unknown error"}`);
+        } else if (res.status === 409) {
+          console.log("Duplicate file:", data.duplicate_filename);
+        } else {
+          console.log("Upload success:", data.id);
         }
       } catch (err) {
         console.error("Upload error:", err);
+        setError(`Upload error: ${err instanceof Error ? err.message : "Unknown error"}`);
       }
     }
 
     setUploading(false);
-    fetchDocuments();
+    await fetchDocuments();
   };
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
+  const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(true);
-  }, []);
+  };
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
+  const handleDragLeave = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-  }, []);
+  };
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    handleFiles(e.dataTransfer.files);
-  }, []);
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      handleFiles(files);
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
