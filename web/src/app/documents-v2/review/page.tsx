@@ -36,6 +36,7 @@ interface Document {
   document_type: string | null;
   period_end_date: string | null;
   letter_date: string | null;
+  notes: string | null;
   ai_confidence_score: number | null;
   created_at: string;
 }
@@ -316,8 +317,9 @@ export default function ReviewPage() {
                 <TableRow>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                   <TableHead>Party</TableHead>
-                  <TableHead className="w-32">Type</TableHead>
-                  <TableHead className="w-32">Date</TableHead>
+                  <TableHead className="w-28">Date</TableHead>
+                  <TableHead className="w-28">Type</TableHead>
+                  <TableHead>Notes</TableHead>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
               </TableHeader>
@@ -342,6 +344,9 @@ export default function ReviewPage() {
                         </span>
                       </div>
                     </TableCell>
+                    <TableCell className="text-gray-600">
+                      {getDateDisplay(doc)}
+                    </TableCell>
                     <TableCell>
                       <Badge
                         className={
@@ -353,8 +358,10 @@ export default function ReviewPage() {
                         {getTypeDisplay(doc)}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-gray-600">
-                      {getDateDisplay(doc)}
+                    <TableCell className="text-gray-500 text-sm max-w-xs">
+                      <span className="line-clamp-2" title={doc.notes || ""}>
+                        {doc.notes || "-"}
+                      </span>
                     </TableCell>
                     <TableCell data-no-navigate>
                       <DropdownMenu>

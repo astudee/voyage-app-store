@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 
 interface Document {
   id: string;
@@ -28,6 +29,16 @@ interface DocumentsResponse {
   documents: Document[];
   total: number;
 }
+
+interface UploadItem {
+  id: string;
+  file: File;
+  status: "queued" | "uploading" | "complete" | "error";
+  progress: number;
+  error?: string;
+}
+
+const MAX_CONCURRENT_UPLOADS = 5;
 
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -73,9 +84,11 @@ export default function ImportPage() {
   const [processing, setProcessing] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Upload state
+  // Upload queue state
   const [isDragging, setIsDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<UploadItem[]>([]);
+  const activeUploadsRef = useRef(0);
+  const uploadIdCounter = useRef(0);
 
   const fetchDocuments = async () => {
     try {
@@ -96,41 +109,108 @@ export default function ImportPage() {
     fetchDocuments();
   }, []);
 
-  const handleFiles = async (files: FileList | File[]) => {
+  // Process upload queue
+  useEffect(() => {
+    const processQueue = async () => {
+      const queuedItems = uploadQueue.filter((item) => item.status === "queued");
+      const availableSlots = MAX_CONCURRENT_UPLOADS - activeUploadsRef.current;
+
+      if (queuedItems.length === 0 || availableSlots <= 0) return;
+
+      const itemsToStart = queuedItems.slice(0, availableSlots);
+
+      for (const item of itemsToStart) {
+        activeUploadsRef.current++;
+        uploadFile(item);
+      }
+    };
+
+    processQueue();
+  }, [uploadQueue]);
+
+  const uploadFile = async (item: UploadItem) => {
+    // Mark as uploading
+    setUploadQueue((prev) =>
+      prev.map((u) => (u.id === item.id ? { ...u, status: "uploading" as const, progress: 10 } : u))
+    );
+
+    try {
+      const formData = new FormData();
+      formData.append("file", item.file);
+      formData.append("source", "upload");
+
+      // Simulate progress (since fetch doesn't support progress for uploads easily)
+      const progressInterval = setInterval(() => {
+        setUploadQueue((prev) =>
+          prev.map((u) =>
+            u.id === item.id && u.status === "uploading"
+              ? { ...u, progress: Math.min(u.progress + 15, 90) }
+              : u
+          )
+        );
+      }, 200);
+
+      const res = await fetch("/api/documents-v2/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      clearInterval(progressInterval);
+
+      const data = await res.json();
+
+      if (!res.ok && res.status !== 409) {
+        setUploadQueue((prev) =>
+          prev.map((u) =>
+            u.id === item.id
+              ? { ...u, status: "error" as const, progress: 100, error: data.error || "Upload failed" }
+              : u
+          )
+        );
+      } else if (res.status === 409) {
+        setUploadQueue((prev) =>
+          prev.map((u) =>
+            u.id === item.id
+              ? { ...u, status: "error" as const, progress: 100, error: "Duplicate file" }
+              : u
+          )
+        );
+      } else {
+        setUploadQueue((prev) =>
+          prev.map((u) => (u.id === item.id ? { ...u, status: "complete" as const, progress: 100 } : u))
+        );
+        // Refresh document list
+        fetchDocuments();
+      }
+    } catch (err) {
+      setUploadQueue((prev) =>
+        prev.map((u) =>
+          u.id === item.id
+            ? { ...u, status: "error" as const, progress: 100, error: String(err) }
+            : u
+        )
+      );
+    } finally {
+      activeUploadsRef.current--;
+      // Remove completed/errored items after a delay
+      setTimeout(() => {
+        setUploadQueue((prev) => prev.filter((u) => u.id !== item.id || u.status === "queued" || u.status === "uploading"));
+      }, 2000);
+    }
+  };
+
+  const handleFiles = (files: FileList | File[]) => {
     const fileArray = Array.from(files);
     if (fileArray.length === 0) return;
 
-    setUploading(true);
-    setError(null);
+    const newItems: UploadItem[] = fileArray.map((file) => ({
+      id: `upload-${++uploadIdCounter.current}`,
+      file,
+      status: "queued" as const,
+      progress: 0,
+    }));
 
-    for (const file of fileArray) {
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("source", "upload");
-
-        const res = await fetch("/api/documents-v2/upload", {
-          method: "POST",
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (!res.ok && res.status !== 409) {
-          console.error("Upload failed:", data.error || data);
-          setError(`Upload failed: ${data.error || "Unknown error"}`);
-        } else if (res.status === 409) {
-          console.log("Duplicate file:", data.duplicate_filename);
-        } else {
-          console.log("Upload success:", data.id);
-        }
-      } catch (err) {
-        console.error("Upload error:", err);
-        setError(`Upload error: ${err instanceof Error ? err.message : "Unknown error"}`);
-      }
-    }
-
-    setUploading(false);
-    await fetchDocuments();
+    setUploadQueue((prev) => [...prev, ...newItems]);
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -230,6 +310,11 @@ export default function ImportPage() {
     }
   };
 
+  const activeUploads = uploadQueue.filter(
+    (u) => u.status === "uploading" || u.status === "queued" || u.status === "complete" || u.status === "error"
+  );
+  const hasActiveUploads = activeUploads.length > 0;
+
   return (
     <AppLayout>
       <div className="p-8">
@@ -275,15 +360,60 @@ export default function ImportPage() {
                   multiple
                   accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg"
                   onChange={handleFileSelect}
-                  disabled={uploading}
                 />
-                <Button variant="outline" disabled={uploading}>
-                  {uploading ? "Uploading..." : "Select Files"}
+                <Button variant="outline" asChild>
+                  <span>Select Files</span>
                 </Button>
               </label>
             </div>
           </CardContent>
         </Card>
+
+        {/* Uploads in Progress Section */}
+        {hasActiveUploads && (
+          <Card className="mb-6">
+            <CardContent className="py-4">
+              <h2 className="text-lg font-semibold mb-4">
+                Uploading ({uploadQueue.filter((u) => u.status === "uploading").length} active, {uploadQueue.filter((u) => u.status === "queued").length} queued)
+              </h2>
+              <div className="space-y-3">
+                {activeUploads.map((item) => (
+                  <div key={item.id} className="flex items-center gap-4">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium truncate" title={item.file.name}>
+                          {item.file.name}
+                        </span>
+                        <span className="text-xs text-gray-500 ml-2 shrink-0">
+                          {formatFileSize(item.file.size)}
+                        </span>
+                      </div>
+                      <Progress
+                        value={item.progress}
+                        className={`h-2 ${
+                          item.status === "error"
+                            ? "[&>div]:bg-red-500"
+                            : item.status === "complete"
+                            ? "[&>div]:bg-green-500"
+                            : ""
+                        }`}
+                      />
+                      {item.status === "queued" && (
+                        <span className="text-xs text-gray-400">Waiting...</span>
+                      )}
+                      {item.status === "error" && (
+                        <span className="text-xs text-red-500">{item.error}</span>
+                      )}
+                      {item.status === "complete" && (
+                        <span className="text-xs text-green-600">Complete</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Document List Header */}
         <div className="mb-4 flex items-center justify-between">
