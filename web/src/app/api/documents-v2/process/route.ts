@@ -41,8 +41,8 @@ For ALL types, include:
 - confidence_score: 0.0 to 1.0
 
 For CONTRACTS additionally include:
-- document_category: "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT"
-- contract_type: MSA, SOW, NDA, SubK, CSOW, Offer Letter, Bonus Plan, etc.
+- document_category: "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER"
+- contract_type: MSA, SOW, NDA, SubK, CSOW, Offer Letter, Bonus Plan, TA (Teaming Agreement), etc.
 - executed_date: Date signed (YYYY-MM-DD)
 
 For DOCUMENTS additionally include:
@@ -72,6 +72,10 @@ For VENDOR contracts:
 For CLIENT contracts:
 - party = Client company name
 - sub_party = Department or division if mentioned
+
+For PARTNER contracts (teaming agreements, joint ventures, referral agreements):
+- party = Partner company name
+- sub_party = null or specific contact/department
 
 For DOCUMENTS:
 - party = Issuing entity (bank, government, utility)

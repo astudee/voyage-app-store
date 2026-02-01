@@ -1378,6 +1378,7 @@ Phase 2 simplifies the type system and adds AI-powered search capabilities:
 - CONTRACTOR (SubK, CSOW)
 - VENDOR (MSAs, NDAs with vendors)
 - CLIENT (MSAs, SOWs with clients)
+- PARTNER (teaming agreements, joint ventures, referral agreements)
 
 **For Documents:** No sub-categories. Uses:
 - `party` (who it's from)

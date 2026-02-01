@@ -363,6 +363,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
                           <SelectItem value="CONTRACTOR">Contractor</SelectItem>
                           <SelectItem value="VENDOR">Vendor</SelectItem>
                           <SelectItem value="CLIENT">Client</SelectItem>
+                          <SelectItem value="PARTNER">Partner</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
