@@ -71,6 +71,8 @@ function getSourceBadgeColor(source: string): string {
       return "bg-green-100 text-green-800";
     case "to-file":
       return "bg-purple-100 text-purple-800";
+    case "r2_scan":
+      return "bg-orange-100 text-orange-800";
     default:
       return "bg-gray-100 text-gray-800";
   }
@@ -83,6 +85,7 @@ export default function ImportPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [processing, setProcessing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [scanning, setScanning] = useState(false);
 
   // Upload queue state
   const [isDragging, setIsDragging] = useState(false);
@@ -310,6 +313,46 @@ export default function ImportPage() {
     }
   };
 
+  const handleScanInbox = async () => {
+    setScanning(true);
+    try {
+      // First do a dry run to see what would be found
+      const previewRes = await fetch("/api/documents-v2/scan-inbox");
+      const preview = await previewRes.json();
+
+      if (!previewRes.ok) {
+        throw new Error(preview.error || "Scan preview failed");
+      }
+
+      if (preview.new_files.length === 0) {
+        alert("No new files found in import/ folder.");
+        return;
+      }
+
+      // Confirm before scanning
+      if (!confirm(`Found ${preview.new_files.length} new file(s) in R2. Create database records for them?`)) {
+        return;
+      }
+
+      // Do the actual scan
+      const scanRes = await fetch("/api/documents-v2/scan-inbox", {
+        method: "POST",
+      });
+      const scanResult = await scanRes.json();
+
+      if (!scanRes.ok) {
+        throw new Error(scanResult.error || "Scan failed");
+      }
+
+      alert(`Scan complete: ${scanResult.new_files} new records created, ${scanResult.errors} errors.`);
+      fetchDocuments();
+    } catch (err) {
+      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
   const activeUploads = uploadQueue.filter(
     (u) => u.status === "uploading" || u.status === "queued" || u.status === "complete" || u.status === "error"
   );
@@ -438,6 +481,13 @@ export default function ImportPage() {
                 </Button>
               </>
             )}
+            <Button
+              variant="outline"
+              onClick={handleScanInbox}
+              disabled={scanning || loading}
+            >
+              {scanning ? "Scanning..." : "Scan Inbox"}
+            </Button>
             <Button variant="outline" onClick={fetchDocuments} disabled={loading}>
               Refresh
             </Button>
