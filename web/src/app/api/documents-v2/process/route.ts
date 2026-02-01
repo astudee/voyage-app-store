@@ -38,6 +38,7 @@ For ALL types, include:
 - sub_party: Secondary entity if relevant (use "Last, First" format for people)
 - document_type: Specific type (e.g., "MSA", "Statement", "Invoice")
 - ai_summary: 2-4 sentence description for easy searching. Include key names, dates, amounts, and purpose.
+- notes: Additional context like account numbers, reference numbers, etc. (put account_last4 in its own field, NOT here)
 - confidence_score: 0.0 to 1.0
 
 For CONTRACTS additionally include:
@@ -48,22 +49,54 @@ For CONTRACTS additionally include:
 For DOCUMENTS additionally include:
 - letter_date: Date of the document (YYYY-MM-DD)
 - period_end_date: For statements, the period end date (YYYY-MM-DD)
-- account_last4: Last 4 digits of account if applicable
+- account_last4: Last 4 digits of account if applicable (put here, NOT in notes)
 
 For INVOICES additionally include:
 - amount: Dollar amount as number (e.g., 5000.00)
 - due_date: Payment due date (YYYY-MM-DD)
 - invoice_type: "PAYABLE" (bill to pay) | "RECEIVABLE" (invoice we sent)
 
-**PARTY AND SUB_PARTY RULES:**
+**CRITICAL RULE - PARTY IDENTIFICATION:**
+
+The party field should almost NEVER be "Voyage Advisory" or "Voyage Advisory LLC".
+Voyage Advisory is the company that owns this document management system.
+The party should be the OTHER party in the relationship:
+
+- For contracts: party = the other company or person (client, vendor, contractor, employee)
+- For documents: party = the issuer/sender (bank, government, utility)
+- For invoices: party = the vendor billing us or the client we're billing
+
+The ONLY exceptions where party = "Voyage Advisory" are internal documents like:
+- Operating agreements
+- Articles of incorporation
+- Standard operating procedures
+- Internal policies
+
+If a document is between Voyage Advisory and another entity, the party is ALWAYS the other entity, not Voyage.
+
+Examples:
+- MSA between Voyage Advisory and Acme Corp → party = "Acme Corp"
+- SOW where Voyage is performing work for State of North Dakota → party = "State of North Dakota"
+- SubK between Voyage and Lightwater Consulting → party = "Lightwater Consulting LLC"
+- Offer letter from Voyage to John Smith → party = "Smith, John"
+- Chase bank statement → party = "Chase"
+- Voyage operating agreement → party = "Voyage Advisory LLC" (exception)
+
+**PARTY AND SUB_PARTY RULES BY CATEGORY:**
 
 For EMPLOYEE contracts:
-- party = Employee name in "Last, First" format
+- party = Employee name in "Last, First" format (e.g., "Smith, John")
 - sub_party = null
+- NEVER set party to "Voyage Advisory" for employee documents
 
 For CONTRACTOR contracts:
-- party = Contractor's company name
-- sub_party = Individual contractor name in "Last, First" format
+- If the contractor operates through a company (LLC, Inc, Corp, etc.):
+  - party = The contractor's company name (e.g., "Jill Hanson Consulting LLC")
+  - sub_party = The individual contractor's name in "Last, First" format (e.g., "Hanson, Jill")
+- If the contractor is an individual with no company entity:
+  - party = The individual's name in "Last, First" format (e.g., "Wise, Marc")
+  - sub_party = null
+- NEVER set party to "Voyage Advisory" for contractor documents
 
 For VENDOR contracts:
 - party = Vendor company name
@@ -79,7 +112,10 @@ For PARTNER contracts (teaming agreements, joint ventures, referral agreements):
 
 For DOCUMENTS:
 - party = Issuing entity (bank, government, utility)
+- For government: party = "State of {Name}" or "US Government"
 - sub_party = Specific agency or department
+- For banks/companies: party = company name, sub_party = division if applicable
+- For individuals: party = name in "Last, First" format
 
 For INVOICES:
 - party = Vendor (if payable) or Client (if receivable)
@@ -91,6 +127,7 @@ CRITICAL RULES:
 3. The ai_summary should be searchable - include key terms
 4. For contracts, executed_date is the latest signature date
 5. Return ONLY valid JSON, no markdown formatting
+6. NEVER set party to "Voyage Advisory" unless it's an internal company document
 
 Return JSON:
 {
@@ -99,9 +136,10 @@ Return JSON:
   "sub_party": "..." or null,
   "document_type": "...",
   "ai_summary": "2-4 sentence summary with key details...",
+  "notes": "..." or null,
   "confidence_score": 0.0-1.0,
   // Contract-specific (only if contract):
-  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT",
+  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
   "contract_type": "...",
   "executed_date": "YYYY-MM-DD",
   // Document-specific (only if document):
@@ -122,9 +160,10 @@ interface Analysis {
   sub_party?: string;
   document_type?: string;
   ai_summary?: string;
+  notes?: string;
   confidence_score?: number;
   // Contract-specific
-  document_category?: string; // EMPLOYEE, CONTRACTOR, VENDOR, CLIENT
+  document_category?: string; // EMPLOYEE, CONTRACTOR, VENDOR, CLIENT, PARTNER
   contract_type?: string;
   executed_date?: string;
   // Document-specific
@@ -373,6 +412,9 @@ async function processDocument(docId: string, filePath: string, originalFilename
 
     updateFields.push("DOCUMENT_TYPE = ?");
     updateValues.push(analysis.document_type ?? null);
+
+    updateFields.push("NOTES = ?");
+    updateValues.push(analysis.notes ?? null);
 
     // Type-specific fields
     if (analysis.document_type_category === "contract") {

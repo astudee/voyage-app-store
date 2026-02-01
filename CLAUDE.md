@@ -1365,6 +1365,8 @@ Phase 2 simplifies the type system and adds AI-powered search capabilities:
 3. **AI-powered archive search**: Semantic search using Gemini
 4. **Duplicate detection**: Warns before archiving potential duplicates
 5. **Three-folder R2 structure**: import/ → review/ → archive/
+6. **Sortable columns**: Click column headers to sort on Review and Archive pages
+7. **Smart download filenames**: Downloads use meaningful names based on metadata
 
 ### Type System
 
@@ -1405,6 +1407,31 @@ Run migration: `POST /api/documents-v2/migrate-schema`
 
 ### AI Classification Prompt (Phase 2)
 
+**CRITICAL RULE - PARTY IDENTIFICATION:**
+
+The party field should almost NEVER be "Voyage Advisory" or "Voyage Advisory LLC".
+Voyage Advisory is the company that owns this document management system.
+The party should be the OTHER party in the relationship:
+
+- For contracts: party = the other company or person (client, vendor, contractor, employee)
+- For documents: party = the issuer/sender (bank, government, utility)
+- For invoices: party = the vendor billing us or the client we're billing
+
+The ONLY exceptions where party = "Voyage Advisory" are internal documents like:
+- Operating agreements
+- Articles of incorporation
+- Standard operating procedures
+- Internal policies
+
+**CONTRACTOR PARTY RULES:**
+- If the contractor operates through a company (LLC, Inc, Corp, etc.):
+  - party = The contractor's company name (e.g., "Jill Hanson Consulting LLC")
+  - sub_party = The individual contractor's name in "Last, First" format (e.g., "Hanson, Jill")
+- If the contractor is an individual with no company entity:
+  - party = The individual's name in "Last, First" format (e.g., "Wise, Marc")
+  - sub_party = null
+- NEVER set party to "Voyage Advisory" for contractor documents
+
 The AI now returns:
 ```json
 {
@@ -1413,17 +1440,37 @@ The AI now returns:
   "sub_party": "..." or null,
   "document_type": "...",
   "ai_summary": "2-4 sentence summary for searching...",
+  "notes": "Additional context" or null,
   "confidence_score": 0.0-1.0,
   // Contract-specific:
-  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT",
+  "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
   "contract_type": "...",
   "executed_date": "YYYY-MM-DD",
+  // Document-specific:
+  "letter_date": "YYYY-MM-DD",
+  "period_end_date": "YYYY-MM-DD",
+  "account_last4": "1234",
   // Invoice-specific:
   "amount": 5000.00,
   "due_date": "YYYY-MM-DD",
   "invoice_type": "PAYABLE" | "RECEIVABLE"
 }
 ```
+
+### Smart Download Filenames
+
+When downloading a document, the filename follows this convention:
+`{party} ({sub_party}) - {YYYY.MM.DD} - {document_type}.pdf`
+
+Rules:
+- If sub_party exists: `3TR Advisors LLC (Charwinsky, John) - 2025.09.27 - Contractor Agreement.pdf`
+- If no sub_party: `Chase - 2026.01.15 - Statement.pdf`
+- If no date: `Smith, John - Offer Letter.pdf`
+- Date uses executed_date for contracts, letter_date or period_end_date for documents, due_date for invoices
+- Notes appended if present and short: `Chase - 2026.01.15 - Statement - xxxx4521.pdf`
+- Sanitized: characters not safe for filenames (/ \ : * ? " < > |) replaced with underscore
+
+The `GET /api/documents-v2/{id}/view-url` endpoint now returns `download_filename` in addition to `url`.
 
 ### New API Endpoints (Phase 2)
 
@@ -1463,18 +1510,25 @@ voyage-documents/
 
 ### UI Changes (Phase 2)
 
+**Review and Archive Grids:**
+- No original filename shown in grid rows (only on detail page)
+- Sortable columns: Click column header to sort (Party, Type, Date, Notes)
+- Click again for descending, click again to remove sort
+- Sort indicator (▲/▼) shows current sort column
+- Default sort: Date descending (newest first)
+
 **Review Detail Page:**
 - Shows original filename in header: "Review: {original_filename}"
 - Document Type dropdown: Contract / Document / Invoice
 - AI Summary displayed in read-only box
-- Contract: shows Category (EMPLOYEE/CONTRACTOR/VENDOR/CLIENT)
+- Contract: shows Category (EMPLOYEE/CONTRACTOR/VENDOR/CLIENT/PARTNER)
 - Invoice: shows Amount, Due Date, Invoice Type (PAYABLE/RECEIVABLE)
 - Duplicate detection modal before archiving
 
 **Archive Page:**
 - Smart Search toggle button
 - Local filtering (instant) vs AI search (semantic)
-- Summary column shows ai_summary
+- Notes column shows `notes` field (not ai_summary)
 - Type badges: purple (contract), amber (invoice), teal (document)
 
 ### Files Modified (Phase 2)
@@ -1486,9 +1540,11 @@ voyage-documents/
 - `web/src/app/api/documents-v2/scan-inbox/route.ts` - Scan for R2 orphans
 
 **Updated Files:**
-- `web/src/app/api/documents-v2/process/route.ts` - New AI prompt with document_type_category
+- `web/src/app/api/documents-v2/process/route.ts` - New AI prompt with party identification rules
+- `web/src/app/api/documents-v2/[id]/view-url/route.ts` - Smart download filename generation
+- `web/src/app/documents-v2/review/page.tsx` - Sortable columns, removed filename from grid
 - `web/src/app/documents-v2/review/[id]/page.tsx` - New form fields, duplicate modal
-- `web/src/app/documents-v2/archive/page.tsx` - Smart search UI
+- `web/src/app/documents-v2/archive/page.tsx` - Sortable columns, Notes column, Smart search UI
 - `web/src/app/documents-v2/import/page.tsx` - Scan inbox button
 
 ---

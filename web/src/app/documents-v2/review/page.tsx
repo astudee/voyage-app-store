@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -27,6 +27,7 @@ interface Document {
   id: string;
   original_filename: string;
   is_contract: boolean | null;
+  document_type_category: "contract" | "document" | "invoice" | null;
   document_category: string | null;
   contract_type: string | null;
   party: string | null;
@@ -36,6 +37,8 @@ interface Document {
   document_type: string | null;
   period_end_date: string | null;
   letter_date: string | null;
+  due_date: string | null;
+  amount: number | null;
   notes: string | null;
   ai_confidence_score: number | null;
   created_at: string;
@@ -45,6 +48,9 @@ interface DocumentsResponse {
   documents: Document[];
   total: number;
 }
+
+type SortKey = "party" | "date" | "type" | "notes";
+type SortDir = "asc" | "desc" | null;
 
 function formatDate(dateString: string | null): string {
   if (!dateString) return "-";
@@ -62,17 +68,48 @@ function getPartyDisplay(doc: Document): string {
 }
 
 function getTypeDisplay(doc: Document): string {
-  if (doc.is_contract) {
-    return doc.contract_type || "-";
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
+    return doc.contract_type || "Contract";
   }
-  return doc.document_type || "-";
+  if (category === "invoice") {
+    return doc.amount ? `Invoice $${doc.amount.toLocaleString()}` : "Invoice";
+  }
+  return doc.document_type || "Document";
 }
 
 function getDateDisplay(doc: Document): string {
-  if (doc.is_contract) {
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
     return formatDate(doc.executed_date);
   }
+  if (category === "invoice") {
+    return formatDate(doc.due_date);
+  }
   return formatDate(doc.letter_date || doc.period_end_date);
+}
+
+function getDateValue(doc: Document): Date | null {
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
+    return doc.executed_date ? new Date(doc.executed_date) : null;
+  }
+  if (category === "invoice") {
+    return doc.due_date ? new Date(doc.due_date) : null;
+  }
+  const dateStr = doc.letter_date || doc.period_end_date;
+  return dateStr ? new Date(dateStr) : null;
+}
+
+function getTypeBadgeColor(doc: Document): string {
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
+    return "bg-purple-100 text-purple-800";
+  }
+  if (category === "invoice") {
+    return "bg-amber-100 text-amber-800";
+  }
+  return "bg-teal-100 text-teal-800";
 }
 
 export default function ReviewPage() {
@@ -83,6 +120,78 @@ export default function ReviewPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [approving, setApproving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [sortKey, setSortKey] = useState<SortKey | null>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Sort documents
+  const sortedDocuments = useMemo(() => {
+    if (!sortKey || !sortDir) return documents;
+
+    return [...documents].sort((a, b) => {
+      let aVal: string | number | Date | null = null;
+      let bVal: string | number | Date | null = null;
+
+      switch (sortKey) {
+        case "party":
+          aVal = getPartyDisplay(a).toLowerCase();
+          bVal = getPartyDisplay(b).toLowerCase();
+          break;
+        case "date":
+          aVal = getDateValue(a);
+          bVal = getDateValue(b);
+          break;
+        case "type":
+          aVal = getTypeDisplay(a).toLowerCase();
+          bVal = getTypeDisplay(b).toLowerCase();
+          break;
+        case "notes":
+          aVal = (a.notes || "").toLowerCase();
+          bVal = (b.notes || "").toLowerCase();
+          break;
+      }
+
+      // Handle nulls
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return sortDir === "asc" ? 1 : -1;
+      if (bVal === null) return sortDir === "asc" ? -1 : 1;
+
+      // Compare dates
+      if (aVal instanceof Date && bVal instanceof Date) {
+        return sortDir === "asc"
+          ? aVal.getTime() - bVal.getTime()
+          : bVal.getTime() - aVal.getTime();
+      }
+
+      // Compare strings
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDir === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      return 0;
+    });
+  }, [documents, sortKey, sortDir]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      // Cycle: asc -> desc -> none
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else if (sortDir === "desc") {
+        setSortKey(null);
+        setSortDir(null);
+      }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const getSortIndicator = (key: SortKey) => {
+    if (sortKey !== key) return null;
+    return sortDir === "asc" ? " ▲" : " ▼";
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -316,15 +425,35 @@ export default function ReviewPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10" data-no-navigate></TableHead>
-                  <TableHead>Party</TableHead>
-                  <TableHead className="w-28">Date</TableHead>
-                  <TableHead className="w-28">Type</TableHead>
-                  <TableHead>Notes</TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("party")}
+                  >
+                    Party{getSortIndicator("party")}
+                  </TableHead>
+                  <TableHead
+                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("date")}
+                  >
+                    Date{getSortIndicator("date")}
+                  </TableHead>
+                  <TableHead
+                    className="w-32 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("type")}
+                  >
+                    Type{getSortIndicator("type")}
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("notes")}
+                  >
+                    Notes{getSortIndicator("notes")}
+                  </TableHead>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {documents.map((doc) => (
+                {sortedDocuments.map((doc) => (
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
@@ -337,24 +466,13 @@ export default function ReviewPage() {
                       />
                     </TableCell>
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{getPartyDisplay(doc)}</span>
-                        <span className="text-xs text-gray-500 truncate max-w-md" title={doc.original_filename}>
-                          {doc.original_filename}
-                        </span>
-                      </div>
+                      <span className="font-medium">{getPartyDisplay(doc)}</span>
                     </TableCell>
                     <TableCell className="text-gray-600">
                       {getDateDisplay(doc)}
                     </TableCell>
                     <TableCell>
-                      <Badge
-                        className={
-                          doc.is_contract
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-teal-100 text-teal-800"
-                        }
-                      >
+                      <Badge className={getTypeBadgeColor(doc)}>
                         {getTypeDisplay(doc)}
                       </Badge>
                     </TableCell>

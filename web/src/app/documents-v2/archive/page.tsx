@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -22,6 +22,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+
+type SortKey = "party" | "type" | "date" | "notes";
+type SortDir = "asc" | "desc" | null;
 
 interface Document {
   id: string;
@@ -104,6 +107,18 @@ function getTypeBadgeColor(doc: Document): string {
   return "bg-teal-100 text-teal-800";
 }
 
+function getDateValue(doc: Document): Date | null {
+  const category = doc.document_type_category;
+  if (category === "contract" || doc.is_contract) {
+    return doc.executed_date ? new Date(doc.executed_date) : null;
+  }
+  if (category === "invoice") {
+    return doc.due_date ? new Date(doc.due_date) : null;
+  }
+  const dateStr = doc.letter_date || doc.period_end_date;
+  return dateStr ? new Date(dateStr) : null;
+}
+
 export default function ArchivePage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -114,6 +129,78 @@ export default function ArchivePage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSmartSearch, setIsSmartSearch] = useState(false);
   const [searchType, setSearchType] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey | null>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Sort displayed documents
+  const sortedDocuments = useMemo(() => {
+    if (!sortKey || !sortDir) return displayedDocuments;
+
+    return [...displayedDocuments].sort((a, b) => {
+      let aVal: string | number | Date | null = null;
+      let bVal: string | number | Date | null = null;
+
+      switch (sortKey) {
+        case "party":
+          aVal = getPartyDisplay(a).toLowerCase();
+          bVal = getPartyDisplay(b).toLowerCase();
+          break;
+        case "date":
+          aVal = getDateValue(a);
+          bVal = getDateValue(b);
+          break;
+        case "type":
+          aVal = getTypeDisplay(a).toLowerCase();
+          bVal = getTypeDisplay(b).toLowerCase();
+          break;
+        case "notes":
+          aVal = (a.notes || "").toLowerCase();
+          bVal = (b.notes || "").toLowerCase();
+          break;
+      }
+
+      // Handle nulls
+      if (aVal === null && bVal === null) return 0;
+      if (aVal === null) return sortDir === "asc" ? 1 : -1;
+      if (bVal === null) return sortDir === "asc" ? -1 : 1;
+
+      // Compare dates
+      if (aVal instanceof Date && bVal instanceof Date) {
+        return sortDir === "asc"
+          ? aVal.getTime() - bVal.getTime()
+          : bVal.getTime() - aVal.getTime();
+      }
+
+      // Compare strings
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDir === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      return 0;
+    });
+  }, [displayedDocuments, sortKey, sortDir]);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      // Cycle: asc -> desc -> none
+      if (sortDir === "asc") {
+        setSortDir("desc");
+      } else if (sortDir === "desc") {
+        setSortKey(null);
+        setSortDir(null);
+      }
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const getSortIndicator = (key: SortKey) => {
+    if (sortKey !== key) return null;
+    return sortDir === "asc" ? " ▲" : " ▼";
+  };
 
   const fetchDocuments = async () => {
     try {
@@ -383,30 +470,42 @@ export default function ArchivePage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Party</TableHead>
-                  <TableHead className="w-40">Type</TableHead>
-                  <TableHead className="w-32">Date</TableHead>
-                  <TableHead className="w-64">Summary</TableHead>
+                  <TableHead
+                    className="cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("party")}
+                  >
+                    Party{getSortIndicator("party")}
+                  </TableHead>
+                  <TableHead
+                    className="w-40 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("type")}
+                  >
+                    Type{getSortIndicator("type")}
+                  </TableHead>
+                  <TableHead
+                    className="w-32 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("date")}
+                  >
+                    Date{getSortIndicator("date")}
+                  </TableHead>
+                  <TableHead
+                    className="w-64 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("notes")}
+                  >
+                    Notes{getSortIndicator("notes")}
+                  </TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displayedDocuments.map((doc) => (
+                {sortedDocuments.map((doc) => (
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
                     onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
                   >
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="font-medium">{getPartyDisplay(doc)}</span>
-                        <span
-                          className="text-xs text-gray-500 truncate max-w-md"
-                          title={doc.original_filename}
-                        >
-                          {doc.original_filename}
-                        </span>
-                      </div>
+                      <span className="font-medium">{getPartyDisplay(doc)}</span>
                     </TableCell>
                     <TableCell>
                       <Badge className={getTypeBadgeColor(doc)}>
@@ -416,9 +515,9 @@ export default function ArchivePage() {
                     <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
                     <TableCell
                       className="text-gray-500 text-sm truncate max-w-[16rem]"
-                      title={doc.ai_summary || doc.notes || ""}
+                      title={doc.notes || ""}
                     >
-                      {doc.ai_summary || doc.notes || "-"}
+                      {doc.notes || "-"}
                     </TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
