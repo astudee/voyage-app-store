@@ -53,7 +53,10 @@ export async function POST(request: NextRequest) {
     const doc = docs[0];
     console.log(`[check-duplicates] Document: ${doc.PARTY} - ${doc.DOCUMENT_TYPE || doc.CONTRACT_TYPE}`);
 
-    // Get archived documents with same party or similar type
+    // Get archived documents that could be duplicates:
+    // 1. Same filename (exact duplicate upload)
+    // 2. Same party AND same document type (different versions of same document)
+    // This prevents false positives for common forms like W9, Direct Deposit with different parties
     const candidates = await query<DocumentInfo>(
       `SELECT ID, ORIGINAL_FILENAME, PARTY, SUB_PARTY, DOCUMENT_TYPE,
               DOCUMENT_TYPE_CATEGORY, CONTRACT_TYPE, AI_SUMMARY,
@@ -62,10 +65,13 @@ export async function POST(request: NextRequest) {
        WHERE STATUS = 'archived'
        AND DELETED_AT IS NULL
        AND ID != ?
-       AND (PARTY = ? OR DOCUMENT_TYPE = ? OR CONTRACT_TYPE = ?)
+       AND (
+         ORIGINAL_FILENAME = ?
+         OR (PARTY IS NOT NULL AND PARTY = ? AND (DOCUMENT_TYPE = ? OR CONTRACT_TYPE = ?))
+       )
        ORDER BY CREATED_AT DESC
        LIMIT 30`,
-      [id, doc.PARTY, doc.DOCUMENT_TYPE, doc.CONTRACT_TYPE]
+      [id, doc.ORIGINAL_FILENAME, doc.PARTY, doc.DOCUMENT_TYPE, doc.CONTRACT_TYPE]
     );
 
     if (candidates.length === 0) {
@@ -102,15 +108,18 @@ export async function POST(request: NextRequest) {
 
 ${docContext}
 
-Existing archived documents:
+Existing archived documents (already filtered to same party or same filename):
 ${candidatesContext}
 
-Identify any documents that appear to be:
-1. The exact same document (uploaded twice)
-2. A different version of the same document (same parties/type, different date)
-3. A very similar document that might be a duplicate
+IMPORTANT: Only flag as duplicates if:
+1. The exact same document uploaded twice (same filename AND same party)
+2. A different version of the SAME agreement/document (same party, same type, different date - like an amendment or renewal)
 
-For each potential match, explain why you think it's similar.
+DO NOT flag as duplicates:
+- Documents that just happen to be the same TYPE (like W9, Direct Deposit forms) but are for DIFFERENT parties/people
+- Documents with similar names but different parties
+
+For each potential match, explain why you think it's a true duplicate.
 
 Return ONLY a JSON object:
 {
@@ -120,7 +129,7 @@ Return ONLY a JSON object:
   ]
 }
 
-Return empty matches array if no potential duplicates:
+Return empty matches array if no true duplicates:
 {"matches": []}`;
 
     console.log("[check-duplicates] Calling Gemini for duplicate detection...");
