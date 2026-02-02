@@ -51,9 +51,9 @@ export async function POST(request: NextRequest) {
           const filePath = docs[0].FILE_PATH;
           let newFilePath = filePath;
 
-          // Move file from review/ to archive/
-          if (filePath.startsWith("review/")) {
-            newFilePath = filePath.replace("review/", "archive/");
+          // Move file from import/, review/, or legacy to-file/ to archive/
+          if (filePath.startsWith("import/") || filePath.startsWith("review/") || filePath.startsWith("to-file/")) {
+            newFilePath = filePath.replace(/^(import|review|to-file)\//, "archive/");
             try {
               await moveFileInR2(filePath, newFilePath);
               console.log(`[batch] Moved file from ${filePath} to ${newFilePath}`);

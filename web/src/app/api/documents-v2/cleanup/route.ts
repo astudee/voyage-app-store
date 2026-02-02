@@ -11,9 +11,11 @@ export async function POST(request: NextRequest) {
 
     console.log(`[cleanup] Starting cleanup (dryRun: ${dryRun})...`);
 
-    // List all files in R2 under to-file/
-    const r2Files = await listFilesInR2("to-file/");
-    console.log(`[cleanup] Found ${r2Files.length} files in R2`);
+    // List all files in R2 under all folders
+    const folders = ["to-file/", "import/", "review/", "archive/"];
+    const allFiles = await Promise.all(folders.map(f => listFilesInR2(f)));
+    const r2Files = allFiles.flat();
+    console.log(`[cleanup] Found ${r2Files.length} files in R2 across ${folders.length} folders`);
 
     if (r2Files.length === 0) {
       return NextResponse.json({
@@ -94,8 +96,10 @@ export async function GET() {
   try {
     console.log("[cleanup] Listing orphaned files...");
 
-    // List all files in R2 under to-file/
-    const r2Files = await listFilesInR2("to-file/");
+    // List all files in R2 under all folders
+    const folders = ["to-file/", "import/", "review/", "archive/"];
+    const allFiles = await Promise.all(folders.map(f => listFilesInR2(f)));
+    const r2Files = allFiles.flat();
 
     if (r2Files.length === 0) {
       return NextResponse.json({
