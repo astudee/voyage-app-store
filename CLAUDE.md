@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-02 (Document Manager renamed, migration complete)
+> **Last updated:** 2026-02-02 (Streamlit removed, Email Vault workflow deleted)
 
 ---
 
@@ -61,15 +61,15 @@
   - BigTime Client Lookup (97) → `/health/bigtime`
   - QuickBooks Token Refresh (98) → `/health/quickbooks`
   - Connection Health Checker (99) → `/health/connection`
-- **Streamlit apps archived** to `archived/pages/` folder
-- **Codespace no longer auto-starts Streamlit** - opens CLAUDE.md instead
+- **Streamlit completely removed** (Home.py, .streamlit folder, requirements.txt reference all deleted)
+- Old Streamlit apps preserved in `archived/pages/` for reference only
 
-**What's Next:** Document Manager 2.0 enhancements and maintenance
+**What's Next:** Document Manager enhancements and maintenance
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
 - QuickBooks API needs OAuth token refresh mechanism
-- Original Streamlit apps are archived in `archived/pages/` folder for reference
+- Old Streamlit app code is in `archived/pages/` for reference only (not runnable)
 - Sister project `voyage-consultant-tools` has working examples
 
 **Quick Commands:**
@@ -81,9 +81,9 @@
 
 ## Project Overview
 
-**Tech Stack:** Snowflake | Python | Vercel (Next.js)
+**Tech Stack:** Snowflake | Vercel (Next.js) | Cloudflare (R2, Email Workers)
 
-**Sister Project:** `voyage-consultant-tools` (working reference - has successful Snowflake + Streamlit integration)
+**Sister Project:** `voyage-consultant-tools` (working reference for Snowflake integration)
 
 ---
 
@@ -109,10 +109,10 @@
 - Pipedrive integration for booking validation
 - See "What's Built" section below for full list
 
-### Phase 3: Streamlit → Vercel Migration [FUTURE]
-Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
+### Phase 3: Streamlit → Vercel Migration [COMPLETE]
+All 22 apps migrated. Streamlit has been completely removed from the project.
 
-**Streamlit Apps Inventory (22 apps):**
+**Apps Inventory (all now on Vercel):**
 
 | # | App | Purpose | Data Sources |
 |---|-----|---------|--------------|
@@ -139,10 +139,10 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 | 98 | QuickBooks Token Refresh | OAuth token management | QuickBooks API |
 | 99 | Connection Health Checker | Multi-system connectivity test | All APIs |
 
-**Common Infrastructure:**
-- Authentication via Streamlit session state
-- Config from Snowflake (migrated from Google Sheets)
-- Excel export via pandas/openpyxl
+**Common Infrastructure (Vercel):**
+- Authentication via Vercel (middleware-based)
+- Config from Snowflake
+- Excel export via xlsx library
 - Email via Gmail API (service account delegation)
 
 ---
@@ -161,9 +161,8 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 - Password-based auth (switched from JWT/key-pair for Vercel simplicity)
 
 **Config Files:**
-- `web/.env.local` - Next.js env vars
+- `web/.env.local` - Next.js env vars (for local development)
 - `.env` - Root env for Python scripts
-- `.streamlit/secrets.toml` - Streamlit secrets
 
 ---
 
@@ -181,7 +180,7 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 **Note:** David Woods (STAFF_ID 104) has no BigTime account - BIGTIME_STAFF_ID is NULL.
 
-**Common BigTime API Endpoints (used by Streamlit apps):**
+**Common BigTime API Endpoints:**
 - `POST /report/data/{report_id}` - Fetch report data (requires JSON body with date range)
   - Report 284796 = Standard time report
   - Report 284803 = Contractor report
@@ -195,11 +194,9 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 ## Pipedrive API Configuration
 
-**Status:** WORKING in Streamlit AND Vercel (verified 2026-01-22)
+**Status:** WORKING (verified 2026-01-22)
 
-**Environment Variable:** `PIPEDRIVE_API_TOKEN`
-- Streamlit: `.streamlit/secrets.toml`
-- Vercel: Already configured in Vercel Dashboard
+**Environment Variable:** `PIPEDRIVE_API_TOKEN` (configured in Vercel Dashboard)
 
 **Custom Fields in Pipedrive Deals:**
 - BigTime Client ID
@@ -211,9 +208,7 @@ Migrate apps from `pages/` folder (Streamlit) to Vercel. Full inventory below.
 
 **Note:** Project Health Monitor matches Pipedrive deals to BigTime projects using the "BigTime Project ID" custom field. Projects without this field populated will show as "No Pipedrive Link" in the app.
 
-**API Endpoints:**
-- Streamlit: `pages/13_📊_Bookings_Tracker.py` - fetches won deals
-- Vercel: `/api/pipedrive/booking?projectId=X` - finds deal by BigTime Project ID
+**API Endpoint:** `/api/pipedrive/booking?projectId=X` - finds deal by BigTime Project ID
 
 **Confirmed Working:** Tested with Navitus Health Solutions project - shows $138,000 booking amount from Pipedrive
 
@@ -347,9 +342,9 @@ This is where reference files are uploaded for Claude to review:
 | TypeScript Snowflake connector | `web/src/lib/snowflake.ts` |
 | Python Snowflake connector | `functions/snowflake_db.py` |
 | Python test script | `scripts/test_snowflake_env.py` |
-| Streamlit test page | `pages/96_❄️_Snowflake_Test.py` |
 | Benefits API | `web/src/app/api/benefits/route.ts` |
 | Staff API | `web/src/app/api/staff/route.ts` |
+| Document upload API | `web/src/app/api/documents/upload/route.ts` |
 
 ---
 
@@ -852,6 +847,22 @@ This is where reference files are uploaded for Claude to review:
     - `/api/fixed-fee/route.ts` - now queries back using PROJECT_ID + MONTH_DATE
 - **Deployed fix to production** - assignments page should now save correctly
 
+### 2026-02-02 - Streamlit Removal & Workflow Cleanup
+- **Removed Streamlit completely from the project:**
+  - Deleted `Home.py` (Streamlit entry point)
+  - Deleted `.streamlit/` folder (secrets now only in `.env`)
+  - Removed `streamlit>=1.32.0` from `requirements.txt`
+  - Killed running Streamlit process
+- **Deleted Email Vault Processor GitHub workflow:**
+  - Removed `.github/workflows/email_vault.yml` (ran every 15 minutes)
+  - Deleted `scripts/email_vault_cron.py` (the script it ran)
+  - This was the old document manager - now replaced by Document Manager on Vercel
+- **Updated CLAUDE.md:**
+  - Removed all Streamlit references from active documentation
+  - Updated tech stack to reflect current architecture
+  - Cleaned up Phase 3 migration planning (now complete)
+  - Historical session logs preserved for reference
+
 ---
 
 ## Notes for Future Sessions
@@ -1058,86 +1069,17 @@ All polish items fixed:
 
 ---
 
-## What's Next (Phase 3 Planning)
+## API Integrations Status
 
-### Priority Order for Streamlit → Vercel Migration
-
-**High Priority (used frequently):**
-1. Commission Calculator (01) - Monthly commission calculations
-2. Billable Hours Report (04) - Monthly utilization tracking
-3. Time Reviewer (06) - Weekly timesheet compliance
-4. Payroll Helper (10) - Gusto payroll prep
-
-**Medium Priority:**
-5. Revenue Forecaster (16) - Uses assignments data
-6. Bookings Tracker (13) - Already have Pipedrive API working
-7. Project Health Monitor (14) - Combines multiple data sources
-8. Resource Checker (15) - Utilization tracking
-
-**Lower Priority (less frequent use):**
-9. Bonus Calculator (05) - Annual
-10. Benefits Calculator (08) - Periodic
-11. Payroll Calculator (09) - Periodic
-12. Expense Reviewer (07)
-13. Contractor Fee Reviewer (11)
-
-**Future/As Needed:**
-- Email to Vault (02) - Gmail integration
-- To File to Vault (03) - AI document classification
-- Contract Reviewer (17) - AI contract analysis
-- Sales Snapshot (18) - Pipedrive pipeline
-
-### Technical Considerations for Phase 3
-- Most apps need BigTime API integration (not yet in Vercel)
-- Commission Calculator needs QuickBooks API
-- Some apps use AI (Claude/Gemini) for analysis
-- Excel export functionality needed (use xlsx library)
-- Consider batch operations for large data sets
-
-### Streamlit → Vercel Migration Approach
-
-**For each app migration:**
-1. **Study the Streamlit app** - Read `pages/XX_*.py` to understand:
-   - What data it fetches (BigTime, QuickBooks, Snowflake, etc.)
-   - What calculations it performs
-   - What outputs it generates (tables, charts, Excel exports)
-
-2. **Create API routes** in `/web/src/app/api/`:
-   - One route per external API (e.g., `/api/bigtime/time-entries`)
-   - Keep business logic in the route, not the frontend
-
-3. **Create the page** in `/web/src/app/`:
-   - Use existing UI patterns from settings pages
-   - Use shadcn/ui components (already installed)
-   - Add to sidebar navigation in `components/sidebar.tsx`
-
-4. **Handle Excel exports:**
-   - Install `xlsx` package: `npm install xlsx`
-   - Generate in API route or client-side
-   - Return as downloadable blob
-
-**Common Patterns in Streamlit Apps:**
-- Date range selectors → Use shadcn DatePicker
-- Data tables → Use existing table patterns or install tanstack/react-table
-- Charts → Install recharts or chart.js
-- File uploads → Use shadcn Input type="file"
-- Excel download → Use xlsx library
-
-**Reference Files:**
-- Streamlit apps: `/pages/` folder
-- Python API helpers: `/functions/` folder
-- Working Vercel examples: `/web/src/app/settings/` folder
-
-### API Integrations Needed for Phase 3
 | API | Status | Used By |
 |-----|--------|---------|
 | Snowflake | WORKING | All apps |
 | Pipedrive | WORKING | Bookings, Revenue Forecaster, Project Health |
-| BigTime | WORKING | Most apps (time entries, expenses) |
+| BigTime | WORKING | Time entries, expenses |
 | QuickBooks | WORKING | Commission Calculator |
-| Gmail | WORKING | Email to Vault |
-| Google Drive | WORKING (partial) | To File to Vault |
-| Claude/Gemini | WORKING | Contract Reviewer, To File to Vault |
+| Gmail | WORKING | Email reports |
+| Cloudflare R2 | WORKING | Document Manager |
+| Claude/Gemini | WORKING | Document Manager AI processing |
 
 ---
 

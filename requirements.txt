@@ -4,7 +4,6 @@ google-auth
 google-auth-oauthlib
 google-api-python-client
 requests
-streamlit>=1.32.0
 openpyxl
 reportlab
 PyPDF2

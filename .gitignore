@@ -17,3 +17,9 @@ uploads/
 .vercel
 .env
 .env*.local
+
+# Node modules
+node_modules/
+
+# Wrangler
+.wrangler/
