@@ -49,7 +49,11 @@ interface Document {
 interface DocumentsResponse {
   documents: Document[];
   total: number;
+  limit: number;
+  offset: number;
 }
+
+const PAGE_SIZE = 100;
 
 type SortKey = "party" | "date" | "type" | "notes";
 type SortDir = "asc" | "desc" | null;
@@ -136,6 +140,11 @@ export default function ReviewPage() {
   const [sortKey, setSortKey] = useState<SortKey | null>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalDocuments, setTotalDocuments] = useState(0);
+  const totalPages = Math.ceil(totalDocuments / PAGE_SIZE);
+
   // Sort documents
   const sortedDocuments = useMemo(() => {
     if (!sortKey || !sortDir) return documents;
@@ -206,14 +215,16 @@ export default function ReviewPage() {
     return sortDir === "asc" ? " ▲" : " ▼";
   };
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (page: number = currentPage) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/documents-v2?status=pending_approval");
+      const offset = (page - 1) * PAGE_SIZE;
+      const res = await fetch(`/api/documents-v2?status=pending_approval&limit=${PAGE_SIZE}&offset=${offset}`);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
+      setTotalDocuments(data.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -222,8 +233,14 @@ export default function ReviewPage() {
   };
 
   useEffect(() => {
-    fetchDocuments();
-  }, []);
+    fetchDocuments(currentPage);
+  }, [currentPage]);
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setCurrentPage(newPage);
+    setSelectedIds(new Set()); // Clear selections when changing pages
+  };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -286,7 +303,7 @@ export default function ReviewPage() {
         alert(`Archived ${approved} document(s). ${failed} failed.`);
       }
       setSelectedIds(new Set());
-      fetchDocuments();
+      fetchDocuments(currentPage);
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -313,7 +330,7 @@ export default function ReviewPage() {
       }
 
       setSelectedIds(new Set());
-      fetchDocuments();
+      fetchDocuments(currentPage);
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -334,7 +351,7 @@ export default function ReviewPage() {
         throw new Error(data.error || "Approve failed");
       }
 
-      fetchDocuments();
+      fetchDocuments(currentPage);
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
@@ -355,7 +372,7 @@ export default function ReviewPage() {
         throw new Error(data.error || "Delete failed");
       }
 
-      fetchDocuments();
+      fetchDocuments(currentPage);
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
@@ -381,7 +398,7 @@ export default function ReviewPage() {
           </Link>
           <Link href="/documents-v2/review">
             <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
-              Review ({documents.length})
+              Review ({totalDocuments})
             </Button>
           </Link>
           <Link href="/documents-v2/archive">
@@ -438,7 +455,7 @@ export default function ReviewPage() {
                 </Button>
               </>
             )}
-            <Button variant="outline" onClick={fetchDocuments} disabled={loading}>
+            <Button variant="outline" onClick={() => fetchDocuments(currentPage)} disabled={loading}>
               Refresh
             </Button>
           </div>
@@ -450,7 +467,7 @@ export default function ReviewPage() {
             <CardContent className="py-8">
               <p className="text-center text-red-500">{error}</p>
               <div className="mt-4 flex justify-center">
-                <Button variant="outline" onClick={fetchDocuments}>
+                <Button variant="outline" onClick={() => fetchDocuments(currentPage)}>
                   Try Again
                 </Button>
               </div>
@@ -567,6 +584,36 @@ export default function ReviewPage() {
               </TableBody>
             </Table>
           </Card>
+        )}
+
+        {/* Pagination */}
+        {totalDocuments > PAGE_SIZE && (
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-sm text-gray-500">
+              Showing {((currentPage - 1) * PAGE_SIZE) + 1}-{Math.min(currentPage * PAGE_SIZE, totalDocuments)} of {totalDocuments}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1 || loading}
+              >
+                Previous
+              </Button>
+              <span className="flex items-center px-3 text-sm text-gray-600">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages || loading}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         )}
       </div>
     </AppLayout>
