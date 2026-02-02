@@ -415,10 +415,10 @@ async function processDocument(docId: string, filePath: string, originalFilename
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");
     updateValues.push(docId);
 
-    // Move file from import/ to review/
+    // Move file from to-file/ to review/
     let newFilePath = filePath;
-    if (filePath.startsWith("import/")) {
-      newFilePath = filePath.replace("import/", "review/");
+    if (filePath.startsWith("to-file/")) {
+      newFilePath = filePath.replace("to-file/", "review/");
       try {
         await moveFileInR2(filePath, newFilePath);
         console.log(`[process] Moved file from ${filePath} to ${newFilePath}`);

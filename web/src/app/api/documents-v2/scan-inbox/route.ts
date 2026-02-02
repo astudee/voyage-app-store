@@ -16,16 +16,16 @@ interface ScanResult {
   }[];
 }
 
-// POST - Scan import/ folder and create DB records for new files
+// POST - Scan to-file/ folder and create DB records for new files
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    console.log("[scan-inbox] Starting scan of import/ folder...");
+    console.log("[scan-inbox] Starting scan of to-file/ folder...");
 
-    // List all files in import/ folder
-    const files = await listFilesInR2("import/", 1000);
-    console.log(`[scan-inbox] Found ${files.length} files in import/`);
+    // List all files in to-file/ folder
+    const files = await listFilesInR2("to-file/", 1000);
+    console.log(`[scan-inbox] Found ${files.length} files in to-file/`);
 
     if (files.length === 0) {
       return NextResponse.json({
@@ -39,11 +39,11 @@ export async function POST(request: NextRequest) {
 
     // Get existing document IDs from file paths
     const existingDocs = await query<{ FILE_PATH: string; ID: string }>(
-      `SELECT FILE_PATH, ID FROM DOCUMENTS WHERE FILE_PATH LIKE 'import/%' AND STATUS != 'deleted'`
+      `SELECT FILE_PATH, ID FROM DOCUMENTS WHERE FILE_PATH LIKE 'to-file/%' AND STATUS != 'deleted'`
     );
 
     const existingPaths = new Set(existingDocs.map((d) => d.FILE_PATH));
-    console.log(`[scan-inbox] Found ${existingPaths.size} existing DB records for import/`);
+    console.log(`[scan-inbox] Found ${existingPaths.size} existing DB records for to-file/`);
 
     const results: ScanResult["results"] = [];
     let newCount = 0;
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
 
       // New file - create DB record
       try {
-        // Extract ID from filename (format: import/{id}.pdf)
+        // Extract ID from filename (format: to-file/{id}.pdf)
         const filename = file.key.split("/").pop() || "";
         const id = filename.replace(/\.pdf$/i, "");
 
@@ -168,14 +168,14 @@ export async function POST(request: NextRequest) {
 // GET - Show what would be found (dry run)
 export async function GET(request: NextRequest) {
   try {
-    console.log("[scan-inbox] Dry run: listing import/ folder...");
+    console.log("[scan-inbox] Dry run: listing to-file/ folder...");
 
-    // List all files in import/ folder
-    const files = await listFilesInR2("import/", 1000);
+    // List all files in to-file/ folder
+    const files = await listFilesInR2("to-file/", 1000);
 
     // Get existing document IDs from file paths
     const existingDocs = await query<{ FILE_PATH: string; ID: string }>(
-      `SELECT FILE_PATH, ID FROM DOCUMENTS WHERE FILE_PATH LIKE 'import/%' AND STATUS != 'deleted'`
+      `SELECT FILE_PATH, ID FROM DOCUMENTS WHERE FILE_PATH LIKE 'to-file/%' AND STATUS != 'deleted'`
     );
 
     const existingPaths = new Set(existingDocs.map((d) => d.FILE_PATH));

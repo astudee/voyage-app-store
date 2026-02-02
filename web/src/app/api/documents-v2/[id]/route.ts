@@ -109,9 +109,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
 
       if (docRows.length > 0) {
         const currentPath = docRows[0].FILE_PATH;
-        // Move from import/, review/, or legacy to-file/ to archive/
-        if (currentPath.startsWith("import/") || currentPath.startsWith("review/") || currentPath.startsWith("to-file/")) {
-          const newPath = currentPath.replace(/^(import|review|to-file)\//, "archive/");
+        // Move from to-file/ or review/ to archive/
+        if (currentPath.startsWith("to-file/") || currentPath.startsWith("review/")) {
+          const newPath = currentPath.replace(/^(to-file|review)\//, "archive/");
           try {
             await moveFileInR2(currentPath, newPath);
             console.log(`[PUT] Moved file from ${currentPath} to ${newPath}`);

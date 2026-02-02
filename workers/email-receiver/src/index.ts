@@ -146,7 +146,7 @@ export default {
           const id = generateNanoId();
           const originalFilename = attachment.filename || `attachment_${id}.pdf`;
           const sanitizedFilename = sanitizeFilename(originalFilename);
-          const filePath = `import/${id}.pdf`;
+          const filePath = `to-file/${id}.pdf`;
 
           console.log(`Uploading PDF: ${originalFilename} -> ${filePath}`);
 
@@ -176,7 +176,7 @@ export default {
         const id = generateNanoId();
         const body = parsed.text || parsed.html?.replace(/<[^>]*>/g, ' ') || '(empty email)';
         const pdfContent = createSimplePdf(subject, fromAddress, dateStr, body);
-        const filePath = `import/${id}.pdf`;
+        const filePath = `to-file/${id}.pdf`;
         const filename = `email_${subject.slice(0, 50).replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
         console.log(`Creating PDF from email body: ${filePath}`);

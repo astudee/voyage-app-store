@@ -15,8 +15,8 @@ export async function GET() {
   try {
     console.log("[test] Testing R2 connection...");
 
-    // Try to list files in the import folder (current standard)
-    const files = await listFilesInR2("import/", 10);
+    // Try to list files in the to-file folder
+    const files = await listFilesInR2("to-file/", 10);
     results.r2 = {
       status: "success",
       filesFound: files.length,
