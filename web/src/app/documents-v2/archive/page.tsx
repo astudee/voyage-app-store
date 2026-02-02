@@ -571,8 +571,8 @@ export default function ArchivePage() {
                 <Input
                   placeholder={
                     isSmartSearch
-                      ? "AI search: 'contracts with ECS from 2025 that are modifications'"
-                      : 'Boolean filter: "ECS Federal" AND MOD, invoice -cancelled'
+                      ? "Find ECS MOD files from 2025..."
+                      : '"ECS Federal" AND MOD'
                   }
                   value={searchTerm}
                   onChange={(e) => handleSearchChange(e.target.value)}
@@ -612,9 +612,7 @@ export default function ArchivePage() {
                 </>
               ) : (
                 <>
-                  {isSmartSearch
-                    ? "Natural language search using AI. Press Search to find documents."
-                    : 'Tips: Use "quoted phrases" for exact match, AND for all terms, -term to exclude'}
+                  Supports boolean filter: &quot;ECS Federal&quot; AND MOD. Toggle Smart Search for sentence queries like &quot;Find ECS MOD files from 2025&quot;.
                 </>
               )}
             </div>
