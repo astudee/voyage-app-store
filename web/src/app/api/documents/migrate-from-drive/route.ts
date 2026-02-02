@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { google } from "googleapis";
-import { uploadToR2 } from "@/lib/r2";
+import { uploadToR2, fileExistsInR2 } from "@/lib/r2";
 import { generateDocumentId } from "@/lib/nanoid";
 import { query, execute } from "@/lib/snowflake";
 import crypto from "crypto";
@@ -119,6 +119,7 @@ export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const folder = searchParams.get("folder"); // to-file, archive-docs, or archive-contracts
   const limit = parseInt(searchParams.get("limit") || "50"); // Process in batches
+  const offset = parseInt(searchParams.get("offset") || "0"); // Skip first N files
 
   if (!folder || !["to-file", "archive-docs", "archive-contracts"].includes(folder)) {
     return NextResponse.json(
@@ -146,7 +147,7 @@ export async function POST(request: NextRequest) {
 
     // List files in the folder
     const allFiles = await listFilesInFolder(drive, folderId);
-    const files = allFiles.slice(0, limit);
+    const files = allFiles.slice(offset, offset + limit);
 
     console.log(`[migrate-from-drive] Processing ${files.length} of ${allFiles.length} files from ${folder}`);
 
@@ -177,23 +178,50 @@ export async function POST(request: NextRequest) {
         const hash = crypto.createHash("sha256").update(fileBuffer).digest("hex");
 
         // Check if file already exists by hash
-        const existing = await query<{ ID: string }>(
-          `SELECT ID FROM DOCUMENTS WHERE FILE_HASH = ? AND STATUS != 'deleted' LIMIT 1`,
+        const existing = await query<{ ID: string; FILE_PATH: string }>(
+          `SELECT ID, FILE_PATH FROM DOCUMENTS WHERE FILE_HASH = ? AND STATUS != 'deleted' LIMIT 1`,
           [hash]
         );
 
         if (existing.length > 0) {
+          // Check if the file actually exists in R2
+          const existsInR2 = await fileExistsInR2(existing[0].FILE_PATH);
+          if (existsInR2) {
+            results.push({
+              filename: file.name || "unknown",
+              success: true,
+              skipped: true,
+              reason: `Duplicate (hash matches ${existing[0].ID}, file exists in R2)`,
+            });
+            skipped++;
+            continue;
+          }
+
+          // File doesn't exist in R2, upload it and update the record
+          console.log(`[migrate-from-drive] Record ${existing[0].ID} exists but file missing in R2, uploading...`);
+          const r2Key = `to-file/${existing[0].ID}.pdf`;
+          await uploadToR2(r2Key, fileBuffer, "application/pdf");
+
+          // Update the file path if it changed
+          if (existing[0].FILE_PATH !== r2Key) {
+            await execute(
+              `UPDATE DOCUMENTS SET FILE_PATH = ?, UPDATED_AT = CURRENT_TIMESTAMP() WHERE ID = ?`,
+              [r2Key, existing[0].ID]
+            );
+          }
+
           results.push({
             filename: file.name || "unknown",
+            id: existing[0].ID,
             success: true,
-            skipped: true,
-            reason: `Duplicate (hash matches ${existing[0].ID})`,
+            reason: "Uploaded missing file to R2 (record existed)",
           });
-          skipped++;
+          migrated++;
+          console.log(`[migrate-from-drive] Uploaded missing file for: ${existing[0].ID}`);
           continue;
         }
 
-        // Generate document ID
+        // Generate document ID for new record
         const docId = await generateDocumentId(async (testId: string) => {
           const exists = await query<{ ID: string }>(
             `SELECT ID FROM DOCUMENTS WHERE ID = ?`,
@@ -221,6 +249,7 @@ export async function POST(request: NextRequest) {
           filename: file.name || "unknown",
           id: docId,
           success: true,
+          reason: "New file uploaded",
         });
         migrated++;
         console.log(`[migrate-from-drive] Created record: ${docId} for ${file.name}`);
@@ -238,11 +267,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       folder,
       total: allFiles.length,
+      offset,
       processed: files.length,
       migrated,
       skipped,
       failed,
-      remaining: allFiles.length - files.length,
+      remaining: allFiles.length - offset - files.length,
+      nextOffset: offset + files.length,
       results,
     });
   } catch (error) {

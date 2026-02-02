@@ -16,15 +16,15 @@
 **Current document counts (as of 2026-02-02):**
 | Tab | Status | Count |
 |-----|--------|-------|
-| Import | uploaded | 128 |
+| Import | uploaded | 1,000 |
 | Review | pending_approval | 105 |
 | Archive | archived | 36 |
-| **Total** | | **269** |
+| **Total** | | **1,141** |
 
 **Recent changes:**
 - Renamed from "Document Manager 2.0" (`/documents-v2`) to "Document Manager" (`/documents`)
 - Original Document Manager archived to `archived/web/src/app/`
-- Google Drive migration complete (all files already imported by hash)
+- Google Drive migration complete - migrated 771 contracts + 130 documents to R2
 
 **Migration Endpoint (for future use):**
 - Check status: `curl "https://apps.voyage.xyz/api/documents/migrate-from-drive?folder=to-file&compare=true"`
