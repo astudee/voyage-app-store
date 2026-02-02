@@ -42,7 +42,7 @@ Return JSON only:
   "document_type": "Specific type (MSA, SOW, Statement, Notice, Invoice, etc.)",
   "document_date": "YYYY-MM-DD - For CONTRACTS: use the LAST/latest signature date (when the final party signed). For documents: letter date. For invoices: invoice date.",
   "ai_summary": "REQUIRED: 2-4 sentence description for searching later. Include key names, dates, amounts, and purpose. Always provide this field.",
-  "notes": "Additional context like account numbers, reference numbers, etc.",
+  "notes": "Brief context (policy numbers, reference numbers). NEVER include sensitive info like bank account numbers, routing numbers, or SSNs - those can go in ai_summary only.",
   "confidence_score": 0.0-1.0,
   // CONTRACT only:
   "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
