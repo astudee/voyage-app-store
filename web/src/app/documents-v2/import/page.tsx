@@ -84,6 +84,7 @@ export default function ImportPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [processing, setProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, currentFile: "" });
   const [deleting, setDeleting] = useState(false);
   const [scanning, setScanning] = useState(false);
 
@@ -264,26 +265,49 @@ export default function ImportPage() {
   const handleProcessSelected = async () => {
     if (selectedIds.size === 0) return;
 
+    const ids = Array.from(selectedIds);
     setProcessing(true);
-    try {
-      const res = await fetch("/api/documents-v2/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: Array.from(selectedIds) }),
-      });
+    setProcessingProgress({ current: 0, total: ids.length, currentFile: "" });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Processing failed");
+    let processed = 0;
+    let failed = 0;
+
+    try {
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const doc = documents.find(d => d.id === id);
+        setProcessingProgress({
+          current: i + 1,
+          total: ids.length,
+          currentFile: doc?.original_filename || id
+        });
+
+        try {
+          const res = await fetch("/api/documents-v2/process", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [id] }),
+          });
+
+          const data = await res.json();
+          if (res.ok && data.processed > 0) {
+            processed++;
+          } else {
+            failed++;
+          }
+        } catch {
+          failed++;
+        }
       }
 
-      alert(`Processed ${data.processed} document(s). ${data.failed} failed.`);
+      alert(`Processed ${processed} document(s). ${failed} failed.`);
       setSelectedIds(new Set());
       fetchDocuments();
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setProcessing(false);
+      setProcessingProgress({ current: 0, total: 0, currentFile: "" });
     }
   };
 
@@ -454,6 +478,24 @@ export default function ImportPage() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Processing Progress */}
+        {processing && processingProgress.total > 0 && (
+          <Card className="mb-6">
+            <CardContent className="py-4">
+              <h2 className="text-lg font-semibold mb-2">
+                Processing Documents ({processingProgress.current} of {processingProgress.total})
+              </h2>
+              <Progress
+                value={(processingProgress.current / processingProgress.total) * 100}
+                className="h-3 mb-2"
+              />
+              <p className="text-sm text-gray-500 truncate">
+                {processingProgress.currentFile}
+              </p>
             </CardContent>
           </Card>
         )}

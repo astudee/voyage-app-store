@@ -40,7 +40,7 @@ Return JSON only:
   "party": "Primary entity - see rules below",
   "sub_party": "Secondary entity or null - see rules below",
   "document_type": "Specific type (MSA, SOW, Statement, Notice, Invoice, etc.)",
-  "document_date": "YYYY-MM-DD - the most relevant date (signed date for contracts, letter date for documents, invoice date for invoices)",
+  "document_date": "YYYY-MM-DD - For CONTRACTS: use the LAST/latest signature date (when the final party signed). For documents: letter date. For invoices: invoice date.",
   "ai_summary": "REQUIRED: 2-4 sentence description for searching later. Include key names, dates, amounts, and purpose. Always provide this field.",
   "notes": "Additional context like account numbers, reference numbers, etc.",
   "confidence_score": 0.0-1.0,

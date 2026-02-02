@@ -571,8 +571,8 @@ export default function ArchivePage() {
                 <Input
                   placeholder={
                     isSmartSearch
-                      ? "Ask a question about your documents... (e.g., 'NDAs with Acme Corp', 'invoices over $5000')"
-                      : "Filter by party, filename, type..."
+                      ? "AI search: 'contracts with ECS from 2025 that are modifications'"
+                      : 'Boolean filter: "ECS Federal" AND MOD, invoice -cancelled'
                   }
                   value={searchTerm}
                   onChange={(e) => handleSearchChange(e.target.value)}
@@ -602,14 +602,22 @@ export default function ArchivePage() {
                 </Button>
               )}
             </form>
-            {searchType && (
-              <div className="mt-2 text-xs text-gray-500">
-                {searchType === "ai" && "AI-powered semantic search"}
-                {searchType === "text" && "Text-based search (AI unavailable)"}
-                {searchType === "local" && "Instant filter"}
-                {displayedDocuments.length > 0 && ` • ${displayedDocuments.length} results`}
-              </div>
-            )}
+            <div className="mt-2 text-xs text-gray-500">
+              {searchType ? (
+                <>
+                  {searchType === "ai" && "AI-powered semantic search"}
+                  {searchType === "text" && "Text-based search (AI unavailable)"}
+                  {searchType === "local" && "Instant filter"}
+                  {displayedDocuments.length > 0 && ` • ${displayedDocuments.length} results`}
+                </>
+              ) : (
+                <>
+                  {isSmartSearch
+                    ? "Natural language search using AI. Press Search to find documents."
+                    : 'Tips: Use "quoted phrases" for exact match, AND for all terms, -term to exclude'}
+                </>
+              )}
+            </div>
           </CardContent>
         </Card>
 

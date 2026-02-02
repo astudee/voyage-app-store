@@ -119,11 +119,16 @@ export async function deleteFromR2(key: string): Promise<void> {
  */
 export async function getSignedViewUrl(
   key: string,
-  expiresIn: number = 3600
+  expiresIn: number = 3600,
+  downloadFilename?: string
 ): Promise<string> {
   const command = new GetObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
+    // If downloadFilename provided, set Content-Disposition to force that filename on download
+    ...(downloadFilename && {
+      ResponseContentDisposition: `attachment; filename="${downloadFilename}"`,
+    }),
   });
 
   return await getSignedUrl(r2Client, command, { expiresIn });

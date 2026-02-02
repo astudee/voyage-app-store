@@ -112,15 +112,9 @@ export default function ReviewDetailPage({ params }: PageProps) {
   };
 
   const fetchPdfUrl = async () => {
-    try {
-      const res = await fetch(`/api/documents-v2/${id}/view-url`);
-      if (res.ok) {
-        const data = await res.json();
-        setPdfUrl(data.url);
-      }
-    } catch (err) {
-      console.error("Failed to get PDF URL:", err);
-    }
+    // Use the view endpoint which proxies the PDF with proper Content-Disposition
+    // This ensures the filename is correct when users save from the browser's PDF viewer
+    setPdfUrl(`/api/documents-v2/${id}/view`);
   };
 
   const handleFieldChange = (field: string, value: string | boolean | number | null) => {
