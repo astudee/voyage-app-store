@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { query } from "@/lib/snowflake";
 import { google } from "googleapis";
+import { S3Client, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 interface HealthResult {
   status: "success" | "warning" | "error" | "not_configured";
@@ -619,6 +620,84 @@ async function checkConfigData(): Promise<HealthResult> {
   }
 }
 
+// Check Cloudflare R2
+async function checkCloudflareR2(): Promise<HealthResult> {
+  const accountId = process.env.R2_ACCOUNT_ID;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+  const bucketName = process.env.R2_BUCKET_NAME;
+
+  if (!accountId || !accessKeyId || !secretAccessKey || !bucketName) {
+    const missing = [];
+    if (!accountId) missing.push("R2_ACCOUNT_ID");
+    if (!accessKeyId) missing.push("R2_ACCESS_KEY_ID");
+    if (!secretAccessKey) missing.push("R2_SECRET_ACCESS_KEY");
+    if (!bucketName) missing.push("R2_BUCKET_NAME");
+    return {
+      status: "not_configured",
+      message: "Cloudflare R2 not configured",
+      details: `Missing: ${missing.join(", ")}`,
+    };
+  }
+
+  try {
+    const r2Client = new S3Client({
+      region: "auto",
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      credentials: {
+        accessKeyId,
+        secretAccessKey,
+      },
+    });
+
+    // List files in each folder to verify access
+    const folders = ["to-file/", "review/", "archive/"];
+    const folderCounts: { [key: string]: number } = {};
+
+    for (const prefix of folders) {
+      const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        Prefix: prefix,
+        MaxKeys: 100,
+      });
+      const response = await r2Client.send(command);
+      folderCounts[prefix.replace("/", "")] = response.Contents?.length || 0;
+    }
+
+    const totalFiles = Object.values(folderCounts).reduce((a, b) => a + b, 0);
+    const folderSummary = Object.entries(folderCounts)
+      .map(([name, count]) => `${name}: ${count}`)
+      .join(", ");
+
+    return {
+      status: "success",
+      message: "Connected successfully",
+      details: `Bucket: ${bucketName} (${totalFiles} files: ${folderSummary})`,
+    };
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : "";
+    if (errorMsg.includes("AccessDenied") || errorMsg.includes("InvalidAccessKeyId")) {
+      return {
+        status: "error",
+        message: "Authentication failed",
+        details: "Check R2_ACCESS_KEY_ID and R2_SECRET_ACCESS_KEY",
+      };
+    }
+    if (errorMsg.includes("NoSuchBucket")) {
+      return {
+        status: "error",
+        message: "Bucket not found",
+        details: `Bucket "${process.env.R2_BUCKET_NAME}" does not exist`,
+      };
+    }
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: errorMsg || "Unknown error",
+    };
+  }
+}
+
 // Check Gmail (sends actual test email)
 async function checkGmail(sendTestEmail: boolean = false): Promise<HealthResult> {
   const serviceAccountKey = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
@@ -749,6 +828,7 @@ export async function GET(request: Request) {
     pipedrive,
     bigtime,
     quickbooks,
+    cloudflareR2,
     claude,
     chatgpt,
     gemini,
@@ -761,6 +841,7 @@ export async function GET(request: Request) {
     checkPipedrive(),
     checkBigTime(),
     checkQuickBooks(),
+    checkCloudflareR2(),
     checkClaude(),
     checkChatGPT(),
     checkGemini(),
@@ -775,6 +856,7 @@ export async function GET(request: Request) {
   results["BigTime"] = bigtime;
   results["QuickBooks"] = quickbooks;
   results["Pipedrive"] = pipedrive;
+  results["Cloudflare R2"] = cloudflareR2;
   results["Google Drive"] = googleDrive;
   results["Google Docs"] = googleDocs;
   results["Config Data"] = configData;
