@@ -158,16 +158,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
   }
 }
 
-// DELETE - Soft delete a document (or hard delete if already soft deleted)
-export async function DELETE(request: NextRequest, { params }: RouteParams) {
+// DELETE - Permanently delete a document (removes from R2 and database)
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   try {
     const { id } = await params;
-    const { searchParams } = new URL(request.url);
-    const permanent = searchParams.get("permanent") === "true";
 
     // Get current document
-    const rows = await query<{ STATUS: string; FILE_PATH: string }>(
-      `SELECT STATUS, FILE_PATH FROM DOCUMENTS WHERE ID = ?`,
+    const rows = await query<{ FILE_PATH: string }>(
+      `SELECT FILE_PATH FROM DOCUMENTS WHERE ID = ?`,
       [id]
     );
 
@@ -177,29 +175,17 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
 
     const doc = rows[0];
 
-    if (permanent || doc.STATUS === "deleted") {
-      // Hard delete: remove from R2 and database
-      try {
-        await deleteFromR2(doc.FILE_PATH);
-      } catch (r2Error) {
-        console.error("Error deleting from R2:", r2Error);
-        // Continue with DB deletion even if R2 delete fails
-      }
-
-      await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
-      return NextResponse.json({ status: "permanently_deleted" });
-    } else {
-      // Soft delete: mark as deleted
-      await execute(
-        `UPDATE DOCUMENTS
-         SET STATUS = 'deleted',
-             DELETED_AT = CURRENT_TIMESTAMP(),
-             UPDATED_AT = CURRENT_TIMESTAMP()
-         WHERE ID = ?`,
-        [id]
-      );
-      return NextResponse.json({ status: "soft_deleted" });
+    // Hard delete: remove from R2 and database
+    try {
+      await deleteFromR2(doc.FILE_PATH);
+      console.log(`[DELETE] Removed file from R2: ${doc.FILE_PATH}`);
+    } catch (r2Error) {
+      console.error("Error deleting from R2:", r2Error);
+      // Continue with DB deletion even if R2 delete fails
     }
+
+    await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
+    return NextResponse.json({ status: "deleted" });
   } catch (error) {
     console.error("Error deleting document:", error);
     return NextResponse.json(

@@ -83,12 +83,12 @@ export async function POST(request: NextRequest) {
         }
       }
     } else if (action === "delete") {
-      // Delete: soft delete - set status='deleted', deleted_at=now
+      // Delete: permanently remove from R2 and database
       for (const id of ids) {
         try {
           // Get document info first
-          const docs = await query<{ FILE_PATH: string; STATUS: string }>(
-            `SELECT FILE_PATH, STATUS FROM DOCUMENTS WHERE ID = ?`,
+          const docs = await query<{ FILE_PATH: string }>(
+            `SELECT FILE_PATH FROM DOCUMENTS WHERE ID = ?`,
             [id]
           );
 
@@ -99,28 +99,16 @@ export async function POST(request: NextRequest) {
 
           const doc = docs[0];
 
-          // If already deleted, do hard delete (permanent)
-          if (doc.STATUS === "deleted") {
-            try {
-              await deleteFromR2(doc.FILE_PATH);
-            } catch (r2Error) {
-              console.error(`[batch] R2 delete failed for ${id}:`, r2Error);
-              // Continue with DB deletion
-            }
-            await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
-            results.push({ id, success: true });
-          } else {
-            // Soft delete
-            await execute(
-              `UPDATE DOCUMENTS
-               SET STATUS = 'deleted',
-                   DELETED_AT = CURRENT_TIMESTAMP(),
-                   UPDATED_AT = CURRENT_TIMESTAMP()
-               WHERE ID = ?`,
-              [id]
-            );
-            results.push({ id, success: true });
+          // Hard delete: remove from R2 and database
+          try {
+            await deleteFromR2(doc.FILE_PATH);
+            console.log(`[batch] Removed file from R2: ${doc.FILE_PATH}`);
+          } catch (r2Error) {
+            console.error(`[batch] R2 delete failed for ${id}:`, r2Error);
+            // Continue with DB deletion
           }
+          await execute(`DELETE FROM DOCUMENTS WHERE ID = ?`, [id]);
+          results.push({ id, success: true });
         } catch (error) {
           console.error(`[batch] Error deleting ${id}:`, error);
           results.push({
