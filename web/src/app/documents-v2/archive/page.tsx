@@ -24,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type SortKey = "party" | "type" | "date" | "notes" | "imported";
+type SortKey = "party" | "type" | "date" | "notes" | "uploaded";
 type SortDir = "asc" | "desc" | null;
 
 interface Document {
@@ -193,7 +193,7 @@ export default function ArchivePage() {
           aVal = (a.notes || "").toLowerCase();
           bVal = (b.notes || "").toLowerCase();
           break;
-        case "imported":
+        case "uploaded":
           aVal = new Date(a.created_at);
           bVal = new Date(b.created_at);
           break;
@@ -721,12 +721,6 @@ export default function ArchivePage() {
                     Party{getSortIndicator("party")}
                   </TableHead>
                   <TableHead
-                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("date")}
-                  >
-                    Date{getSortIndicator("date")}
-                  </TableHead>
-                  <TableHead
                     className="w-32 cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => handleSort("type")}
                   >
@@ -739,10 +733,16 @@ export default function ArchivePage() {
                     Notes{getSortIndicator("notes")}
                   </TableHead>
                   <TableHead
-                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("imported")}
+                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("date")}
                   >
-                    Imported{getSortIndicator("imported")}
+                    Date{getSortIndicator("date")}
+                  </TableHead>
+                  <TableHead
+                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("uploaded")}
+                  >
+                    Uploaded{getSortIndicator("uploaded")}
                   </TableHead>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
@@ -763,7 +763,6 @@ export default function ArchivePage() {
                     <TableCell>
                       <span className="font-medium">{getPartyDisplay(doc)}</span>
                     </TableCell>
-                    <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
                     <TableCell>
                       <Badge className={getTypeBadgeColor(doc)}>
                         {getTypeDisplay(doc)}
@@ -774,6 +773,7 @@ export default function ArchivePage() {
                         {doc.notes || "-"}
                       </span>
                     </TableCell>
+                    <TableCell className="text-gray-600">{getDateDisplay(doc)}</TableCell>
                     <TableCell className="text-gray-500 text-sm">
                       {formatRelativeTime(doc.created_at)}
                     </TableCell>

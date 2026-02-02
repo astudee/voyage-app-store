@@ -55,7 +55,7 @@ interface DocumentsResponse {
 
 const PAGE_SIZE = 100;
 
-type SortKey = "party" | "date" | "type" | "notes" | "imported";
+type SortKey = "party" | "date" | "type" | "notes" | "uploaded";
 type SortDir = "asc" | "desc" | null;
 
 function formatDate(dateString: string | null): string {
@@ -185,7 +185,7 @@ export default function ReviewPage() {
           aVal = (a.notes || "").toLowerCase();
           bVal = (b.notes || "").toLowerCase();
           break;
-        case "imported":
+        case "uploaded":
           aVal = new Date(a.created_at);
           bVal = new Date(b.created_at);
           break;
@@ -524,12 +524,6 @@ export default function ReviewPage() {
                     Party{getSortIndicator("party")}
                   </TableHead>
                   <TableHead
-                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("date")}
-                  >
-                    Date{getSortIndicator("date")}
-                  </TableHead>
-                  <TableHead
                     className="w-32 cursor-pointer hover:bg-gray-100 select-none"
                     onClick={() => handleSort("type")}
                   >
@@ -542,10 +536,16 @@ export default function ReviewPage() {
                     Notes{getSortIndicator("notes")}
                   </TableHead>
                   <TableHead
-                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("imported")}
+                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("date")}
                   >
-                    Imported{getSortIndicator("imported")}
+                    Date{getSortIndicator("date")}
+                  </TableHead>
+                  <TableHead
+                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("uploaded")}
+                  >
+                    Uploaded{getSortIndicator("uploaded")}
                   </TableHead>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
@@ -566,9 +566,6 @@ export default function ReviewPage() {
                     <TableCell>
                       <span className="font-medium">{getPartyDisplay(doc)}</span>
                     </TableCell>
-                    <TableCell className="text-gray-600">
-                      {getDateDisplay(doc)}
-                    </TableCell>
                     <TableCell>
                       <Badge className={getTypeBadgeColor(doc)}>
                         {getTypeDisplay(doc)}
@@ -578,6 +575,9 @@ export default function ReviewPage() {
                       <span className="line-clamp-2" title={doc.notes || ""}>
                         {doc.notes || "-"}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-gray-600">
+                      {getDateDisplay(doc)}
                     </TableCell>
                     <TableCell className="text-gray-500 text-sm">
                       {formatRelativeTime(doc.created_at)}
