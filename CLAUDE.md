@@ -1,51 +1,51 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-02 (Document Manager 2.0 Phase 4 - R2 folders, search, pagination)
+> **Last updated:** 2026-02-02 (Phase 3 Complete - All Streamlit apps migrated, archived old pages)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 2 COMPLETE. Phase 3 IN PROGRESS (18/22 apps migrated).
+**Current Status:** Phase 3 COMPLETE. All 22 Streamlit apps migrated to Vercel!
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
 - Vercel/Next.js app at https://apps.voyage.xyz with 7 settings pages (full CRUD)
 - Pipedrive API integration for booking validation
 - All config management tools working
-- **Connection Health Checker** (app 99) migrated to `/health/connection`
-- **QuickBooks Token Refresh** (app 98) migrated to `/health/quickbooks`
-- **BigTime Client Lookup** (app 97) migrated to `/health/bigtime`
-- **Snowflake Test** (app 96) migrated to `/health/snowflake`
-- **Project Health Monitor** (app 14) migrated to `/apps/project-health`
-- **Commission Calculator** (app 01) migrated to `/apps/commission`
-- **Billable Hours Report** (app 04) migrated to `/apps/billable-hours`
-- **Bonus Calculator** (app 05) migrated to `/apps/bonus`
-- **Benefits Calculator** (app 08) migrated to `/apps/benefits-calc`
-- **Bookings Tracker** (app 13) migrated to `/apps/bookings`
-- **Contract Reviewer** (app 17) migrated to `/apps/contract-review`
-- **Document Manager** (app 02/03) migrated to `/apps/document-manager`
-- **Expense Reviewer** (app 07) migrated to `/apps/expense-reviewer`
-- **Contractor Fee Reviewer** (app 11) migrated to `/apps/contractor-fees`
-- **Forecasted Billable Hours** (app 12) migrated to `/apps/forecasted-hours`
-- **Payroll Calculator** (app 09) migrated to `/apps/payroll-calc`
-- **Payroll Helper** (app 10) migrated to `/apps/payroll-helper`
-- **Resource Checker** (app 15) migrated to `/apps/resource-checker`
-- **Revenue Forecaster** (app 16) migrated to `/apps/revenue-forecast`
-- **Sales Snapshot** (app 18) migrated to `/apps/sales-snapshot`
-- **Time Reviewer** (app 06) migrated to `/apps/time-reviewer`
+- **ALL 22 Streamlit apps migrated to Vercel:**
+  - Commission Calculator (01) → `/apps/commission`
+  - Email to Vault (02) → `/documents-v2` (Document Manager 2.0)
+  - To File to Vault (03) → `/documents-v2` (Document Manager 2.0)
+  - Billable Hours Report (04) → `/apps/billable-hours`
+  - Bonus Calculator (05) → `/apps/bonus`
+  - Time Reviewer (06) → `/apps/time-reviewer`
+  - Expense Reviewer (07) → `/apps/expense-reviewer`
+  - Benefits Calculator (08) → `/apps/benefits-calc`
+  - Payroll Calculator (09) → `/apps/payroll-calc`
+  - Payroll Helper (10) → `/apps/payroll-helper`
+  - Contractor Fee Reviewer (11) → `/apps/contractor-fees`
+  - Forecasted Billable Hours (12) → `/apps/forecasted-hours`
+  - Bookings Tracker (13) → `/apps/bookings`
+  - Project Health Monitor (14) → `/apps/project-health`
+  - Resource Checker (15) → `/apps/resource-checker`
+  - Revenue Forecaster (16) → `/apps/revenue-forecast`
+  - Contract Reviewer (17) → `/apps/contract-review`
+  - Sales Snapshot (18) → `/apps/sales-snapshot`
+  - Snowflake Test (96) → `/health/snowflake`
+  - BigTime Client Lookup (97) → `/health/bigtime`
+  - QuickBooks Token Refresh (98) → `/health/quickbooks`
+  - Connection Health Checker (99) → `/health/connection`
+- **Streamlit apps archived** to `archived/pages/` folder
+- **Codespace no longer auto-starts Streamlit** - opens CLAUDE.md instead
 
-**What's Next (Phase 3):** Continue migrating Streamlit apps to Vercel. Remaining apps:
-1. Email to Vault (02) - Gmail integration
-2. To File to Vault (03) - AI document classification
-3. Bookings Tracker (13) - Pipedrive pipeline tracker
-4. Contract Reviewer (17) - AI contract analysis
+**What's Next:** Document Manager 2.0 enhancements and maintenance
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
 - QuickBooks API needs OAuth token refresh mechanism
-- Streamlit apps are in `pages/` folder - study them before migrating
+- Original Streamlit apps are archived in `archived/pages/` folder for reference
 - Sister project `voyage-consultant-tools` has working examples
 
 **Quick Commands:**
