@@ -41,7 +41,7 @@ Return JSON only:
   "sub_party": "Secondary entity or null - see rules below",
   "document_type": "Specific type (MSA, SOW, Statement, Notice, Invoice, etc.)",
   "document_date": "YYYY-MM-DD - the most relevant date (signed date for contracts, letter date for documents, invoice date for invoices)",
-  "ai_summary": "2-4 sentence description for searching later. Include key names, dates, amounts, and purpose.",
+  "ai_summary": "REQUIRED: 2-4 sentence description for searching later. Include key names, dates, amounts, and purpose. Always provide this field.",
   "notes": "Additional context like account numbers, reference numbers, etc.",
   "confidence_score": 0.0-1.0,
   // CONTRACT only:

@@ -271,7 +271,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
             <CardHeader className="py-3">
               <CardTitle className="text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="truncate font-semibold" title={document?.original_filename}>
+                  <span className="font-semibold break-words" title={document?.original_filename}>
                     {document?.original_filename}
                   </span>
                   <Button variant="outline" size="sm" onClick={handleDownload}>
@@ -460,15 +460,17 @@ export default function ReviewDetailPage({ params }: PageProps) {
                   />
                 </div>
 
-                {/* AI Summary (read-only) - ALWAYS SHOWN IF PRESENT */}
-                {formData.ai_summary && (
-                  <div>
-                    <Label>AI Summary</Label>
-                    <div className="mt-1 rounded border bg-gray-50 p-3 text-sm text-gray-700">
-                      {formData.ai_summary}
-                    </div>
+                {/* AI Summary (read-only) - ALWAYS SHOWN */}
+                <div>
+                  <Label>AI Summary</Label>
+                  <div className="mt-1 rounded border bg-gray-50 p-3 text-sm text-gray-700">
+                    {formData.ai_summary || (
+                      <span className="italic text-gray-400">
+                        No AI summary available. Re-process the document to generate one.
+                      </span>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             </CardContent>
 

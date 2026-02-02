@@ -11,6 +11,7 @@ interface ArchivedDocument {
   DOCUMENT_CATEGORY: string | null;
   CONTRACT_TYPE: string | null;
   AI_SUMMARY: string | null;
+  DOCUMENT_DATE: string | null;
   EXECUTED_DATE: string | null;
   LETTER_DATE: string | null;
   PERIOD_END_DATE: string | null;
@@ -41,13 +42,13 @@ export async function POST(request: NextRequest) {
       SELECT
         ID, ORIGINAL_FILENAME, PARTY, SUB_PARTY, DOCUMENT_TYPE,
         DOCUMENT_TYPE_CATEGORY, DOCUMENT_CATEGORY, CONTRACT_TYPE,
-        AI_SUMMARY, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE,
+        AI_SUMMARY, DOCUMENT_DATE, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE,
         AMOUNT, DUE_DATE, INVOICE_TYPE, NOTES, CREATED_AT
       FROM DOCUMENTS
       WHERE STATUS = 'archived'
       AND DELETED_AT IS NULL
       ORDER BY CREATED_AT DESC
-      LIMIT 200
+      LIMIT 500
     `);
 
     if (documents.length === 0) {
@@ -64,6 +65,8 @@ export async function POST(request: NextRequest) {
     // Build context for AI - include all searchable fields
     const docsContext = documents
       .map((d, i) => {
+        // Use DOCUMENT_DATE if available, fall back to legacy fields
+        const docDate = d.DOCUMENT_DATE || d.EXECUTED_DATE || d.LETTER_DATE || d.PERIOD_END_DATE;
         const parts = [
           `[${i}]`,
           `File: ${d.ORIGINAL_FILENAME}`,
@@ -74,8 +77,7 @@ export async function POST(request: NextRequest) {
           d.CONTRACT_TYPE ? `Contract: ${d.CONTRACT_TYPE}` : null,
           d.DOCUMENT_TYPE ? `Doc type: ${d.DOCUMENT_TYPE}` : null,
           d.AMOUNT ? `Amount: $${d.AMOUNT}` : null,
-          d.EXECUTED_DATE ? `Executed: ${d.EXECUTED_DATE}` : null,
-          d.LETTER_DATE ? `Date: ${d.LETTER_DATE}` : null,
+          docDate ? `Date: ${docDate}` : null,
           d.AI_SUMMARY ? `Summary: ${d.AI_SUMMARY}` : null,
           d.NOTES ? `Notes: ${d.NOTES}` : null,
         ]
@@ -104,9 +106,26 @@ Instructions:
 2. Consider matches in: filenames, party names, sub-parties, document types, AI summaries, notes, amounts, and dates
 3. Rank results by relevance (most relevant first)
 4. Only include documents that are actually relevant to the query
-5. If the query is about a person, company, or entity, look for matches in party, sub_party, and filenames
-6. If the query is about a document type, look for matches in document_type, contract_type, and document_type_category
-7. If the query mentions amounts or dates, look for matches in those fields
+
+Boolean Query Support:
+- If query contains AND (e.g., "principal insurance AND invoice"), ALL terms must match
+- If query has quoted phrases like "principal insurance", match the exact phrase
+- If query has -term or NOT term, exclude documents containing that term
+
+Natural Language Support:
+- "utility bills from 2024" → find documents with type containing "bill" or "utility" AND date in 2024
+- "contracts with ECS" → find documents where party contains "ECS" AND type is contract
+- "invoices over $5000" → find invoices with amount > 5000
+- "contract modifications" or "amendments" → find contracts with type containing "modification" or "amendment"
+
+Date Filtering:
+- "from 2024" or "in 2024" → dates with year 2024
+- "last year" → dates from previous calendar year
+- "this year" → dates from current year
+
+Entity Matching:
+- If the query is about a person, company, or entity, look for matches in party, sub_party, and filenames
+- Partial matches count (e.g., "ECS" matches "ECS Federal")
 
 Return ONLY a JSON object with this format (no markdown, no explanation):
 {"matches": [0, 5, 12]}
@@ -178,9 +197,48 @@ Return an empty array if no documents match:
   }
 }
 
-// Fallback text-based search
-function performTextSearch(documents: ArchivedDocument[], query: string) {
-  const searchTerms = query.toLowerCase().split(/\s+/);
+// Parse boolean query into terms and phrases
+// Supports: "quoted phrase", AND, OR (implicit), NOT/-
+function parseQuery(queryStr: string): { mustMatch: string[]; mustNotMatch: string[]; isAnd: boolean } {
+  const mustMatch: string[] = [];
+  const mustNotMatch: string[] = [];
+
+  // Check if AND is used (case insensitive)
+  const hasAnd = /\bAND\b/i.test(queryStr);
+  const isAnd = hasAnd;
+
+  // Remove AND/OR operators for parsing
+  let cleaned = queryStr.replace(/\b(AND|OR)\b/gi, " ");
+
+  // Extract quoted phrases
+  const phraseRegex = /"([^"]+)"/g;
+  let match;
+  while ((match = phraseRegex.exec(cleaned)) !== null) {
+    mustMatch.push(match[1].toLowerCase());
+  }
+  cleaned = cleaned.replace(phraseRegex, " ");
+
+  // Extract NOT terms (prefixed with - or NOT)
+  const notRegex = /(?:NOT\s+|-)([\w]+)/gi;
+  while ((match = notRegex.exec(cleaned)) !== null) {
+    mustNotMatch.push(match[1].toLowerCase());
+  }
+  cleaned = cleaned.replace(notRegex, " ");
+
+  // Extract remaining terms
+  const terms = cleaned
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length > 0);
+
+  mustMatch.push(...terms);
+
+  return { mustMatch, mustNotMatch, isAnd };
+}
+
+// Fallback text-based search with boolean support
+function performTextSearch(documents: ArchivedDocument[], queryStr: string) {
+  const { mustMatch, mustNotMatch, isAnd } = parseQuery(queryStr);
 
   const scored = documents.map((doc) => {
     const searchableText = [
@@ -195,21 +253,45 @@ function performTextSearch(documents: ArchivedDocument[], query: string) {
       doc.NOTES,
       doc.INVOICE_TYPE,
       doc.AMOUNT?.toString(),
+      doc.EXECUTED_DATE,
+      doc.LETTER_DATE,
+      doc.PERIOD_END_DATE,
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
 
-    // Score based on how many terms match
-    let score = 0;
-    for (const term of searchTerms) {
+    // Check for must-not-match terms
+    for (const term of mustNotMatch) {
       if (searchableText.includes(term)) {
+        return { doc, score: 0 };
+      }
+    }
+
+    // Score based on matching
+    let matchedCount = 0;
+    let score = 0;
+
+    for (const term of mustMatch) {
+      if (searchableText.includes(term)) {
+        matchedCount++;
         score++;
-        // Bonus for exact word match
-        if (searchableText.split(/\s+/).includes(term)) {
+        // Bonus for exact word match (not just substring)
+        const words = searchableText.split(/[\s.,;:()\[\]{}\/\\-]+/);
+        if (words.includes(term)) {
           score += 0.5;
         }
+        // Extra bonus for party/sub_party match
+        if ((doc.PARTY || "").toLowerCase().includes(term) ||
+            (doc.SUB_PARTY || "").toLowerCase().includes(term)) {
+          score += 1;
+        }
       }
+    }
+
+    // For AND queries, all terms must match
+    if (isAnd && matchedCount < mustMatch.length) {
+      return { doc, score: 0 };
     }
 
     return { doc, score };
@@ -218,13 +300,13 @@ function performTextSearch(documents: ArchivedDocument[], query: string) {
   const results = scored
     .filter((s) => s.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 50)
+    .slice(0, 100)
     .map((s) => formatDocument(s.doc));
 
   return NextResponse.json({
     results,
     total: results.length,
-    query,
+    query: queryStr,
     search_type: "text",
   });
 }
@@ -240,6 +322,7 @@ function formatDocument(doc: ArchivedDocument) {
     document_category: doc.DOCUMENT_CATEGORY,
     contract_type: doc.CONTRACT_TYPE,
     ai_summary: doc.AI_SUMMARY,
+    document_date: doc.DOCUMENT_DATE,
     executed_date: doc.EXECUTED_DATE,
     letter_date: doc.LETTER_DATE,
     period_end_date: doc.PERIOD_END_DATE,

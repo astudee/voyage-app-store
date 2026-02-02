@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query, execute } from "@/lib/snowflake";
-import { deleteFromR2 } from "@/lib/r2";
+import { deleteFromR2, moveFileInR2 } from "@/lib/r2";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -98,6 +98,32 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         { error: "No valid fields to update" },
         { status: 400 }
       );
+    }
+
+    // If status is being changed to 'archived', move file to archive/ folder
+    if (body.status === "archived") {
+      const docRows = await query<{ FILE_PATH: string }>(
+        `SELECT FILE_PATH FROM DOCUMENTS WHERE ID = ?`,
+        [id]
+      );
+
+      if (docRows.length > 0) {
+        const currentPath = docRows[0].FILE_PATH;
+        // Move from import/ or review/ to archive/
+        if (currentPath.startsWith("import/") || currentPath.startsWith("review/")) {
+          const newPath = currentPath.replace(/^(import|review)\//, "archive/");
+          try {
+            await moveFileInR2(currentPath, newPath);
+            console.log(`[PUT] Moved file from ${currentPath} to ${newPath}`);
+            // Add FILE_PATH to update
+            updateFields.push("FILE_PATH = ?");
+            values.push(newPath);
+          } catch (moveError) {
+            console.error("[PUT] Failed to move file to archive:", moveError);
+            // Continue anyway - file location mismatch is logged but not critical
+          }
+        }
+      }
     }
 
     updateFields.push("UPDATED_AT = CURRENT_TIMESTAMP()");

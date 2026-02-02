@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-01 (Document Manager 2.0 Major Refactor)
+> **Last updated:** 2026-02-02 (Document Manager 2.0 Phase 4 - R2 folders, search, pagination)
 
 ---
 
@@ -1622,3 +1622,64 @@ UPDATE DOCUMENTS SET document_date = COALESCE(executed_date, letter_date, period
 **Invoice Only (additional):**
 - Amount: currency input
 - Due Date: date picker
+
+---
+
+## Document Manager 2.0 - Phase 4 Improvements (2026-02-02)
+
+### Issues Addressed
+
+| # | Issue | Fix |
+|---|-------|-----|
+| 1 | Archive folder missing in R2 | PUT endpoint now moves files from import/ or review/ to archive/ when status changes to 'archived' |
+| 2 | Search didn't support boolean queries | Added support for quoted phrases ("principal insurance"), AND operator, and NOT/-term exclusions |
+| 3 | No pagination on Archive tab | Added pagination (100 per page) with Previous/Next controls |
+| 4 | AI Summary only showing for some docs | Now always shows AI Summary section with placeholder when missing |
+| 5 | Long filenames not wrapping | Changed from truncate to break-words on detail page |
+| 6 | Import empty state message | Updated to mention Cloudflare upload and vault@voyageadvisory.com email |
+
+### R2 Folder Structure (Fixed)
+
+Files now correctly move through three folders:
+```
+voyage-documents/
+├── import/     ← Files land here (upload, email, direct R2)
+├── review/     ← After AI processing, renamed to {nanoid}.pdf
+└── archive/    ← After approval
+```
+
+The PUT endpoint (`/api/documents-v2/[id]`) now moves files to archive/ when status is set to 'archived'.
+
+### Search Improvements
+
+**Basic Search (Local Filter):**
+- Instant filtering as you type
+- Supports quoted phrases: `"principal insurance"`
+- Supports AND operator: `principal AND invoice`
+- Supports NOT/exclusion: `-invoice` or `NOT invoice`
+- Searches: party, sub_party, filename, type, ai_summary, notes, date, amount
+
+**Smart Search (AI-Powered):**
+- Natural language queries: "find utility bills from 2024"
+- Entity matching: "contracts with ECS" finds "ECS Federal"
+- Date filtering: "from 2024", "last year", "this year"
+- Amount queries: "invoices over $5000"
+- Boolean support same as basic search
+
+### Pagination
+
+Archive tab now shows 100 documents per page with:
+- Previous/Next buttons
+- Page X of Y indicator
+- "Showing 1-100 of 250" count
+- Pagination hidden when searching (search returns all matches)
+
+### Files Modified (Phase 4)
+
+**Updated Files:**
+- `web/src/app/api/documents-v2/[id]/route.ts` - Added R2 file move on status='archived'
+- `web/src/app/api/documents-v2/search/route.ts` - Boolean query parsing, enhanced AI prompt
+- `web/src/app/api/documents-v2/process/route.ts` - Made ai_summary required in prompt
+- `web/src/app/documents-v2/archive/page.tsx` - Pagination, boolean local filter
+- `web/src/app/documents-v2/review/[id]/page.tsx` - Filename wrapping, AI Summary placeholder
+- `web/src/app/documents-v2/import/page.tsx` - Updated empty state message

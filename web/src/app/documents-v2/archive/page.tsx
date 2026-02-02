@@ -54,7 +54,11 @@ interface Document {
 interface DocumentsResponse {
   documents: Document[];
   total: number;
+  limit: number;
+  offset: number;
 }
+
+const PAGE_SIZE = 100;
 
 interface SearchResponse {
   results: Document[];
@@ -145,6 +149,9 @@ export default function ArchivePage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalDocuments, setTotalDocuments] = useState(0);
 
   // Sort displayed documents
   const sortedDocuments = useMemo(() => {
@@ -216,21 +223,38 @@ export default function ArchivePage() {
     return sortDir === "asc" ? " ▲" : " ▼";
   };
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = async (page: number = 1) => {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch("/api/documents-v2?status=archived&limit=500");
+      const offset = (page - 1) * PAGE_SIZE;
+      const res = await fetch(`/api/documents-v2?status=archived&limit=${PAGE_SIZE}&offset=${offset}`);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
       setDisplayedDocuments(data.documents);
+      setTotalDocuments(data.total);
+      setCurrentPage(page);
       setSearchType(null);
       setSelectedIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const totalPages = Math.ceil(totalDocuments / PAGE_SIZE);
+
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      fetchDocuments(currentPage - 1);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      fetchDocuments(currentPage + 1);
     }
   };
 
@@ -259,7 +283,45 @@ export default function ArchivePage() {
     }
   };
 
-  // Local text filtering (instant)
+  // Parse boolean query into terms and phrases
+  const parseQuery = (queryStr: string): { mustMatch: string[]; mustNotMatch: string[]; isAnd: boolean } => {
+    const mustMatch: string[] = [];
+    const mustNotMatch: string[] = [];
+
+    // Check if AND is used (case insensitive)
+    const hasAnd = /\bAND\b/i.test(queryStr);
+    const isAnd = hasAnd;
+
+    // Remove AND/OR operators for parsing
+    let cleaned = queryStr.replace(/\b(AND|OR)\b/gi, " ");
+
+    // Extract quoted phrases
+    const phraseRegex = /"([^"]+)"/g;
+    let match;
+    while ((match = phraseRegex.exec(cleaned)) !== null) {
+      mustMatch.push(match[1].toLowerCase());
+    }
+    cleaned = cleaned.replace(phraseRegex, " ");
+
+    // Extract NOT terms (prefixed with - or NOT)
+    const notRegex = /(?:NOT\s+|-)([\w]+)/gi;
+    while ((match = notRegex.exec(cleaned)) !== null) {
+      mustNotMatch.push(match[1].toLowerCase());
+    }
+    cleaned = cleaned.replace(notRegex, " ");
+
+    // Extract remaining terms
+    const terms = cleaned
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((t) => t.length > 0);
+
+    mustMatch.push(...terms);
+
+    return { mustMatch, mustNotMatch, isAnd };
+  };
+
+  // Local text filtering (instant) with boolean support
   const performLocalFilter = useCallback(
     (term: string) => {
       if (!term) {
@@ -268,18 +330,48 @@ export default function ArchivePage() {
         return;
       }
 
-      const lowerTerm = term.toLowerCase();
+      const { mustMatch, mustNotMatch, isAnd } = parseQuery(term);
+
       const filtered = documents.filter((doc) => {
-        return (
-          doc.party?.toLowerCase().includes(lowerTerm) ||
-          doc.sub_party?.toLowerCase().includes(lowerTerm) ||
-          doc.original_filename.toLowerCase().includes(lowerTerm) ||
-          doc.contract_type?.toLowerCase().includes(lowerTerm) ||
-          doc.document_type?.toLowerCase().includes(lowerTerm) ||
-          doc.ai_summary?.toLowerCase().includes(lowerTerm) ||
-          doc.notes?.toLowerCase().includes(lowerTerm)
-        );
+        const searchableText = [
+          doc.party,
+          doc.sub_party,
+          doc.original_filename,
+          doc.contract_type,
+          doc.document_type,
+          doc.ai_summary,
+          doc.notes,
+          doc.document_date,
+          doc.amount?.toString(),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        // Check for must-not-match terms
+        for (const notTerm of mustNotMatch) {
+          if (searchableText.includes(notTerm)) {
+            return false;
+          }
+        }
+
+        // Check for must-match terms
+        let matchedCount = 0;
+        for (const matchTerm of mustMatch) {
+          if (searchableText.includes(matchTerm)) {
+            matchedCount++;
+          }
+        }
+
+        // For AND queries, all terms must match
+        if (isAnd) {
+          return matchedCount === mustMatch.length;
+        }
+
+        // For OR queries (default), at least one term must match
+        return matchedCount > 0;
       });
+
       setDisplayedDocuments(filtered);
       setSearchType("local");
       setSelectedIds(new Set()); // Clear selection on filter
@@ -465,7 +557,7 @@ export default function ArchivePage() {
             </Link>
             <Link href="/documents-v2/archive">
               <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
-                Archive ({documents.length})
+                Archive ({totalDocuments})
               </Button>
             </Link>
           </div>
@@ -550,7 +642,7 @@ export default function ArchivePage() {
                 </Button>
               </>
             )}
-            <Button variant="outline" onClick={fetchDocuments} disabled={loading}>
+            <Button variant="outline" onClick={() => fetchDocuments(currentPage)} disabled={loading}>
               Refresh
             </Button>
           </div>
@@ -562,7 +654,7 @@ export default function ArchivePage() {
             <CardContent className="py-8">
               <p className="text-center text-red-500">{error}</p>
               <div className="mt-4 flex justify-center">
-                <Button variant="outline" onClick={fetchDocuments}>
+                <Button variant="outline" onClick={() => fetchDocuments()}>
                   Try Again
                 </Button>
               </div>
@@ -680,6 +772,35 @@ export default function ArchivePage() {
                 ))}
               </TableBody>
             </Table>
+            {/* Pagination Controls */}
+            {totalPages > 1 && !searchTerm && (
+              <div className="flex items-center justify-between border-t p-4">
+                <div className="text-sm text-gray-500">
+                  Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, totalDocuments)} of {totalDocuments}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrevPage}
+                    disabled={currentPage === 1 || loading}
+                  >
+                    ← Previous
+                  </Button>
+                  <span className="text-sm text-gray-600 px-2">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleNextPage}
+                    disabled={currentPage === totalPages || loading}
+                  >
+                    Next →
+                  </Button>
+                </div>
+              </div>
+            )}
           </Card>
         )}
       </div>
