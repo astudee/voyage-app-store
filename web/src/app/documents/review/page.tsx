@@ -152,8 +152,17 @@ export default function ReviewPage() {
   const [approving, setApproving] = useState(false);
   const [approvingProgress, setApprovingProgress] = useState({ current: 0, total: 0, currentFile: "" });
   const [deleting, setDeleting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey | null>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  // Auto-clear status message after 5 seconds
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -318,13 +327,14 @@ export default function ReviewPage() {
         }
       }
 
-      if (failed > 0) {
-        alert(`Archived ${approved} document(s). ${failed} failed.`);
-      }
+      const message = failed > 0
+        ? `Archived ${approved} document(s). ${failed} failed.`
+        : `${approved} document(s) archived successfully.`;
+      setStatusMessage({ type: failed > 0 ? "error" : "success", text: message });
       setSelectedIds(new Set());
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "An error occurred" });
     } finally {
       setApproving(false);
       setApprovingProgress({ current: 0, total: 0, currentFile: "" });
@@ -348,10 +358,11 @@ export default function ReviewPage() {
         throw new Error(data.error || "Delete failed");
       }
 
+      setStatusMessage({ type: "success", text: `${selectedIds.size} document(s) deleted.` });
       setSelectedIds(new Set());
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Delete failed" });
     } finally {
       setDeleting(false);
     }
@@ -370,9 +381,10 @@ export default function ReviewPage() {
         throw new Error(data.error || "Approve failed");
       }
 
+      setStatusMessage({ type: "success", text: "Document archived." });
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Approve failed" });
     }
   };
 
@@ -391,9 +403,10 @@ export default function ReviewPage() {
         throw new Error(data.error || "Delete failed");
       }
 
+      setStatusMessage({ type: "success", text: "Document deleted." });
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Delete failed" });
     }
   };
 
@@ -443,6 +456,25 @@ export default function ReviewPage() {
               </p>
             </CardContent>
           </Card>
+        )}
+
+        {/* Status Message */}
+        {statusMessage && (
+          <div
+            className={`mb-4 p-4 rounded-lg flex items-center justify-between ${
+              statusMessage.type === "success"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}
+          >
+            <span>{statusMessage.text}</span>
+            <button
+              onClick={() => setStatusMessage(null)}
+              className="ml-4 text-current opacity-70 hover:opacity-100"
+            >
+              &times;
+            </button>
+          </div>
         )}
 
         {/* Actions Bar */}

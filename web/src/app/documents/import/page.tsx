@@ -91,6 +91,15 @@ export default function ImportPage() {
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, currentFile: "" });
   const [deleting, setDeleting] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Auto-clear status message after 5 seconds
+  useEffect(() => {
+    if (statusMessage) {
+      const timer = setTimeout(() => setStatusMessage(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [statusMessage]);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -318,11 +327,14 @@ export default function ImportPage() {
         }
       }
 
-      alert(`Processed ${processed} document(s). ${failed} failed.`);
+      const message = failed > 0
+        ? `Processed ${processed} document(s). ${failed} failed.`
+        : `${processed} document(s) processed successfully.`;
+      setStatusMessage({ type: failed > 0 ? "error" : "success", text: message });
       setSelectedIds(new Set());
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "An error occurred" });
     } finally {
       setProcessing(false);
       setProcessingProgress({ current: 0, total: 0, currentFile: "" });
@@ -346,10 +358,11 @@ export default function ImportPage() {
         throw new Error(data.error || "Delete failed");
       }
 
+      setStatusMessage({ type: "success", text: `${selectedIds.size} document(s) deleted.` });
       setSelectedIds(new Set());
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Delete failed" });
     } finally {
       setDeleting(false);
     }
@@ -367,7 +380,7 @@ export default function ImportPage() {
       }
 
       if (preview.new_files.length === 0) {
-        alert("No new files found in import/ folder.");
+        setStatusMessage({ type: "success", text: "No new files found in import/ folder." });
         return;
       }
 
@@ -386,10 +399,13 @@ export default function ImportPage() {
         throw new Error(scanResult.error || "Scan failed");
       }
 
-      alert(`Scan complete: ${scanResult.new_files} new records created, ${scanResult.errors} errors.`);
+      const scanMessage = scanResult.errors > 0
+        ? `Scan complete: ${scanResult.new_files} new records created, ${scanResult.errors} errors.`
+        : `${scanResult.new_files} new record(s) created.`;
+      setStatusMessage({ type: scanResult.errors > 0 ? "error" : "success", text: scanMessage });
       fetchDocuments(currentPage);
     } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+      setStatusMessage({ type: "error", text: err instanceof Error ? err.message : "Scan failed" });
     } finally {
       setScanning(false);
     }
@@ -516,6 +532,25 @@ export default function ImportPage() {
               </p>
             </CardContent>
           </Card>
+        )}
+
+        {/* Status Message */}
+        {statusMessage && (
+          <div
+            className={`mb-4 p-4 rounded-lg flex items-center justify-between ${
+              statusMessage.type === "success"
+                ? "bg-green-50 text-green-800 border border-green-200"
+                : "bg-red-50 text-red-800 border border-red-200"
+            }`}
+          >
+            <span>{statusMessage.text}</span>
+            <button
+              onClick={() => setStatusMessage(null)}
+              className="ml-4 text-current opacity-70 hover:opacity-100"
+            >
+              &times;
+            </button>
+          </div>
         )}
 
         {/* Document List Header */}
