@@ -93,7 +93,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
 
   const fetchDocument = async () => {
     try {
-      const res = await fetch(`/api/documents-v2/${id}`);
+      const res = await fetch(`/api/documents/${id}`);
       if (!res.ok) throw new Error("Failed to fetch document");
       const data = await res.json();
 
@@ -114,7 +114,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
   const fetchPdfUrl = async () => {
     // Use the view endpoint which proxies the PDF with proper Content-Disposition
     // This ensures the filename is correct when users save from the browser's PDF viewer
-    setPdfUrl(`/api/documents-v2/${id}/view`);
+    setPdfUrl(`/api/documents/${id}/view`);
   };
 
   const handleFieldChange = (field: string, value: string | boolean | number | null) => {
@@ -132,7 +132,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
     setSaving(true);
     setError(null);
     try {
-      const res = await fetch(`/api/documents-v2/${id}`, {
+      const res = await fetch(`/api/documents/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(formData),
@@ -157,7 +157,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
 
     try {
       // First check for potential duplicates
-      const checkRes = await fetch("/api/documents-v2/check-duplicates", {
+      const checkRes = await fetch("/api/documents/check-duplicates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -188,7 +188,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
     setShowDuplicateModal(false);
 
     try {
-      const res = await fetch(`/api/documents-v2/${id}`, {
+      const res = await fetch(`/api/documents/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...formData, status: "archived", reviewed_at: new Date().toISOString() }),
@@ -197,7 +197,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
       if (!res.ok) {
         throw new Error(data.error || data.details || "Failed to approve");
       }
-      router.push("/documents-v2/review");
+      router.push("/documents/review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Approve failed");
       setSaving(false);
@@ -209,9 +209,9 @@ export default function ReviewDetailPage({ params }: PageProps) {
     if (!confirm("Are you sure you want to delete this document?")) return;
     setSaving(true);
     try {
-      const res = await fetch(`/api/documents-v2/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
-      router.push("/documents-v2/review");
+      router.push("/documents/review");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
       setSaving(false);
@@ -219,7 +219,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
   };
 
   const handleDownload = async () => {
-    window.open(`/api/documents-v2/${id}/download`, "_blank");
+    window.open(`/api/documents/${id}/download`, "_blank");
   };
 
   if (loading) {
@@ -240,7 +240,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
             <CardContent className="py-8">
               <p className="text-center text-red-500">{error || "Document not found"}</p>
               <div className="mt-4 flex justify-center">
-                <Button onClick={() => router.push("/documents-v2/review")}>
+                <Button onClick={() => router.push("/documents/review")}>
                   Back to Review
                 </Button>
               </div>
@@ -473,7 +473,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/documents-v2/review")}
+                  onClick={() => router.push("/documents/review")}
                   disabled={saving}
                 >
                   Cancel
@@ -515,7 +515,7 @@ export default function ReviewDetailPage({ params }: PageProps) {
                 <div
                   key={doc.id}
                   className="rounded border p-3 hover:bg-gray-50 cursor-pointer"
-                  onClick={() => window.open(`/documents-v2/review/${doc.id}`, "_blank")}
+                  onClick={() => window.open(`/documents/review/${doc.id}`, "_blank")}
                 >
                   <div className="flex items-start justify-between">
                     <div>

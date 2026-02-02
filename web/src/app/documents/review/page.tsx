@@ -239,7 +239,7 @@ export default function ReviewPage() {
       setLoading(true);
       setError(null);
       const offset = (page - 1) * PAGE_SIZE;
-      const res = await fetch(`/api/documents-v2?status=pending_approval&limit=${PAGE_SIZE}&offset=${offset}`);
+      const res = await fetch(`/api/documents?status=pending_approval&limit=${PAGE_SIZE}&offset=${offset}`);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
@@ -302,7 +302,7 @@ export default function ReviewPage() {
         });
 
         try {
-          const res = await fetch("/api/documents-v2/batch", {
+          const res = await fetch("/api/documents/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "approve", ids: [id] }),
@@ -337,7 +337,7 @@ export default function ReviewPage() {
 
     setDeleting(true);
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
@@ -359,7 +359,7 @@ export default function ReviewPage() {
 
   const handleApproveOne = async (id: string) => {
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "approve", ids: [id] }),
@@ -380,7 +380,7 @@ export default function ReviewPage() {
     if (!confirm("Delete this document?")) return;
 
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: [id] }),
@@ -402,7 +402,7 @@ export default function ReviewPage() {
     if ((e.target as HTMLElement).closest('[data-no-navigate]')) {
       return;
     }
-    router.push(`/documents-v2/review/${id}`);
+    router.push(`/documents/review/${id}`);
   };
 
   return (
@@ -410,17 +410,17 @@ export default function ReviewPage() {
       <div className="p-8">
         {/* Tab Navigation */}
         <div className="mb-6 flex gap-2 border-b">
-          <Link href="/documents-v2/import">
+          <Link href="/documents/import">
             <Button variant="ghost" className="rounded-none">
               Import
             </Button>
           </Link>
-          <Link href="/documents-v2/review">
+          <Link href="/documents/review">
             <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
               Review ({totalDocuments})
             </Button>
           </Link>
-          <Link href="/documents-v2/archive">
+          <Link href="/documents/archive">
             <Button variant="ghost" className="rounded-none">
               Archive
             </Button>
@@ -505,7 +505,7 @@ export default function ReviewPage() {
                 No documents pending approval.
               </p>
               <div className="mt-4 flex justify-center">
-                <Link href="/documents-v2/import">
+                <Link href="/documents/import">
                   <Button>Go to Import</Button>
                 </Link>
               </div>
@@ -591,7 +591,7 @@ export default function ReviewPage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
+                            onClick={() => router.push(`/documents/review/${doc.id}`)}
                           >
                             View Details
                           </DropdownMenuItem>

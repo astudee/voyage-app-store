@@ -109,7 +109,7 @@ export default function ImportPage() {
       setLoading(true);
       setError(null);
       const offset = (page - 1) * PAGE_SIZE;
-      const res = await fetch(`/api/documents-v2?status=uploaded&limit=${PAGE_SIZE}&offset=${offset}`);
+      const res = await fetch(`/api/documents?status=uploaded&limit=${PAGE_SIZE}&offset=${offset}`);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
@@ -172,7 +172,7 @@ export default function ImportPage() {
         );
       }, 200);
 
-      const res = await fetch("/api/documents-v2/upload", {
+      const res = await fetch("/api/documents/upload", {
         method: "POST",
         body: formData,
       });
@@ -301,7 +301,7 @@ export default function ImportPage() {
         });
 
         try {
-          const res = await fetch("/api/documents-v2/process", {
+          const res = await fetch("/api/documents/process", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ids: [id] }),
@@ -335,7 +335,7 @@ export default function ImportPage() {
 
     setDeleting(true);
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
@@ -359,7 +359,7 @@ export default function ImportPage() {
     setScanning(true);
     try {
       // First do a dry run to see what would be found
-      const previewRes = await fetch("/api/documents-v2/scan-inbox");
+      const previewRes = await fetch("/api/documents/scan-inbox");
       const preview = await previewRes.json();
 
       if (!previewRes.ok) {
@@ -377,7 +377,7 @@ export default function ImportPage() {
       }
 
       // Do the actual scan
-      const scanRes = await fetch("/api/documents-v2/scan-inbox", {
+      const scanRes = await fetch("/api/documents/scan-inbox", {
         method: "POST",
       });
       const scanResult = await scanRes.json();
@@ -405,17 +405,17 @@ export default function ImportPage() {
       <div className="p-8">
         {/* Tab Navigation */}
         <div className="mb-6 flex gap-2 border-b">
-          <Link href="/documents-v2/import">
+          <Link href="/documents/import">
             <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
               Import
             </Button>
           </Link>
-          <Link href="/documents-v2/review">
+          <Link href="/documents/review">
             <Button variant="ghost" className="rounded-none">
               Review
             </Button>
           </Link>
-          <Link href="/documents-v2/archive">
+          <Link href="/documents/archive">
             <Button variant="ghost" className="rounded-none">
               Archive
             </Button>

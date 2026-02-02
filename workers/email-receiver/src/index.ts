@@ -205,7 +205,7 @@ export default {
       for (const upload of uploads) {
         console.log(`Calling API for document: ${upload.id}`);
 
-        const apiUrl = `${env.API_URL}/api/documents-v2/from-email`;
+        const apiUrl = `${env.API_URL}/api/documents/from-email`;
         const response = await fetch(apiUrl, {
           method: 'POST',
           headers: {

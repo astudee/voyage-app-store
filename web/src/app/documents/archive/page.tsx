@@ -247,7 +247,7 @@ export default function ArchivePage() {
       setLoading(true);
       setError(null);
       const offset = (page - 1) * PAGE_SIZE;
-      const res = await fetch(`/api/documents-v2?status=archived&limit=${PAGE_SIZE}&offset=${offset}`);
+      const res = await fetch(`/api/documents?status=archived&limit=${PAGE_SIZE}&offset=${offset}`);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);
@@ -410,7 +410,7 @@ export default function ArchivePage() {
     setError(null);
 
     try {
-      const res = await fetch("/api/documents-v2/search", {
+      const res = await fetch("/api/documents/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ q: query }),
@@ -478,7 +478,7 @@ export default function ArchivePage() {
     if (!confirm("Delete this document?")) return;
 
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: [id] }),
@@ -501,7 +501,7 @@ export default function ArchivePage() {
 
     setDeleting(true);
     try {
-      const res = await fetch("/api/documents-v2/batch", {
+      const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
@@ -524,7 +524,7 @@ export default function ArchivePage() {
   const handleDownload = async (doc: Document) => {
     try {
       // Use the download endpoint for proper Content-Disposition
-      window.location.href = `/api/documents-v2/${doc.id}/download`;
+      window.location.href = `/api/documents/${doc.id}/download`;
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
@@ -539,7 +539,7 @@ export default function ArchivePage() {
       if (doc) {
         // Create a temporary link for each download
         const link = document.createElement("a");
-        link.href = `/api/documents-v2/${id}/download`;
+        link.href = `/api/documents/${id}/download`;
         link.download = "";
         document.body.appendChild(link);
         link.click();
@@ -555,7 +555,7 @@ export default function ArchivePage() {
     if ((e.target as HTMLElement).closest("[data-no-navigate]")) {
       return;
     }
-    router.push(`/documents-v2/review/${id}`);
+    router.push(`/documents/review/${id}`);
   };
 
   return (
@@ -564,17 +564,17 @@ export default function ArchivePage() {
         {/* Tab Navigation */}
         <div className="mb-6 flex items-center justify-between border-b">
           <div className="flex gap-2">
-            <Link href="/documents-v2/import">
+            <Link href="/documents/import">
               <Button variant="ghost" className="rounded-none">
                 Import
               </Button>
             </Link>
-            <Link href="/documents-v2/review">
+            <Link href="/documents/review">
               <Button variant="ghost" className="rounded-none">
                 Review
               </Button>
             </Link>
-            <Link href="/documents-v2/archive">
+            <Link href="/documents/archive">
               <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
                 Archive ({totalDocuments})
               </Button>
@@ -786,7 +786,7 @@ export default function ArchivePage() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem
-                            onClick={() => router.push(`/documents-v2/review/${doc.id}`)}
+                            onClick={() => router.push(`/documents/review/${doc.id}`)}
                           >
                             View Details
                           </DropdownMenuItem>

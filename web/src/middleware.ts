@@ -13,14 +13,14 @@ export const config = {
      * - /login
      * - /api/auth (NextAuth routes)
      * - /api/test-snowflake (unauthenticated test endpoint)
-     * - /api/documents-v2/reset-schema (schema reset endpoint)
-     * - /api/documents-v2/cleanup (cleanup endpoint)
-     * - /api/documents-v2/from-email (email webhook endpoint)
-     * - /api/documents-v2/migrate-from-drive (one-time migration endpoint)
+     * - /api/documents/reset-schema (schema reset endpoint)
+     * - /api/documents/cleanup (cleanup endpoint)
+     * - /api/documents/from-email (email webhook endpoint)
+     * - /api/documents/migrate-from-drive (one-time migration endpoint)
      * - /_next/static (static files)
      * - /_next/image (image optimization files)
      * - /favicon.ico
      */
-    "/((?!login|api/auth|api/test-snowflake|api/documents-v2/reset-schema|api/documents-v2/cleanup|api/documents-v2/from-email|api/documents-v2/migrate-schema|api/documents-v2/migrate-from-drive|_next/static|_next/image|favicon.ico).*)",
+    "/((?!login|api/auth|api/test-snowflake|api/documents/reset-schema|api/documents/cleanup|api/documents/from-email|api/documents/migrate-schema|api/documents/migrate-from-drive|_next/static|_next/image|favicon.ico).*)",
   ],
 };

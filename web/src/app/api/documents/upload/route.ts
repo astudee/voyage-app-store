@@ -5,7 +5,7 @@ import { createHash } from "crypto";
 import { generateDocumentId } from "@/lib/nanoid";
 
 // POST - Upload a file to R2 and create document record
-// Note: AI processing is no longer done automatically - use POST /api/documents-v2/process
+// Note: AI processing is no longer done automatically - use POST /api/documents/process
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
   let fileId = "";

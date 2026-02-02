@@ -50,12 +50,18 @@ export async function GET(request: NextRequest) {
     // If compare mode, check which files already exist in Snowflake
     if (compare) {
       // Get all existing filenames and hashes from Snowflake
-      const existingDocs = await query<{ ORIGINAL_FILENAME: string; FILE_HASH: string }>(
-        `SELECT ORIGINAL_FILENAME, FILE_HASH FROM DOCUMENTS WHERE STATUS != 'deleted'`
+      const existingDocs = await query<{ ORIGINAL_FILENAME: string; FILE_HASH: string; STATUS: string }>(
+        `SELECT ORIGINAL_FILENAME, FILE_HASH, STATUS FROM DOCUMENTS WHERE STATUS != 'deleted'`
       );
       const existingFilenames = new Set(existingDocs.map(d => d.ORIGINAL_FILENAME));
       const existingHashes = new Set(existingDocs.map(d => d.FILE_HASH));
       const totalInDatabase = existingDocs.length;
+
+      // Count by status
+      const statusCounts: Record<string, number> = {};
+      for (const doc of existingDocs) {
+        statusCounts[doc.STATUS] = (statusCounts[doc.STATUS] || 0) + 1;
+      }
 
       // Categorize files
       const pdfFiles = files.filter(f => f.mimeType === "application/pdf");
@@ -74,6 +80,7 @@ export async function GET(request: NextRequest) {
           needsImportByFilename: needsImportByName.length,
           totalInDatabase,
           totalUniqueHashes: existingHashes.size,
+          byStatus: statusCounts,
         },
         note: "Migration uses hash-based deduplication. Files with same content but different names will be skipped.",
         needsImport: needsImportByName.map((f) => ({

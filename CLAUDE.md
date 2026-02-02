@@ -1,32 +1,34 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-02 (Google Drive → R2 Migration IN PROGRESS)
+> **Last updated:** 2026-02-02 (Document Manager renamed, migration complete)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 3 COMPLETE. Google Drive migration IN PROGRESS.
+**Current Status:** Phase 3 COMPLETE. All migrations done. Document Manager active at `/documents`.
 
-### ✅ Google Drive → Cloudflare R2 Migration COMPLETE
+### Document Manager Status
 
-**Migration Summary (2026-02-02):**
-| Folder | Files in Drive | Already in R2 (by hash) | New Imports |
-|--------|----------------|-------------------------|-------------|
-| To File | 24 | 2 | 22 |
-| Archive - Documents | 130 | 130 | 0 |
-| Archive - Contracts | 771 | 771 | 0 |
+**URL:** https://apps.voyage.xyz/documents
 
-**Key Findings:**
-- Archive folders were already fully imported (by hash-based deduplication)
-- Files in Drive have "smart filenames" (e.g., "BigTime Software - 2026.01.05 - SOW.pdf")
-- Same files in Snowflake have original filenames (before AI renaming)
-- Total documents in database: 269 (263 unique hashes)
+**Current document counts (as of 2026-02-02):**
+| Tab | Status | Count |
+|-----|--------|-------|
+| Import | uploaded | 128 |
+| Review | pending_approval | 105 |
+| Archive | archived | 36 |
+| **Total** | | **269** |
+
+**Recent changes:**
+- Renamed from "Document Manager 2.0" (`/documents-v2`) to "Document Manager" (`/documents`)
+- Original Document Manager archived to `archived/web/src/app/`
+- Google Drive migration complete (all files already imported by hash)
 
 **Migration Endpoint (for future use):**
-- Check status: `curl "https://apps.voyage.xyz/api/documents-v2/migrate-from-drive?folder=to-file&compare=true"`
-- Migrate files: `curl -X POST "https://apps.voyage.xyz/api/documents-v2/migrate-from-drive?folder=to-file&limit=10"`
+- Check status: `curl "https://apps.voyage.xyz/api/documents/migrate-from-drive?folder=to-file&compare=true"`
+- Migrate files: `curl -X POST "https://apps.voyage.xyz/api/documents/migrate-from-drive?folder=to-file&limit=10"`
 - Folders: `to-file`, `archive-docs`, `archive-contracts`
 
 ---
@@ -38,8 +40,8 @@
 - All config management tools working
 - **ALL 22 Streamlit apps migrated to Vercel:**
   - Commission Calculator (01) → `/apps/commission`
-  - Email to Vault (02) → `/documents-v2` (Document Manager 2.0)
-  - To File to Vault (03) → `/documents-v2` (Document Manager 2.0)
+  - Email to Vault (02) → `/documents` (Document Manager 2.0)
+  - To File to Vault (03) → `/documents` (Document Manager 2.0)
   - Billable Hours Report (04) → `/apps/billable-hours`
   - Bonus Calculator (05) → `/apps/bonus`
   - Time Reviewer (06) → `/apps/time-reviewer`
@@ -668,15 +670,15 @@ This is where reference files are uploaded for Claude to review:
   - Installed `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` packages
 
 - **API Routes Created:**
-  - `GET/POST /api/documents-v2` - List documents with filtering, create document records
-  - `GET/PUT/DELETE /api/documents-v2/[id]` - Get, update, soft/hard delete documents
-  - `POST /api/documents-v2/upload` - Upload file to R2, create Snowflake record with SHA-256 hash
+  - `GET/POST /api/documents` - List documents with filtering, create document records
+  - `GET/PUT/DELETE /api/documents/[id]` - Get, update, soft/hard delete documents
+  - `POST /api/documents/upload` - Upload file to R2, create Snowflake record with SHA-256 hash
 
 - **Pages Created:**
-  - `/documents-v2` - Redirects to queue
-  - `/documents-v2/queue` - Lists documents with status 'pending_review', shows summary cards
-  - `/documents-v2/upload` - Drag-drop file upload with duplicate detection
-  - `/documents-v2/archive` - Placeholder for future archive browsing
+  - `/documents` - Redirects to queue
+  - `/documents/queue` - Lists documents with status 'pending_review', shows summary cards
+  - `/documents/upload` - Drag-drop file upload with duplicate detection
+  - `/documents/archive` - Placeholder for future archive browsing
 
 - **Key Features:**
   - Duplicate detection via SHA-256 file hash
@@ -694,14 +696,14 @@ This is where reference files are uploaded for Claude to review:
 - Added Badge component via shadcn/ui
 
 - **Phase 2: AI Processing & Review Workflow:**
-  - Created `/api/documents-v2/[id]/process` - AI processing endpoint:
+  - Created `/api/documents/[id]/process` - AI processing endpoint:
     - Downloads PDF from R2
     - Sends to Gemini (primary) with classification prompt
     - Falls back to Claude if Gemini fails (429 quota)
     - Updates document record with extracted attributes
     - Supports both CONTRACT and DOCUMENT classification
-  - Created `/api/documents-v2/[id]/view-url` - Generates signed R2 URLs for PDF viewing
-  - Created `/documents-v2/review/[id]` - Review page with:
+  - Created `/api/documents/[id]/view-url` - Generates signed R2 URLs for PDF viewing
+  - Created `/documents/review/[id]` - Review page with:
     - Split-screen layout: PDF preview (left) + edit form (right)
     - Editable fields for all AI-extracted attributes
     - Contract fields: category, type, counterparty, sub_entity, executed_date, etc.
@@ -1241,11 +1243,11 @@ Created `web/src/lib/nanoid.ts` for generating 10-character alphanumeric IDs:
 ### Three Tab Structure
 
 **Routes:**
-- `/documents-v2` → redirects to `/documents-v2/import`
-- `/documents-v2/import` → Import tab (upload + unprocessed files)
-- `/documents-v2/review` → Review tab (pending approval, batch UI)
-- `/documents-v2/archive` → Archive tab (approved documents)
-- `/documents-v2/review/[id]` → Detail view with embedded PDF
+- `/documents` → redirects to `/documents/import`
+- `/documents/import` → Import tab (upload + unprocessed files)
+- `/documents/review` → Review tab (pending approval, batch UI)
+- `/documents/archive` → Archive tab (approved documents)
+- `/documents/review/[id]` → Detail view with embedded PDF
 
 **Status Flow:**
 ```
@@ -1286,26 +1288,26 @@ Gmail-style batch approval:
 ### API Endpoints
 
 **New/Updated:**
-- `POST /api/documents-v2/reset-schema` - Drop and recreate DOCUMENTS table
-- `POST /api/documents-v2/process` - Process selected documents with AI
+- `POST /api/documents/reset-schema` - Drop and recreate DOCUMENTS table
+- `POST /api/documents/process` - Process selected documents with AI
   - Body: `{ ids: string[] }`
   - Sets status to 'pending_approval', ai_processed_at to now
-- `POST /api/documents-v2/batch` - Batch operations
+- `POST /api/documents/batch` - Batch operations
   - Body: `{ action: 'approve' | 'delete', ids: string[] }`
   - Approve: set status='archived', reviewed_at=now
   - Delete: set status='deleted', deleted_at=now
 
 **Existing (updated):**
-- `POST /api/documents-v2/upload` - Uses NanoID, sets status='uploaded', no auto AI
-- `GET /api/documents-v2?status=X` - List by status (uploaded|pending_approval|archived)
-- `GET/PUT/DELETE /api/documents-v2/[id]` - CRUD with party/sub_party/notes fields
+- `POST /api/documents/upload` - Uses NanoID, sets status='uploaded', no auto AI
+- `GET /api/documents?status=X` - List by status (uploaded|pending_approval|archived)
+- `GET/PUT/DELETE /api/documents/[id]` - CRUD with party/sub_party/notes fields
 
 **Email Integration:**
-- `POST /api/documents-v2/from-email` - Webhook called by Cloudflare email worker
+- `POST /api/documents/from-email` - Webhook called by Cloudflare email worker
   - Requires Bearer token matching EMAIL_WEBHOOK_SECRET
   - Creates document record with source='email'
   - Email address: voyagevault@studeesandbox.com
-- `GET/POST /api/documents-v2/cleanup` - List/delete orphaned R2 files
+- `GET/POST /api/documents/cleanup` - List/delete orphaned R2 files
 
 ### Cloudflare Email Worker
 
@@ -1318,7 +1320,7 @@ Gmail-style batch approval:
 2. Worker parses email using `postal-mime` library
 3. If email has PDF attachments → uploads each PDF to R2
 4. If no PDF attachments → converts email body to simple PDF and uploads
-5. Calls `/api/documents-v2/from-email` to create database record for each file
+5. Calls `/api/documents/from-email` to create database record for each file
 
 **Worker Bindings:**
 - `VOYAGE_DOCUMENTS` - R2 bucket binding to `voyage-documents`
@@ -1425,7 +1427,7 @@ ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS due_date DATE;
 ALTER TABLE DOCUMENTS ADD COLUMN IF NOT EXISTS invoice_type VARCHAR(20);
 ```
 
-Run migration: `POST /api/documents-v2/migrate-schema`
+Run migration: `POST /api/documents/migrate-schema`
 
 ### AI Classification Prompt (Phase 2)
 
@@ -1492,29 +1494,29 @@ Rules:
 - Notes appended if present and short: `Chase - 2026.01.15 - Statement - xxxx4521.pdf`
 - Sanitized: characters not safe for filenames (/ \ : * ? " < > |) replaced with underscore
 
-Use `GET /api/documents-v2/{id}/download` to download with proper Content-Disposition header.
+Use `GET /api/documents/{id}/download` to download with proper Content-Disposition header.
 
 ### New API Endpoints (Phase 2)
 
 **Schema Migration:**
-- `POST /api/documents-v2/migrate-schema` - Add new columns (non-destructive)
-- `GET /api/documents-v2/migrate-schema` - Check current schema
+- `POST /api/documents/migrate-schema` - Add new columns (non-destructive)
+- `GET /api/documents/migrate-schema` - Check current schema
 
 **AI-Powered Search:**
-- `POST /api/documents-v2/search` - Semantic search using Gemini
+- `POST /api/documents/search` - Semantic search using Gemini
   - Body: `{ q: "search query" }`
   - Searches: filename, party, sub_party, document_type, ai_summary, notes, amounts
   - Falls back to text search if Gemini unavailable
 
 **Duplicate Detection:**
-- `POST /api/documents-v2/check-duplicates` - Check for similar documents
+- `POST /api/documents/check-duplicates` - Check for similar documents
   - Body: `{ id: "document_id" }`
   - Returns similar documents with similarity reasons
   - Called automatically before archiving
 
 **Scan Inbox:**
-- `POST /api/documents-v2/scan-inbox` - Create DB records for R2 files without records
-- `GET /api/documents-v2/scan-inbox` - Preview what would be found (dry run)
+- `POST /api/documents/scan-inbox` - Create DB records for R2 files without records
+- `GET /api/documents/scan-inbox` - Preview what would be found (dry run)
 
 ### R2 Folder Structure
 
@@ -1556,18 +1558,18 @@ voyage-documents/
 ### Files Modified (Phase 2)
 
 **New Files:**
-- `web/src/app/api/documents-v2/migrate-schema/route.ts` - Schema migration
-- `web/src/app/api/documents-v2/search/route.ts` - AI-powered search
-- `web/src/app/api/documents-v2/check-duplicates/route.ts` - Duplicate detection
-- `web/src/app/api/documents-v2/scan-inbox/route.ts` - Scan for R2 orphans
+- `web/src/app/api/documents/migrate-schema/route.ts` - Schema migration
+- `web/src/app/api/documents/search/route.ts` - AI-powered search
+- `web/src/app/api/documents/check-duplicates/route.ts` - Duplicate detection
+- `web/src/app/api/documents/scan-inbox/route.ts` - Scan for R2 orphans
 
 **Updated Files:**
-- `web/src/app/api/documents-v2/process/route.ts` - New AI prompt with party identification rules
-- `web/src/app/api/documents-v2/[id]/view-url/route.ts` - Smart download filename generation
-- `web/src/app/documents-v2/review/page.tsx` - Sortable columns, removed filename from grid
-- `web/src/app/documents-v2/review/[id]/page.tsx` - New form fields, duplicate modal
-- `web/src/app/documents-v2/archive/page.tsx` - Sortable columns, Notes column, Smart search UI
-- `web/src/app/documents-v2/import/page.tsx` - Scan inbox button
+- `web/src/app/api/documents/process/route.ts` - New AI prompt with party identification rules
+- `web/src/app/api/documents/[id]/view-url/route.ts` - Smart download filename generation
+- `web/src/app/documents/review/page.tsx` - Sortable columns, removed filename from grid
+- `web/src/app/documents/review/[id]/page.tsx` - New form fields, duplicate modal
+- `web/src/app/documents/archive/page.tsx` - Sortable columns, Notes column, Smart search UI
+- `web/src/app/documents/import/page.tsx` - Scan inbox button
 
 ---
 
@@ -1575,20 +1577,20 @@ voyage-documents/
 
 **New Files:**
 - `web/src/lib/nanoid.ts` - NanoID generator
-- `web/src/app/api/documents-v2/reset-schema/route.ts` - Schema reset endpoint
-- `web/src/app/api/documents-v2/process/route.ts` - Batch AI processing
-- `web/src/app/api/documents-v2/batch/route.ts` - Batch approve/delete
-- `web/src/app/documents-v2/import/page.tsx` - Import tab
-- `web/src/app/documents-v2/review/page.tsx` - Review tab (list view)
+- `web/src/app/api/documents/reset-schema/route.ts` - Schema reset endpoint
+- `web/src/app/api/documents/process/route.ts` - Batch AI processing
+- `web/src/app/api/documents/batch/route.ts` - Batch approve/delete
+- `web/src/app/documents/import/page.tsx` - Import tab
+- `web/src/app/documents/review/page.tsx` - Review tab (list view)
 
 **Updated Files:**
-- `web/src/app/api/documents-v2/route.ts` - party/sub_party/notes fields
-- `web/src/app/api/documents-v2/[id]/route.ts` - party/sub_party/notes fields
-- `web/src/app/api/documents-v2/upload/route.ts` - NanoID, no auto AI
-- `web/src/app/api/documents-v2/[id]/process/route.ts` - Updated AI prompt
-- `web/src/app/documents-v2/page.tsx` - Redirect to /import
-- `web/src/app/documents-v2/archive/page.tsx` - Updated with new UI
-- `web/src/app/documents-v2/review/[id]/page.tsx` - party/sub_party/notes form fields
+- `web/src/app/api/documents/route.ts` - party/sub_party/notes fields
+- `web/src/app/api/documents/[id]/route.ts` - party/sub_party/notes fields
+- `web/src/app/api/documents/upload/route.ts` - NanoID, no auto AI
+- `web/src/app/api/documents/[id]/process/route.ts` - Updated AI prompt
+- `web/src/app/documents/page.tsx` - Redirect to /import
+- `web/src/app/documents/archive/page.tsx` - Updated with new UI
+- `web/src/app/documents/review/[id]/page.tsx` - party/sub_party/notes form fields
 
 ---
 
@@ -1598,7 +1600,7 @@ voyage-documents/
 
 | Bug | Issue | Fix |
 |-----|-------|-----|
-| Bug 1 | Smart download filename not working | Created dedicated `/api/documents-v2/[id]/download` endpoint with Content-Disposition header |
+| Bug 1 | Smart download filename not working | Created dedicated `/api/documents/[id]/download` endpoint with Content-Disposition header |
 | Bug 2 | Save changes not persisting on Review tab | Added all new fields to PUT endpoint's allowedFields array |
 | Bug 3 | Multiple date fields confusing | Unified to single `document_date` column, AI returns one date |
 | Bug 4 | Too many form fields on detail page | Simplified to show only specified fields per document type |
@@ -1617,15 +1619,15 @@ UPDATE DOCUMENTS SET document_date = COALESCE(executed_date, letter_date, period
 ### Files Modified (Phase 3)
 
 **New Files:**
-- `web/src/app/api/documents-v2/[id]/download/route.ts` - Download endpoint with smart filename
+- `web/src/app/api/documents/[id]/download/route.ts` - Download endpoint with smart filename
 
 **Updated Files:**
-- `web/src/app/api/documents-v2/migrate-schema/route.ts` - Added document_date migration
-- `web/src/app/api/documents-v2/[id]/route.ts` - Fixed allowedFields for PUT
-- `web/src/app/api/documents-v2/process/route.ts` - Simplified AI prompt with document_date
-- `web/src/app/documents-v2/review/[id]/page.tsx` - Simplified form fields
-- `web/src/app/documents-v2/review/page.tsx` - Updated to use document_date
-- `web/src/app/documents-v2/archive/page.tsx` - Added checkboxes, bulk actions, uses document_date
+- `web/src/app/api/documents/migrate-schema/route.ts` - Added document_date migration
+- `web/src/app/api/documents/[id]/route.ts` - Fixed allowedFields for PUT
+- `web/src/app/api/documents/process/route.ts` - Simplified AI prompt with document_date
+- `web/src/app/documents/review/[id]/page.tsx` - Simplified form fields
+- `web/src/app/documents/review/page.tsx` - Updated to use document_date
+- `web/src/app/documents/archive/page.tsx` - Added checkboxes, bulk actions, uses document_date
 
 ### Detail Page Form Fields
 
@@ -1670,7 +1672,7 @@ voyage-documents/
 └── archive/    ← After approval
 ```
 
-The PUT endpoint (`/api/documents-v2/[id]`) now moves files to archive/ when status is set to 'archived'.
+The PUT endpoint (`/api/documents/[id]`) now moves files to archive/ when status is set to 'archived'.
 
 ### Search Improvements
 
@@ -1699,9 +1701,9 @@ Archive tab now shows 100 documents per page with:
 ### Files Modified (Phase 4)
 
 **Updated Files:**
-- `web/src/app/api/documents-v2/[id]/route.ts` - Added R2 file move on status='archived'
-- `web/src/app/api/documents-v2/search/route.ts` - Boolean query parsing, enhanced AI prompt
-- `web/src/app/api/documents-v2/process/route.ts` - Made ai_summary required in prompt
-- `web/src/app/documents-v2/archive/page.tsx` - Pagination, boolean local filter
-- `web/src/app/documents-v2/review/[id]/page.tsx` - Filename wrapping, AI Summary placeholder
-- `web/src/app/documents-v2/import/page.tsx` - Updated empty state message
+- `web/src/app/api/documents/[id]/route.ts` - Added R2 file move on status='archived'
+- `web/src/app/api/documents/search/route.ts` - Boolean query parsing, enhanced AI prompt
+- `web/src/app/api/documents/process/route.ts` - Made ai_summary required in prompt
+- `web/src/app/documents/archive/page.tsx` - Pagination, boolean local filter
+- `web/src/app/documents/review/[id]/page.tsx` - Filename wrapping, AI Summary placeholder
+- `web/src/app/documents/import/page.tsx` - Updated empty state message
