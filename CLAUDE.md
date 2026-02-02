@@ -1,13 +1,35 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-02 (Phase 3 Complete - All Streamlit apps migrated, archived old pages)
+> **Last updated:** 2026-02-02 (Google Drive → R2 Migration IN PROGRESS)
 
 ---
 
 ## FOR NEW CLAUDE SESSIONS - START HERE
 
-**Current Status:** Phase 3 COMPLETE. All 22 Streamlit apps migrated to Vercel!
+**Current Status:** Phase 3 COMPLETE. Google Drive migration IN PROGRESS.
+
+### ✅ Google Drive → Cloudflare R2 Migration COMPLETE
+
+**Migration Summary (2026-02-02):**
+| Folder | Files in Drive | Already in R2 (by hash) | New Imports |
+|--------|----------------|-------------------------|-------------|
+| To File | 24 | 2 | 22 |
+| Archive - Documents | 130 | 130 | 0 |
+| Archive - Contracts | 771 | 771 | 0 |
+
+**Key Findings:**
+- Archive folders were already fully imported (by hash-based deduplication)
+- Files in Drive have "smart filenames" (e.g., "BigTime Software - 2026.01.05 - SOW.pdf")
+- Same files in Snowflake have original filenames (before AI renaming)
+- Total documents in database: 269 (263 unique hashes)
+
+**Migration Endpoint (for future use):**
+- Check status: `curl "https://apps.voyage.xyz/api/documents-v2/migrate-from-drive?folder=to-file&compare=true"`
+- Migrate files: `curl -X POST "https://apps.voyage.xyz/api/documents-v2/migrate-from-drive?folder=to-file&limit=10"`
+- Folders: `to-file`, `archive-docs`, `archive-contracts`
+
+---
 
 **What's Done:**
 - Snowflake database with all config tables (VC_STAFF, VC_BENEFITS, VC_COMMISSION_RULES, etc.)
