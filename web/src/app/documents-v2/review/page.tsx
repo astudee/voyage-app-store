@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -130,6 +131,7 @@ export default function ReviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [approving, setApproving] = useState(false);
+  const [approvingProgress, setApprovingProgress] = useState({ current: 0, total: 0, currentFile: "" });
   const [deleting, setDeleting] = useState(false);
   const [sortKey, setSortKey] = useState<SortKey | null>("date");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -246,25 +248,50 @@ export default function ReviewPage() {
   const handleApproveSelected = async () => {
     if (selectedIds.size === 0) return;
 
+    const ids = Array.from(selectedIds);
     setApproving(true);
-    try {
-      const res = await fetch("/api/documents-v2/batch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "approve", ids: Array.from(selectedIds) }),
-      });
+    setApprovingProgress({ current: 0, total: ids.length, currentFile: "" });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Approve failed");
+    let approved = 0;
+    let failed = 0;
+
+    try {
+      for (let i = 0; i < ids.length; i++) {
+        const id = ids[i];
+        const doc = documents.find(d => d.id === id);
+        setApprovingProgress({
+          current: i + 1,
+          total: ids.length,
+          currentFile: doc?.party || doc?.original_filename || id
+        });
+
+        try {
+          const res = await fetch("/api/documents-v2/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "approve", ids: [id] }),
+          });
+
+          if (res.ok) {
+            approved++;
+          } else {
+            failed++;
+          }
+        } catch {
+          failed++;
+        }
       }
 
+      if (failed > 0) {
+        alert(`Archived ${approved} document(s). ${failed} failed.`);
+      }
       setSelectedIds(new Set());
       fetchDocuments();
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setApproving(false);
+      setApprovingProgress({ current: 0, total: 0, currentFile: "" });
     }
   };
 
@@ -363,6 +390,24 @@ export default function ReviewPage() {
             </Button>
           </Link>
         </div>
+
+        {/* Archiving Progress */}
+        {approving && approvingProgress.total > 0 && (
+          <Card className="mb-6">
+            <CardContent className="py-4">
+              <h2 className="text-lg font-semibold mb-2">
+                Archiving Documents ({approvingProgress.current} of {approvingProgress.total})
+              </h2>
+              <Progress
+                value={(approvingProgress.current / approvingProgress.total) * 100}
+                className="h-3 mb-2"
+              />
+              <p className="text-sm text-gray-500 truncate">
+                {approvingProgress.currentFile}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Actions Bar */}
         <div className="mb-4 flex items-center justify-between">

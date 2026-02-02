@@ -557,8 +557,8 @@ export default function ImportPage() {
         ) : documents.length === 0 ? (
           <Card>
             <CardContent className="py-8">
-              <p className="text-center text-gray-500">
-                No documents awaiting processing. Upload some files above, upload files directly to Cloudflare, or send an email to vault@voyageadvisory.com to get started.
+              <p className="text-center text-gray-500 text-base max-w-lg mx-auto">
+                No documents awaiting processing. Upload files above, upload directly to Cloudflare, or email vault@voyageadvisory.com.
               </p>
             </CardContent>
           </Card>
