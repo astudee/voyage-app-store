@@ -24,7 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-type SortKey = "party" | "type" | "date" | "notes";
+type SortKey = "party" | "type" | "date" | "notes" | "imported";
 type SortDir = "asc" | "desc" | null;
 
 interface Document {
@@ -75,6 +75,21 @@ function formatDate(dateString: string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function getPartyDisplay(doc: Document): string {
@@ -177,6 +192,10 @@ export default function ArchivePage() {
         case "notes":
           aVal = (a.notes || "").toLowerCase();
           bVal = (b.notes || "").toLowerCase();
+          break;
+        case "imported":
+          aVal = new Date(a.created_at);
+          bVal = new Date(b.created_at);
           break;
       }
 
@@ -719,6 +738,12 @@ export default function ArchivePage() {
                   >
                     Notes{getSortIndicator("notes")}
                   </TableHead>
+                  <TableHead
+                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("imported")}
+                  >
+                    Imported{getSortIndicator("imported")}
+                  </TableHead>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                 </TableRow>
               </TableHeader>
@@ -748,6 +773,9 @@ export default function ArchivePage() {
                       <span className="line-clamp-2" title={doc.notes || ""}>
                         {doc.notes || "-"}
                       </span>
+                    </TableCell>
+                    <TableCell className="text-gray-500 text-sm">
+                      {formatRelativeTime(doc.created_at)}
                     </TableCell>
                     <TableCell data-no-navigate>
                       <DropdownMenu>
