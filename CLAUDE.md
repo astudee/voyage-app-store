@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-02 (Streamlit removed, Email Vault workflow deleted)
+> **Last updated:** 2026-02-03 (Fixed Contract Reviewer API key issue)
 
 ---
 
@@ -863,6 +863,18 @@ This is where reference files are uploaded for Claude to review:
   - Cleaned up Phase 3 migration planning (now complete)
   - Historical session logs preserved for reference
 
+### 2026-02-03 - Contract Reviewer API Key Fix
+- **Fixed Contract Reviewer 401 authentication error:**
+  - Issue: Contract Reviewer was getting "invalid x-api-key" 401 errors
+  - Root cause: Two different env vars exist (`ANTHROPIC_API_KEY` and `CLAUDE_API_KEY`)
+  - Fix: Updated all Claude-using code to try `ANTHROPIC_API_KEY` first, fall back to `CLAUDE_API_KEY`
+  - Files updated:
+    - `web/src/app/api/contract-review/route.ts` - Contract Reviewer
+    - `web/src/app/api/documents/process/route.ts` - Document Manager AI
+    - `web/src/app/api/health/route.ts` - Health check now tests both keys
+  - Health check now reports which key is working (if any)
+  - **Note:** If Contract Reviewer still fails, check both keys in Vercel Dashboard
+
 ---
 
 ## Notes for Future Sessions
@@ -1079,7 +1091,12 @@ All polish items fixed:
 | QuickBooks | WORKING | Commission Calculator |
 | Gmail | WORKING | Email reports |
 | Cloudflare R2 | WORKING | Document Manager |
-| Claude/Gemini | WORKING | Document Manager AI processing |
+| Claude/Gemini | WORKING | Document Manager AI, Contract Reviewer |
+
+**Claude API Key Configuration:**
+- Two env vars exist in Vercel: `ANTHROPIC_API_KEY` and `CLAUDE_API_KEY`
+- All Claude-using code now tries `ANTHROPIC_API_KEY` first, falls back to `CLAUDE_API_KEY`
+- If Contract Reviewer returns 401 errors, check that at least one key is valid in Vercel
 
 ---
 

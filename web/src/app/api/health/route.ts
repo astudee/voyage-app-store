@@ -223,57 +223,67 @@ async function checkQuickBooks(): Promise<HealthResult> {
   }
 }
 
-// Check Claude API
+// Check Claude API - tries both ANTHROPIC_API_KEY and CLAUDE_API_KEY
 async function checkClaude(): Promise<HealthResult> {
-  const apiKey = process.env.CLAUDE_API_KEY;
-  if (!apiKey) {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const claudeKey = process.env.CLAUDE_API_KEY;
+
+  if (!anthropicKey && !claudeKey) {
     return {
       status: "not_configured",
-      message: "CLAUDE_API_KEY not configured",
-      details: "Add CLAUDE_API_KEY to environment variables for AI features",
+      message: "No Claude API key configured",
+      details: "Add ANTHROPIC_API_KEY or CLAUDE_API_KEY to environment variables",
     };
   }
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 10,
-        messages: [{ role: "user", content: "Hi" }],
-      }),
-    });
+  // Try each key and report which one works
+  const keysToTry: { name: string; key: string }[] = [];
+  if (anthropicKey) keysToTry.push({ name: "ANTHROPIC_API_KEY", key: anthropicKey });
+  if (claudeKey) keysToTry.push({ name: "CLAUDE_API_KEY", key: claudeKey });
 
-    if (response.status === 200) {
-      return {
-        status: "success",
-        message: "Connected successfully",
-        details: "AI features available",
-      };
-    } else if (response.status === 401) {
+  for (const { name, key } of keysToTry) {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 10,
+          messages: [{ role: "user", content: "Hi" }],
+        }),
+      });
+
+      if (response.status === 200) {
+        return {
+          status: "success",
+          message: "Connected successfully",
+          details: `Using ${name}. AI features available.`,
+        };
+      } else if (response.status === 401) {
+        // This key is invalid, try the next one
+        continue;
+      }
       return {
         status: "error",
-        message: "Authentication failed",
-        details: "API key invalid or expired",
+        message: `API returned ${response.status}`,
+        details: `${name}: ${(await response.text()).substring(0, 200)}`,
       };
+    } catch (error) {
+      // Connection error, try the next key
+      continue;
     }
-    return {
-      status: "error",
-      message: `API returned ${response.status}`,
-      details: (await response.text()).substring(0, 200),
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      message: `Connection failed`,
-      details: error instanceof Error ? error.message : "Unknown error",
-    };
   }
+
+  // All keys failed
+  return {
+    status: "error",
+    message: "All API keys invalid",
+    details: `Tried: ${keysToTry.map(k => k.name).join(", ")}. Check key values in Vercel.`,
+  };
 }
 
 // Check ChatGPT/OpenAI API
