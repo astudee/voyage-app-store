@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,8 @@ export default function ContractReviewPage() {
   const [inputMethod, setInputMethod] = useState<InputMethod>("upload");
   const [googleDocUrl, setGoogleDocUrl] = useState("");
   const [extracting, setExtracting] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const pdfjsLib = await import("pdfjs-dist");
@@ -50,10 +52,7 @@ export default function ContractReviewPage() {
     return result.value;
   };
 
-  const handleFileUpload = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
+  const processFile = useCallback(async (file: File) => {
     setExtracting(true);
     setContractName(file.name);
 
@@ -85,6 +84,41 @@ export default function ContractReviewPage() {
       setExtracting(false);
     }
   }, []);
+
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }, [processFile]);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      const file = files[0];
+      const fileName = file.name.toLowerCase();
+      if (fileName.endsWith(".pdf") || fileName.endsWith(".docx") || fileName.endsWith(".txt")) {
+        processFile(file);
+      } else {
+        toast.error("Unsupported file format. Please use PDF, DOCX, or TXT.");
+      }
+    }
+  };
 
   const fetchGoogleDoc = async () => {
     if (!googleDocUrl) {
@@ -218,28 +252,44 @@ export default function ContractReviewPage() {
 
           {inputMethod === "upload" && (
             <div className="space-y-4">
-              <div className="border-2 border-dashed rounded-lg p-8 text-center">
+              <div
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                  isDragging
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-300 hover:border-gray-400"
+                }`}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept=".pdf,.docx,.txt"
                   onChange={handleFileUpload}
                   className="hidden"
-                  id="file-upload"
                   disabled={extracting}
                 />
-                <label
-                  htmlFor="file-upload"
-                  className="cursor-pointer text-gray-500 hover:text-gray-700"
-                >
-                  {extracting ? (
-                    <span className="animate-pulse">Extracting text...</span>
-                  ) : (
-                    <>
-                      <span className="text-4xl block mb-2">📄</span>
-                      <span className="font-medium">Click to upload PDF, DOCX, or TXT</span>
-                    </>
-                  )}
-                </label>
+                {extracting ? (
+                  <div className="animate-pulse">
+                    <span className="text-4xl block mb-2">⏳</span>
+                    <span className="font-medium text-gray-600">Extracting text...</span>
+                  </div>
+                ) : isDragging ? (
+                  <div>
+                    <span className="text-4xl block mb-2">📥</span>
+                    <span className="font-medium text-blue-600">Drop file here</span>
+                  </div>
+                ) : (
+                  <div>
+                    <span className="text-4xl block mb-2">📄</span>
+                    <span className="font-medium text-gray-600">
+                      Drag & drop or click to upload
+                    </span>
+                    <p className="text-sm text-gray-400 mt-1">PDF, DOCX, or TXT</p>
+                  </div>
+                )}
               </div>
               {contractText && (
                 <div className="text-sm text-green-600">
