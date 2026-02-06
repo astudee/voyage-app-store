@@ -192,9 +192,9 @@ async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
 }
 
 async function analyzeWithClaude(pdfBase64: string): Promise<Analysis | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    console.log("[process] Anthropic API key not configured");
+    console.log("[process] Claude API key not configured (set CLAUDE_API_KEY)");
     return null;
   }
 

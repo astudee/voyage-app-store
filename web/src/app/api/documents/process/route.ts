@@ -42,7 +42,7 @@ Return JSON only:
   "document_type": "Specific type (MSA, SOW, Statement, Notice, Invoice, etc.)",
   "document_date": "YYYY-MM-DD - For CONTRACTS: use the LAST/latest signature date (when the final party signed). For documents: letter date. For invoices: invoice date.",
   "ai_summary": "REQUIRED: 2-4 sentence description for searching later. Include key names, dates, amounts, and purpose. Always provide this field.",
-  "notes": "Brief context (policy numbers, reference numbers). NEVER include sensitive info like bank account numbers, routing numbers, or SSNs - those can go in ai_summary only.",
+  "notes": "Brief context. See NOTE RULES below. NEVER include sensitive info like bank account numbers, routing numbers, or SSNs - those can go in ai_summary only.",
   "confidence_score": 0.0-1.0,
   // CONTRACT only:
   "document_category": "EMPLOYEE" | "CONTRACTOR" | "VENDOR" | "CLIENT" | "PARTNER",
@@ -102,6 +102,13 @@ Examples:
 - Government: party = "State of {Name}" or "US Government", sub_party = agency name
 - Banks/companies: party = company name, sub_party = division if applicable
 - Individuals: party = name in "Last, First" format
+
+**NOTE RULES:**
+- For SOWs and CSOWs: notes should describe the client engagement, NOT reference the master agreement date
+  - GOOD: "SOW for State of North Dakota, Retirement Investment Office engagement"
+  - GOOD: "CSOW for Navitus pharmacy benefits implementation"
+  - BAD: "Contractor Agreement dated June 28, 2025" (unhelpful)
+- For other documents: brief context like policy numbers, reference numbers, account identifiers (last 4 digits only)
 
 CRITICAL RULES:
 1. Use STRICT "Last, First" format for person names
@@ -225,10 +232,9 @@ async function analyzeWithGemini(pdfBase64: string): Promise<Analysis | null> {
 }
 
 async function analyzeWithClaude(pdfBase64: string): Promise<Analysis | null> {
-  // Try ANTHROPIC_API_KEY first, fall back to CLAUDE_API_KEY
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    console.log("[process] Anthropic API key not configured (set ANTHROPIC_API_KEY or CLAUDE_API_KEY)");
+    console.log("[process] Claude API key not configured (set CLAUDE_API_KEY)");
     return null;
   }
 

@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-03 (Fixed Contract Reviewer API key issue)
+> **Last updated:** 2026-02-05 (Twilio phone system added)
 
 ---
 
@@ -868,12 +868,45 @@ This is where reference files are uploaded for Claude to review:
   - Issue: Contract Reviewer was getting "invalid x-api-key" 401 errors
   - Root cause: Two different env vars exist (`ANTHROPIC_API_KEY` and `CLAUDE_API_KEY`)
   - Fix: Updated all Claude-using code to try `ANTHROPIC_API_KEY` first, fall back to `CLAUDE_API_KEY`
+
+### 2026-02-04 - Standardized on CLAUDE_API_KEY
+- **Removed all ANTHROPIC_API_KEY references** to simplify configuration:
+  - All Claude-using code now uses only `CLAUDE_API_KEY`
   - Files updated:
     - `web/src/app/api/contract-review/route.ts` - Contract Reviewer
-    - `web/src/app/api/documents/process/route.ts` - Document Manager AI
-    - `web/src/app/api/health/route.ts` - Health check now tests both keys
-  - Health check now reports which key is working (if any)
-  - **Note:** If Contract Reviewer still fails, check both keys in Vercel Dashboard
+    - `web/src/app/api/documents/process/route.ts` - Document Manager AI (batch processing)
+    - `web/src/app/api/documents/[id]/process/route.ts` - Document Manager AI (single doc)
+    - `web/src/app/api/documents/test-ai/route.ts` - AI test endpoint
+    - `web/src/app/api/health/route.ts` - Connection Health Checker
+  - User can now delete `ANTHROPIC_API_KEY` from Vercel to avoid confusion
+  - Only `CLAUDE_API_KEY` is needed going forward
+
+### 2026-02-04 - Document Manager UX Improvements
+- **Improved AI notes for SOWs/CSOWs:**
+  - Added NOTE RULES to AI prompt so SOW notes describe the client engagement
+  - Example: "SOW for State of North Dakota, Retirement Investment Office engagement"
+  - Instead of unhelpful: "Contractor Agreement dated June 28, 2025"
+- **Simplified document detail page buttons:**
+  - For pending documents (Review tab): Shows "Save & Archive" button (saves edits and archives)
+  - For archived documents (Archive tab): Shows "Save" button (just saves edits)
+  - Removed redundant separate "Save" button for pending documents
+  - Cancel button now returns to appropriate tab based on document status
+
+### 2026-02-05 - Twilio Phone System Setup
+- **Added Twilio IVR phone system** to the project:
+  - 9 API route handlers under `/api/voice/`
+  - Lightweight TwiML XML helper (`web/src/lib/twiml.ts`) — no Twilio SDK needed
+  - Phone config with directory entries (`web/src/lib/phone-config.ts`)
+  - Documentation at `docs/phone-system.md`
+- **Call flow:** Greeting → IVR menu (services/directory/operator) → simultaneous ring → voicemail
+- **Twilio number:** +1 (844) 790-5332
+- **Operators:** Andrew (+13122120815) and Emma (+12404401901) ring simultaneously
+- **Voicemail email:** hello@voyageadvisory.com
+- **Middleware updated:** `api/voice` routes excluded from auth (Twilio webhooks need unauthenticated access)
+- **Vercel env vars created:** TWILIO_PHONE_NUMBER, OPERATOR_PHONE_1/2, PHONE_SYSTEM_BASE_URL, VOICEMAIL_EMAIL
+- **Still needed:** Andrew must update TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN with real values in Vercel Dashboard
+- **Build verified:** No TypeScript errors
+- **Endpoints tested:** All return valid TwiML XML
 
 ---
 
@@ -1092,11 +1125,71 @@ All polish items fixed:
 | Gmail | WORKING | Email reports |
 | Cloudflare R2 | WORKING | Document Manager |
 | Claude/Gemini | WORKING | Document Manager AI, Contract Reviewer |
+| Twilio | CONFIGURED | Phone System IVR |
 
 **Claude API Key Configuration:**
-- Two env vars exist in Vercel: `ANTHROPIC_API_KEY` and `CLAUDE_API_KEY`
-- All Claude-using code now tries `ANTHROPIC_API_KEY` first, falls back to `CLAUDE_API_KEY`
-- If Contract Reviewer returns 401 errors, check that at least one key is valid in Vercel
+- Use `CLAUDE_API_KEY` in Vercel (ANTHROPIC_API_KEY has been removed)
+- All Claude-using code references only `CLAUDE_API_KEY`
+- If Contract Reviewer or Document Manager AI returns 401 errors, verify CLAUDE_API_KEY in Vercel Dashboard
+
+---
+
+## Twilio Phone System (IVR)
+
+**Status:** CONFIGURED (needs Twilio SID + Auth Token in Vercel to go live)
+**Twilio Number:** +1 (844) 790-5332
+**Documentation:** `docs/phone-system.md`
+
+### Call Flow
+```
+Caller dials +1 (844) 790-5332
+  → POST /api/voice/incoming → Greeting + IVR menu
+  → Press 1 (services) → Brief overview → Transfer to operator
+  → Press 2 (directory) → Andrew (ext 1), Emma (ext 2)
+  → Press 0 (operator) → Rings Andrew + Emma simultaneously
+    → No answer → Voicemail → Transcribed → Logged
+```
+
+### API Routes (all unauthenticated — Twilio webhooks)
+| Route | Purpose |
+|-------|---------|
+| `POST /api/voice/incoming` | Main greeting + IVR menu |
+| `POST /api/voice/menu` | Routes keypress/speech selection |
+| `POST /api/voice/operator` | Simultaneous ring (Andrew + Emma) |
+| `POST /api/voice/operator-status` | No answer → voicemail |
+| `POST /api/voice/directory` | Company directory menu |
+| `POST /api/voice/directory-route` | Connects to selected person |
+| `POST /api/voice/voicemail` | Records voicemail |
+| `POST /api/voice/voicemail-complete` | Thanks caller, hangs up |
+| `POST /api/voice/voicemail-transcription` | Receives transcription (notification TODO) |
+
+### Key Files
+| File | Purpose |
+|------|---------|
+| `web/src/lib/twiml.ts` | Lightweight TwiML XML helper (no Twilio SDK needed) |
+| `web/src/lib/phone-config.ts` | Phone numbers, directory entries, settings |
+| `web/src/app/api/voice/*/route.ts` | 9 API route handlers |
+| `docs/phone-system.md` | Full documentation |
+
+### Environment Variables (Vercel)
+| Variable | Value | Status |
+|----------|-------|--------|
+| `TWILIO_ACCOUNT_SID` | ACxxx... | **Placeholder — Andrew needs to update** |
+| `TWILIO_AUTH_TOKEN` | xxx... | **Placeholder — Andrew needs to update** |
+| `TWILIO_PHONE_NUMBER` | +18447905332 | Set |
+| `OPERATOR_PHONE_1` | +13122120815 (Andrew) | Set |
+| `OPERATOR_PHONE_2` | +12404401901 (Emma) | Set |
+| `PHONE_SYSTEM_BASE_URL` | https://apps.voyage.xyz | Set |
+| `VOICEMAIL_EMAIL` | hello@voyageadvisory.com | Set |
+
+### To Go Live
+1. Andrew updates `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in Vercel Dashboard
+2. Deploy to production: `npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3`
+3. In Twilio Console, set webhook URL: `https://apps.voyage.xyz/api/voice/incoming` (HTTP POST)
+4. Call the number to test
+
+### Phase 2 (Future): AI Receptionist
+Path 1 ("learn more") will connect to a ConversationRelay-powered AI using Claude to have natural conversations about Voyage services.
 
 ---
 

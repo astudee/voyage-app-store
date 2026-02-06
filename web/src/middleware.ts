@@ -21,6 +21,6 @@ export const config = {
      * - /_next/image (image optimization files)
      * - /favicon.ico
      */
-    "/((?!login|api/auth|api/test-snowflake|api/documents/reset-schema|api/documents/cleanup|api/documents/from-email|api/documents/migrate-schema|api/documents/migrate-from-drive|_next/static|_next/image|favicon.ico).*)",
+    "/((?!login|api/auth|api/test-snowflake|api/documents/reset-schema|api/documents/cleanup|api/documents/from-email|api/documents/migrate-schema|api/documents/migrate-from-drive|api/voice|_next/static|_next/image|favicon.ico).*)",
   ],
 };

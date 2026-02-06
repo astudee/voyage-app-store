@@ -14,11 +14,11 @@ export async function GET() {
 
   // Check environment variables
   const geminiKey = process.env.GEMINI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const claudeKey = process.env.CLAUDE_API_KEY;
 
   results.environment = {
     GEMINI_API_KEY: geminiKey ? `exists (${geminiKey.length} chars)` : "NOT SET",
-    ANTHROPIC_API_KEY: anthropicKey ? `exists (${anthropicKey.length} chars)` : "NOT SET",
+    CLAUDE_API_KEY: claudeKey ? `exists (${claudeKey.length} chars)` : "NOT SET",
     NODE_ENV: process.env.NODE_ENV,
   };
 
@@ -87,7 +87,7 @@ export async function GET() {
   }
 
   // Test Claude API
-  if (anthropicKey) {
+  if (claudeKey) {
     try {
       console.log("[test-ai] Testing Claude API...");
       const url = "https://api.anthropic.com/v1/messages";
@@ -107,7 +107,7 @@ export async function GET() {
       const response = await fetch(url, {
         method: "POST",
         headers: {
-          "x-api-key": anthropicKey,
+          "x-api-key": claudeKey,
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
         },
@@ -148,7 +148,7 @@ export async function GET() {
       };
     }
   } else {
-    results.claude = { status: "skipped", reason: "ANTHROPIC_API_KEY not set" };
+    results.claude = { status: "skipped", reason: "CLAUDE_API_KEY not set" };
   }
 
   // Summary

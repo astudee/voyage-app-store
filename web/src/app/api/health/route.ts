@@ -223,67 +223,58 @@ async function checkQuickBooks(): Promise<HealthResult> {
   }
 }
 
-// Check Claude API - tries both ANTHROPIC_API_KEY and CLAUDE_API_KEY
+// Check Claude API
 async function checkClaude(): Promise<HealthResult> {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const claudeKey = process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
 
-  if (!anthropicKey && !claudeKey) {
+  if (!apiKey) {
     return {
       status: "not_configured",
-      message: "No Claude API key configured",
-      details: "Add ANTHROPIC_API_KEY or CLAUDE_API_KEY to environment variables",
+      message: "CLAUDE_API_KEY not configured",
+      details: "Add CLAUDE_API_KEY to environment variables",
     };
   }
 
-  // Try each key and report which one works
-  const keysToTry: { name: string; key: string }[] = [];
-  if (anthropicKey) keysToTry.push({ name: "ANTHROPIC_API_KEY", key: anthropicKey });
-  if (claudeKey) keysToTry.push({ name: "CLAUDE_API_KEY", key: claudeKey });
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 10,
+        messages: [{ role: "user", content: "Hi" }],
+      }),
+    });
 
-  for (const { name, key } of keysToTry) {
-    try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "x-api-key": key,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 10,
-          messages: [{ role: "user", content: "Hi" }],
-        }),
-      });
-
-      if (response.status === 200) {
-        return {
-          status: "success",
-          message: "Connected successfully",
-          details: `Using ${name}. AI features available.`,
-        };
-      } else if (response.status === 401) {
-        // This key is invalid, try the next one
-        continue;
-      }
+    if (response.status === 200) {
+      return {
+        status: "success",
+        message: "Connected successfully",
+        details: "CLAUDE_API_KEY working. AI features available.",
+      };
+    } else if (response.status === 401) {
       return {
         status: "error",
-        message: `API returned ${response.status}`,
-        details: `${name}: ${(await response.text()).substring(0, 200)}`,
+        message: "Authentication failed",
+        details: "CLAUDE_API_KEY is invalid. Check key value in Vercel.",
       };
-    } catch (error) {
-      // Connection error, try the next key
-      continue;
     }
+    return {
+      status: "error",
+      message: `API returned ${response.status}`,
+      details: (await response.text()).substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
   }
-
-  // All keys failed
-  return {
-    status: "error",
-    message: "All API keys invalid",
-    details: `Tried: ${keysToTry.map(k => k.name).join(", ")}. Check key values in Vercel.`,
-  };
 }
 
 // Check ChatGPT/OpenAI API
@@ -819,6 +810,68 @@ async function checkGmail(sendTestEmail: boolean = false): Promise<HealthResult>
   }
 }
 
+// Check Zendesk API
+async function checkZendesk(): Promise<HealthResult> {
+  const subdomain = (process.env.ZENDESK_SUBDOMAIN || "").trim();
+  const email = (process.env.ZENDESK_AGENT_EMAIL || "").trim();
+  const token = (process.env.ZENDESK_API_TOKEN || "").trim();
+
+  if (!subdomain || !email || !token || token === "placeholder") {
+    return {
+      status: "not_configured",
+      message: "Zendesk not configured",
+      details: "Add ZENDESK_SUBDOMAIN, ZENDESK_AGENT_EMAIL, and ZENDESK_API_TOKEN to environment variables",
+    };
+  }
+
+  try {
+    const credentials = `${email}/token:${token}`;
+    const response = await fetch(
+      `https://${subdomain}.zendesk.com/api/v2/users/me.json`,
+      {
+        headers: {
+          Authorization: `Basic ${Buffer.from(credentials).toString("base64")}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      const data = await response.json();
+      const userName = data.user?.name || "Unknown";
+      const userRole = data.user?.role || "unknown";
+      const userEmail = data.user?.email || "unknown";
+      const isAgent = userRole === "agent" || userRole === "admin";
+      const emailUsed = email?.trim();
+      const emailMatch = userEmail === emailUsed;
+      return {
+        status: isAgent ? "success" : "warning",
+        message: isAgent ? "Connected successfully" : "Connected but wrong role",
+        details: isAgent
+          ? `Authenticated as ${userName} (${userRole}) on ${subdomain}.zendesk.com`
+          : `Authenticated as "${userName}" (${userEmail}) with role "${userRole}". Auth email used: "${emailUsed}" (${emailUsed?.length} chars). Email match: ${emailMatch}. Token length: ${token?.trim().length}. Ticket Watcher requires agent or admin role.`,
+      };
+    } else if (response.status === 401) {
+      return {
+        status: "error",
+        message: "Authentication failed",
+        details: "Invalid email or API token",
+      };
+    }
+    return {
+      status: "error",
+      message: `HTTP ${response.status}`,
+      details: (await response.text()).substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
 // GET /api/health - Run all health checks
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -838,6 +891,7 @@ export async function GET(request: Request) {
     pipedrive,
     bigtime,
     quickbooks,
+    zendesk,
     cloudflareR2,
     claude,
     chatgpt,
@@ -851,6 +905,7 @@ export async function GET(request: Request) {
     checkPipedrive(),
     checkBigTime(),
     checkQuickBooks(),
+    checkZendesk(),
     checkCloudflareR2(),
     checkClaude(),
     checkChatGPT(),
@@ -866,6 +921,7 @@ export async function GET(request: Request) {
   results["BigTime"] = bigtime;
   results["QuickBooks"] = quickbooks;
   results["Pipedrive"] = pipedrive;
+  results["Zendesk"] = zendesk;
   results["Cloudflare R2"] = cloudflareR2;
   results["Google Drive"] = googleDrive;
   results["Google Docs"] = googleDocs;

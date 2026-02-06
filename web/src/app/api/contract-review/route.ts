@@ -4,10 +4,9 @@ import { authOptions } from "@/lib/auth";
 import { CONTRACT_STANDARDS } from "@/data/contract-standards";
 
 async function callClaudeAPI(contractText: string, standardsText: string): Promise<string | null> {
-  // Try ANTHROPIC_API_KEY first, fall back to CLAUDE_API_KEY
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY;
+  const apiKey = process.env.CLAUDE_API_KEY;
   if (!apiKey) {
-    throw new Error("Neither ANTHROPIC_API_KEY nor CLAUDE_API_KEY is configured");
+    throw new Error("CLAUDE_API_KEY is not configured");
   }
 
   const prompt = `You are a legal contract reviewer for Voyage Advisory LLC. Your task is to review the contract provided below against Voyage's contract standards.

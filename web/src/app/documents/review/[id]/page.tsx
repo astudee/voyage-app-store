@@ -473,13 +473,10 @@ export default function ReviewDetailPage({ params }: PageProps) {
               <div className="flex gap-2">
                 <Button
                   variant="outline"
-                  onClick={() => router.push("/documents/review")}
+                  onClick={() => router.push(document?.status === "archived" ? "/documents/archive" : "/documents/review")}
                   disabled={saving}
                 >
                   Cancel
-                </Button>
-                <Button variant="outline" onClick={handleSave} disabled={saving}>
-                  {saving ? "Saving..." : "Save"}
                 </Button>
                 <div className="flex-1" />
                 <Button
@@ -489,9 +486,15 @@ export default function ReviewDetailPage({ params }: PageProps) {
                 >
                   Delete
                 </Button>
-                <Button onClick={handleApprove} disabled={saving || checkingDuplicates}>
-                  {checkingDuplicates ? "Checking..." : saving ? "Approving..." : "Approve & Archive"}
-                </Button>
+                {document?.status === "archived" ? (
+                  <Button onClick={handleSave} disabled={saving}>
+                    {saving ? "Saving..." : "Save"}
+                  </Button>
+                ) : (
+                  <Button onClick={handleApprove} disabled={saving || checkingDuplicates}>
+                    {checkingDuplicates ? "Checking..." : saving ? "Saving..." : "Save & Archive"}
+                  </Button>
+                )}
               </div>
             </div>
           </Card>

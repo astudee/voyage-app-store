@@ -37,6 +37,7 @@ const navigation = [
   {
     section: "Apps",
     items: [
+      { name: "Asset Tracker", href: "/assets" },
       { name: "Benefits Calculator", href: "/apps/benefits-calc" },
       { name: "Billable Hours Report", href: "/apps/billable-hours" },
       { name: "Bonus Calculator", href: "/apps/bonus" },
@@ -54,6 +55,7 @@ const navigation = [
       { name: "Revenue Apportionment", href: "/reports/revenue-by-client" },
       { name: "Revenue Forecaster", href: "/apps/revenue-forecast" },
       { name: "Sales Snapshot", href: "/apps/sales-snapshot" },
+      { name: "Ticket Watcher", href: "/tickets" },
       { name: "Time Reviewer", href: "/apps/time-reviewer" },
     ],
   },
