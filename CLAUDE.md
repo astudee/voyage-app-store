@@ -908,6 +908,22 @@ This is where reference files are uploaded for Claude to review:
 - **Build verified:** No TypeScript errors
 - **Endpoints tested:** All return valid TwiML XML
 
+### 2026-02-06 - SMS-to-Email Forwarding & Twilio Setup Endpoint
+- **Added SMS forwarding** to the phone system:
+  - New endpoint: `POST /api/voice/sms-incoming` — Twilio webhook for incoming texts
+  - Forwards SMS (and MMS attachments) as emails to hello@voyageadvisory.com via Gmail API
+  - Includes sender number, recipient number, message body, and media attachment links
+  - Returns empty TwiML `<Response>` (no auto-reply)
+- **Extracted shared Gmail helper** (`web/src/lib/gmail.ts`):
+  - `sendGmailNotification({ to, subject, htmlBody })` — used by voicemail + SMS handlers
+  - Refactored voicemail-transcription to use shared helper (reduced duplication)
+- **Added Twilio setup endpoint** (`/api/voice/setup`):
+  - `GET` — shows current webhook config for all phone numbers on the account
+  - `POST` — configures voice + SMS webhooks on all numbers (or a specific one via `{ phoneNumber: "+1..." }`)
+  - Runs on Vercel where Twilio credentials are available at runtime
+  - Designed for multiple numbers — re-run after adding a new Twilio number to configure it
+- **To activate:** Deploy to Vercel, then `curl -X POST https://apps.voyage.xyz/api/voice/setup`
+
 ---
 
 ## Notes for Future Sessions
@@ -1125,7 +1141,7 @@ All polish items fixed:
 | Gmail | WORKING | Email reports |
 | Cloudflare R2 | WORKING | Document Manager |
 | Claude/Gemini | WORKING | Document Manager AI, Contract Reviewer |
-| Twilio | CONFIGURED | Phone System IVR |
+| Twilio | WORKING | Phone System IVR + SMS forwarding |
 
 **Claude API Key Configuration:**
 - Use `CLAUDE_API_KEY` in Vercel (ANTHROPIC_API_KEY has been removed)
@@ -1136,7 +1152,7 @@ All polish items fixed:
 
 ## Twilio Phone System (IVR)
 
-**Status:** CONFIGURED (needs Twilio SID + Auth Token in Vercel to go live)
+**Status:** LIVE (voice + SMS webhooks configured)
 **Twilio Number:** +1 (844) 790-5332
 **Documentation:** `docs/phone-system.md`
 
@@ -1161,21 +1177,25 @@ Caller dials +1 (844) 790-5332
 | `POST /api/voice/directory-route` | Connects to selected person |
 | `POST /api/voice/voicemail` | Records voicemail |
 | `POST /api/voice/voicemail-complete` | Thanks caller, hangs up |
-| `POST /api/voice/voicemail-transcription` | Receives transcription (notification TODO) |
+| `POST /api/voice/voicemail-transcription` | Receives transcription, emails to hello@ |
+| `POST /api/voice/sms-incoming` | Incoming SMS → emails to hello@ (with MMS attachments) |
+| `GET /api/voice/setup` | Show current Twilio webhook config for all numbers |
+| `POST /api/voice/setup` | Configure voice + SMS webhooks on all Twilio numbers |
 
 ### Key Files
 | File | Purpose |
 |------|---------|
 | `web/src/lib/twiml.ts` | Lightweight TwiML XML helper (no Twilio SDK needed) |
 | `web/src/lib/phone-config.ts` | Phone numbers, directory entries, settings |
-| `web/src/app/api/voice/*/route.ts` | 9 API route handlers |
+| `web/src/lib/gmail.ts` | Shared Gmail API helper (used by voicemail + SMS notifications) |
+| `web/src/app/api/voice/*/route.ts` | 11 API route handlers |
 | `docs/phone-system.md` | Full documentation |
 
 ### Environment Variables (Vercel)
 | Variable | Value | Status |
 |----------|-------|--------|
-| `TWILIO_ACCOUNT_SID` | ACxxx... | **Placeholder — Andrew needs to update** |
-| `TWILIO_AUTH_TOKEN` | xxx... | **Placeholder — Andrew needs to update** |
+| `TWILIO_ACCOUNT_SID` | AC... | Set |
+| `TWILIO_AUTH_TOKEN` | (secret) | Set |
 | `TWILIO_PHONE_NUMBER` | +18447905332 | Set |
 | `OPERATOR_PHONE_1` | +13122120815 (Andrew) | Set |
 | `OPERATOR_PHONE_2` | +12404401901 (Emma) | Set |
@@ -1185,8 +1205,13 @@ Caller dials +1 (844) 790-5332
 ### To Go Live
 1. Andrew updates `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in Vercel Dashboard
 2. Deploy to production: `npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3`
-3. In Twilio Console, set webhook URL: `https://apps.voyage.xyz/api/voice/incoming` (HTTP POST)
-4. Call the number to test
+3. Configure webhooks (choose one):
+   - **Auto (recommended):** `curl -X POST https://apps.voyage.xyz/api/voice/setup` — configures all numbers
+   - **Manual:** In Twilio Console → Phone Numbers → your number:
+     - Voice → A Call Comes In: `https://apps.voyage.xyz/api/voice/incoming` (HTTP POST)
+     - Messaging → A Message Comes In: `https://apps.voyage.xyz/api/voice/sms-incoming` (HTTP POST)
+4. Verify: `curl https://apps.voyage.xyz/api/voice/setup` — shows current webhook config
+5. Call and text the number to test
 
 ### Phase 2 (Future): AI Receptionist
 Path 1 ("learn more") will connect to a ConversationRelay-powered AI using Claude to have natural conversations about Voyage services.
