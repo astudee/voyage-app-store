@@ -10,8 +10,12 @@ export function twimlResponse(body: string): Response {
   });
 }
 
-export function say(text: string, voice = "Polly.Joanna"): string {
-  return `  <Say voice="${voice}">${escapeXml(text)}</Say>`;
+export function say(
+  text: string,
+  voice = "Polly.Joanna-Generative",
+  language = "en-US"
+): string {
+  return `  <Say voice="${voice}" language="${language}">${escapeXml(text)}</Say>`;
 }
 
 export function gather(opts: {
@@ -36,12 +40,12 @@ export function gather(opts: {
 
 export function dial(opts: {
   numbers: string[];
-  callerId: string;
+  callerId?: string;
   timeout?: number;
   action?: string;
 }): string {
   const attrs = [
-    `callerId="${opts.callerId}"`,
+    opts.callerId ? `callerId="${opts.callerId}"` : "",
     `timeout="${opts.timeout || 25}"`,
     opts.action ? `action="${opts.action}"` : "",
   ]

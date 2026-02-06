@@ -5,17 +5,15 @@ import { phoneConfig } from "@/lib/phone-config";
  * POST /api/voice/voicemail-transcription
  *
  * Called asynchronously by Twilio once the voicemail transcription is ready.
- * This is where you'd send email/Slack notifications.
+ * Sends an email notification to hello@voyageadvisory.com via Resend.
  *
- * For now, logs the transcription. You can wire this up to:
- *  - SendGrid / Resend for email
- *  - Slack webhook
- *  - Google Sheets via Apps Script
- *  - Snowflake insert
+ * Required env var: RESEND_API_KEY
+ * Optional: VOICEMAIL_FROM_EMAIL (defaults to onboarding@resend.dev until
+ *           you verify your domain with Resend — then use noreply@voyageadvisory.com)
  */
 export async function POST(request: NextRequest) {
   const formData = await request.formData();
-  const transcriptionText = formData.get("TranscriptionText")?.toString() || "";
+  const transcriptionText = formData.get("TranscriptionText")?.toString() || "(transcription unavailable)";
   const recordingUrl = formData.get("RecordingUrl")?.toString() || "";
   const callerNumber = formData.get("From")?.toString() || "Unknown";
   const callSid = formData.get("CallSid")?.toString() || "";
@@ -28,29 +26,67 @@ export async function POST(request: NextRequest) {
   console.log(`  Transcription: ${transcriptionText}`);
   console.log("========================================");
 
-  // ---------------------------------------------------------
-  // TODO: Send notification email
-  // ---------------------------------------------------------
-  // Option A: Use Twilio SendGrid
-  //   npm install @sendgrid/mail
-  //
-  // Option B: Use Resend (great with Vercel)
-  //   npm install resend
-  //
-  // Option C: Hit a Google Apps Script webhook to send via Gmail
-  //   await fetch(process.env.GAS_VOICEMAIL_WEBHOOK_URL, {
-  //     method: "POST",
-  //     body: JSON.stringify({ callerNumber, transcriptionText, recordingUrl }),
-  //   });
-  //
-  // Option D: Post to a Slack webhook
-  //   await fetch(process.env.SLACK_WEBHOOK_URL, {
-  //     method: "POST",
-  //     body: JSON.stringify({
-  //       text: `New voicemail from ${callerNumber}\n\n"${transcriptionText}"\n\n${recordingUrl}`,
-  //     }),
-  //   });
-  // ---------------------------------------------------------
+  // Send email notification via Resend
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const fromEmail = process.env.VOICEMAIL_FROM_EMAIL || "onboarding@resend.dev";
+      const toEmails = phoneConfig.voicemailEmails.filter(Boolean);
+
+      if (toEmails.length > 0) {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${resendApiKey}`,
+          },
+          body: JSON.stringify({
+            from: `Voyage Phone System <${fromEmail}>`,
+            to: toEmails,
+            subject: `Voicemail from ${callerNumber}`,
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px;">
+                <h2 style="color: #1a1a2e;">New Voicemail</h2>
+                <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+                  <tr>
+                    <td style="padding: 8px 12px; font-weight: bold; color: #555;">From:</td>
+                    <td style="padding: 8px 12px;">${callerNumber}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 8px 12px; font-weight: bold; color: #555;">Transcription:</td>
+                    <td style="padding: 8px 12px; font-style: italic;">"${transcriptionText}"</td>
+                  </tr>
+                  ${recordingUrl ? `
+                  <tr>
+                    <td style="padding: 8px 12px; font-weight: bold; color: #555;">Recording:</td>
+                    <td style="padding: 8px 12px;">
+                      <a href="${recordingUrl}" style="color: #0066cc;">Listen to recording</a>
+                    </td>
+                  </tr>
+                  ` : ""}
+                </table>
+                <p style="color: #888; font-size: 12px;">
+                  Call SID: ${callSid}<br>
+                  Sent by Voyage Advisory Phone System
+                </p>
+              </div>
+            `,
+          }),
+        });
+
+        if (!response.ok) {
+          const err = await response.text();
+          console.error("[Voicemail] Resend email failed:", err);
+        } else {
+          console.log("[Voicemail] Email notification sent to:", toEmails.join(", "));
+        }
+      }
+    } catch (error) {
+      console.error("[Voicemail] Email notification error:", error);
+    }
+  } else {
+    console.warn("[Voicemail] RESEND_API_KEY not set — skipping email notification");
+  }
 
   return NextResponse.json({ status: "received" });
 }

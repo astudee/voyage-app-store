@@ -12,6 +12,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const dialCallStatus = formData.get("DialCallStatus")?.toString() || "";
   const v = phoneConfig.voice;
+  const lang = phoneConfig.voiceLanguage;
 
   // If the call was answered, Twilio already connected them — nothing to do.
   if (dialCallStatus === "completed") {

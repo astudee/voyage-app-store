@@ -3,34 +3,29 @@ import {
   twimlResponse,
   say,
   gather,
-  dial,
   redirect,
-  pause,
 } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 
 /**
  * POST /api/voice/directory
  *
- * Simple company directory. Caller can press an extension number
- * or say a person's name.
+ * Company directory. Callers can:
+ * - Say a first name, last name, or full name
+ * - Enter a 3-digit extension number
  */
 export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
 
-  const directoryEntries = phoneConfig.directory
-    .map((entry) => `For ${entry.name}, press ${entry.extension}.`)
-    .join(" ");
-
   const body = [
     gather({
       input: "dtmf speech",
-      numDigits: 1,
+      numDigits: 3,
       action: "/api/voice/directory-route",
       timeout: 5,
       speechTimeout: "auto",
       children: say(
-        `Company directory. ${directoryEntries} Or say the person's name.`,
+        "Company directory. Please say the name of the person you are trying to reach, or enter their three digit extension.",
         v
       ),
     }),

@@ -6,43 +6,37 @@ import { phoneConfig } from "@/lib/phone-config";
  * POST /api/voice/incoming
  *
  * First thing a caller hears when they dial the Voyage Advisory number.
- * Presents the main IVR menu with speech and DTMF input.
+ * Conversational greeting with speech and DTMF input.
  */
 export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
+  const lang = phoneConfig.voiceLanguage;
 
-  const greeting = [
-    say("Thank you for calling Voyage Advisory.", v),
-    pause(0.5),
-  ].join("\n");
-
-  const menuPrompt = [
-    say(
-      "To learn more about our services, press 1, or say learn more.",
-      v
-    ),
-    say(
-      "For our company directory, press 2, or say directory.",
-      v
-    ),
-    say(
-      "To speak with someone, press 0.",
-      v
-    ),
-  ].join("\n");
+  const greeting = say(
+    "Welcome to Voyage Advisory. " +
+      "You can ask to learn about our services, " +
+      "ask to speak with a specific person, " +
+      "ask to talk to sales, " +
+      "or just say help and we'll connect you with someone right away.",
+    v,
+    lang
+  );
 
   const body = [
-    greeting,
     gather({
       input: "dtmf speech",
       numDigits: 1,
       action: "/api/voice/menu",
       timeout: 6,
       speechTimeout: "auto",
-      children: menuPrompt,
+      children: greeting,
     }),
-    // If no input, replay the menu once then go to operator
-    say("We didn't catch that. Let us connect you to someone.", v),
+    // If no input, try once more then connect to operator
+    say(
+      "I didn't catch that. Let me connect you with someone who can help.",
+      v,
+      lang
+    ),
     redirect("/api/voice/operator"),
   ].join("\n");
 

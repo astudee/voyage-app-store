@@ -10,9 +10,10 @@ import { phoneConfig } from "@/lib/phone-config";
  */
 export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
+  const lang = phoneConfig.voiceLanguage;
 
   const body = [
-    say("One moment while I connect you.", v),
+    say("One moment while I connect you.", v, lang),
     pause(0.5),
     dial({
       numbers: [...phoneConfig.operatorNumbers],
