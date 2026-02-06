@@ -44,8 +44,8 @@ export async function POST(request: NextRequest) {
     const body = [
       say("One moment while I connect you.", v, lang),
       pause(1),
-      `  <Dial action="${B}/api/voice/operator-status">`,
-      `    <Conference waitUrl="${B}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+      `  <Dial action="${escapeAttr(`${B}/api/voice/operator-status`)}">`,
+      `    <Conference waitUrl="${escapeAttr(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
       `      ${confName}`,
       `    </Conference>`,
       `  </Dial>`,
@@ -58,6 +58,11 @@ export async function POST(request: NextRequest) {
       say("We're experiencing a technical issue. Please try again later.", phoneConfig.voice, phoneConfig.voiceLanguage)
     );
   }
+}
+
+/** Escape special XML characters in attribute values */
+function escapeAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export async function GET(request: NextRequest) {

@@ -1,6 +1,9 @@
 /**
  * Lightweight TwiML helper — generates Twilio XML without pulling in the full SDK.
  * Keeps the Vercel bundle small and deployment fast.
+ *
+ * IMPORTANT: All URL values are XML-escaped automatically. Callers should pass
+ * normal URLs with & (not &amp;) — the helpers handle escaping.
  */
 
 export function twimlResponse(body: string): Response {
@@ -29,7 +32,7 @@ export function gather(opts: {
   const attrs = [
     `input="${opts.input || "dtmf speech"}"`,
     opts.numDigits ? `numDigits="${opts.numDigits}"` : "",
-    `action="${opts.action}"`,
+    `action="${escapeXml(opts.action)}"`,
     `timeout="${opts.timeout || 5}"`,
     opts.speechTimeout ? `speechTimeout="${opts.speechTimeout}"` : "",
   ]
@@ -47,14 +50,14 @@ export function dial(opts: {
   const attrs = [
     opts.callerId ? `callerId="${opts.callerId}"` : "",
     `timeout="${opts.timeout || 25}"`,
-    opts.action ? `action="${opts.action}"` : "",
+    opts.action ? `action="${escapeXml(opts.action)}"` : "",
   ]
     .filter(Boolean)
     .join(" ");
   const numberTags = opts.numbers
     .map((n) => {
       if (typeof n === "string") return `    <Number>${n}</Number>`;
-      const urlAttr = n.url ? ` url="${n.url}"` : "";
+      const urlAttr = n.url ? ` url="${escapeXml(n.url)}"` : "";
       return `    <Number${urlAttr}>${n.number}</Number>`;
     })
     .join("\n");
@@ -69,11 +72,11 @@ export function record(opts: {
   playBeep?: boolean;
 }): string {
   const attrs = [
-    `action="${opts.action}"`,
+    `action="${escapeXml(opts.action)}"`,
     `maxLength="${opts.maxLength || 120}"`,
     opts.transcribe !== false ? `transcribe="true"` : "",
     opts.transcribeCallback
-      ? `transcribeCallback="${opts.transcribeCallback}"`
+      ? `transcribeCallback="${escapeXml(opts.transcribeCallback)}"`
       : "",
     opts.playBeep !== false ? `playBeep="true"` : "",
   ]
@@ -83,7 +86,7 @@ export function record(opts: {
 }
 
 export function redirect(url: string): string {
-  return `  <Redirect>${url}</Redirect>`;
+  return `  <Redirect>${escapeXml(url)}</Redirect>`;
 }
 
 export function pause(length = 1): string {

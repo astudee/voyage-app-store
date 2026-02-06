@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
         say(`Connecting you to ${match.firstName.replace("Randy/Holly", "Holly")} ${match.lastName}.`, v, lang),
         pause(1),
         // No callerId override — caller's real number passes through
-        `  <Dial timeout="${phoneConfig.ringTimeout}" action="${B}/api/voice/operator-status">`,
+        `  <Dial timeout="${phoneConfig.ringTimeout}" action="${esc(`${B}/api/voice/operator-status`)}">`,
         `    <Number>${match.number}</Number>`,
         `  </Dial>`,
       ].join("\n")
@@ -154,6 +154,11 @@ function findDirectoryMatches(
 
   // Return top matches (up to 3) for disambiguation
   return scored.slice(0, 3).map((s) => s.entry);
+}
+
+/** Escape XML special chars in attribute values */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export async function GET(request: NextRequest) {

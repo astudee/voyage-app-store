@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
         [
           say("Let me connect you with our team.", v, lang),
           pause(1),
-          `  <Dial action="${B}/api/voice/operator-status">`,
-          `    <Conference waitUrl="${B}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+          `  <Dial action="${esc(`${B}/api/voice/operator-status`)}">`,
+          `    <Conference waitUrl="${esc(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
           `      ${confName}`,
           `    </Conference>`,
           `  </Dial>`,
@@ -159,6 +159,11 @@ function routeFromInput(
   }
 
   return { route: "unknown" };
+}
+
+/** Escape XML special chars in attribute values */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export async function GET(request: NextRequest) {
