@@ -10,6 +10,8 @@ import { dialTeamForConference } from "@/lib/twilio-api";
  * Used as a redirect target from services overview and services-menu.
  */
 export async function POST(request: NextRequest) {
+  const B = phoneConfig.baseUrl;
+
   try {
     const formData = await request.formData();
     const callerNumber = formData.get("From")?.toString() || "unknown";
@@ -26,7 +28,7 @@ export async function POST(request: NextRequest) {
         confName,
         callType: "sales",
         callerNumber,
-        baseUrl: phoneConfig.baseUrl,
+        baseUrl: B,
         timeout: phoneConfig.ringTimeout,
       });
     } catch (dialErr) {
@@ -36,9 +38,9 @@ export async function POST(request: NextRequest) {
     return twimlResponse(
       [
         say("Let me connect you with someone who can tell you more.", v, lang),
-        pause(0.5),
-        `  <Dial action="/api/voice/operator-status">`,
-        `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+        pause(1),
+        `  <Dial action="${B}/api/voice/operator-status">`,
+        `    <Conference waitUrl="${B}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
         `      ${confName}`,
         `    </Conference>`,
         `  </Dial>`,

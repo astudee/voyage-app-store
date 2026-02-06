@@ -22,13 +22,15 @@ export async function POST(request: NextRequest) {
     lang
   );
 
+  const B = phoneConfig.baseUrl;
+
   const body = [
     // Pause before Gather prevents connection noise from triggering speech recognition
     pause(1),
     gather({
       input: "dtmf speech",
       numDigits: 1,
-      action: "/api/voice/menu",
+      action: `${B}/api/voice/menu`,
       timeout: 6,
       speechTimeout: "auto",
       // Pause inside Gather delays when DTMF/speech input is accepted
@@ -40,7 +42,7 @@ export async function POST(request: NextRequest) {
       v,
       lang
     ),
-    redirect("/api/voice/operator"),
+    redirect(`${B}/api/voice/operator`),
   ].join("\n");
 
   return twimlResponse(body);

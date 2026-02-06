@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
   const callerNumber = formData.get("From")?.toString() || "unknown";
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
+  const B = phoneConfig.baseUrl;
 
   const path = routeFromInput(digits, speech);
 
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
           gather({
             input: "dtmf speech",
             numDigits: 1,
-            action: "/api/voice/services-menu",
+            action: `${B}/api/voice/services-menu`,
             timeout: 4,
             speechTimeout: "auto",
             children: say(
@@ -40,17 +41,17 @@ export async function POST(request: NextRequest) {
             ),
           }),
           // No input within timeout → redirect to sales-transfer which sets up conference
-          redirect("/api/voice/sales-transfer"),
+          redirect(`${B}/api/voice/sales-transfer`),
         ].join("\n")
       );
 
     case "directory":
-      return twimlResponse(redirect("/api/voice/directory"));
+      return twimlResponse(redirect(`${B}/api/voice/directory`));
 
     case "directory-direct":
       // Caller said a person's name directly from the main menu — skip the directory prompt
       // and go straight to the directory router with the speech result
-      return twimlResponse(redirect(`/api/voice/directory-route?speech=${encodeURIComponent(path.nameQuery || "")}`));
+      return twimlResponse(redirect(`${B}/api/voice/directory-route?speech=${encodeURIComponent(path.nameQuery || "")}`));
 
     case "sales": {
       // Sales → conference with hold music + dial sales team
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
           confName,
           callType: "sales",
           callerNumber,
-          baseUrl: phoneConfig.baseUrl,
+          baseUrl: B,
           timeout: phoneConfig.ringTimeout,
         });
       } catch (dialErr) {
@@ -72,9 +73,9 @@ export async function POST(request: NextRequest) {
       return twimlResponse(
         [
           say("Let me connect you with our team.", v, lang),
-          pause(0.5),
-          `  <Dial action="/api/voice/operator-status">`,
-          `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+          pause(1),
+          `  <Dial action="${B}/api/voice/operator-status">`,
+          `    <Conference waitUrl="${B}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
           `      ${confName}`,
           `    </Conference>`,
           `  </Dial>`,
@@ -83,13 +84,13 @@ export async function POST(request: NextRequest) {
     }
 
     case "operator":
-      return twimlResponse(redirect("/api/voice/operator"));
+      return twimlResponse(redirect(`${B}/api/voice/operator`));
 
     default:
       return twimlResponse(
         [
           say("Sorry, I didn't quite get that. Let me connect you with someone who can help.", v, lang),
-          redirect("/api/voice/operator"),
+          redirect(`${B}/api/voice/operator`),
         ].join("\n")
       );
   }

@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
   const speech = formData.get("SpeechResult")?.toString().toLowerCase() || "";
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
+  const B = phoneConfig.baseUrl;
 
   // Hear again — replay the overview with the same gather
   if (
@@ -31,13 +32,13 @@ export async function POST(request: NextRequest) {
         gather({
           input: "dtmf speech",
           numDigits: 1,
-          action: "/api/voice/services-menu",
+          action: `${B}/api/voice/services-menu`,
           timeout: 4,
           speechTimeout: "auto",
           children: say(SERVICES_OVERVIEW, v, lang),
         }),
         // No input → transfer to sales via conference
-        redirect("/api/voice/sales-transfer"),
+        redirect(`${B}/api/voice/sales-transfer`),
       ].join("\n")
     );
   }
@@ -53,13 +54,13 @@ export async function POST(request: NextRequest) {
     return twimlResponse(
       [
         say("Returning to the main menu.", v, lang),
-        redirect("/api/voice/incoming"),
+        redirect(`${B}/api/voice/incoming`),
       ].join("\n")
     );
   }
 
   // Talk to someone / connect / anything else → transfer to sales via conference
-  return twimlResponse(redirect("/api/voice/sales-transfer"));
+  return twimlResponse(redirect(`${B}/api/voice/sales-transfer`));
 }
 
 export async function GET(request: NextRequest) {

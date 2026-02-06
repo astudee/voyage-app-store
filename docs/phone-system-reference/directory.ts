@@ -3,36 +3,40 @@ import {
   twimlResponse,
   say,
   gather,
+  dial,
   redirect,
+  pause,
 } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 
 /**
  * POST /api/voice/directory
  *
- * Company directory. Callers can:
- * - Say a first name, last name, or full name
- * - Enter a 3-digit extension number
+ * Simple company directory. Caller can press an extension number
+ * or say a person's name.
  */
 export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
-  const B = phoneConfig.baseUrl;
+
+  const directoryEntries = phoneConfig.directory
+    .map((entry) => `For ${entry.name}, press ${entry.extension}.`)
+    .join(" ");
 
   const body = [
     gather({
       input: "dtmf speech",
-      numDigits: 3,
-      action: `${B}/api/voice/directory-route`,
+      numDigits: 1,
+      action: "/api/voice/directory-route",
       timeout: 5,
       speechTimeout: "auto",
       children: say(
-        "Company directory. Please say the name of the person you are trying to reach, enter their three digit extension, or say main menu to go back.",
+        `Company directory. ${directoryEntries} Or say the person's name.`,
         v
       ),
     }),
     // No input — go back to main menu
     say("No selection made. Returning to the main menu.", v),
-    redirect(`${B}/api/voice/incoming`),
+    redirect("/api/voice/incoming"),
   ].join("\n");
 
   return twimlResponse(body);

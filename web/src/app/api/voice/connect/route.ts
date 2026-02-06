@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     const label = callType === "sales" ? "Voyage sales call" : "Voyage operator call";
 
     const acceptUrl =
-      `/api/voice/connect` +
+      `${phoneConfig.baseUrl}/api/voice/connect` +
       `?conf=${encodeURIComponent(confName)}` +
       `&type=${encodeURIComponent(callType)}` +
       `&caller=${encodeURIComponent(callerNumber)}` +

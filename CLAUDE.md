@@ -218,14 +218,7 @@ All 22 apps migrated. Streamlit has been completely removed from the project.
 
 **Location:** `/workspaces/voyage-app-store/uploads/`
 
-This is where reference files are uploaded for Claude to review:
-- Excel exports from Google Sheets
-- Brand identity assets
-- Any other reference materials
-
-**Current Files:**
-- `Voyage_Global_Config 2026.01.21.xlsx` - Original Google Sheets config (7 tabs: Rules, Offsets, Staff, Benefits, Mapping, Assignments, FixedFee)
-- `voyage-identity/` - Brand assets and logo files
+This folder is for temporary uploads and reference files — things the user shares for Claude to review (Excel exports, screenshots, instruction docs, code snippets, etc.). Files here may come and go. **Never use this folder as a source directory for application code or data.** If something from uploads needs to be kept permanently, move it to `docs/` instead.
 
 ---
 

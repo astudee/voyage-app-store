@@ -11,14 +11,12 @@ import { phoneConfig } from "@/lib/phone-config";
 export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
 
-  const B = phoneConfig.baseUrl;
-
   const body = [
     record({
-      action: `${B}/api/voice/voicemail-complete`,
+      action: "/api/voice/voicemail-complete",
       maxLength: phoneConfig.voicemailMaxLength,
       transcribe: true,
-      transcribeCallback: `${B}/api/voice/voicemail-transcription`,
+      transcribeCallback: "/api/voice/voicemail-transcription",
       playBeep: true,
     }),
     // If caller hangs up without recording

@@ -25,6 +25,7 @@ export async function POST(request: NextRequest) {
 
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
+  const B = phoneConfig.baseUrl;
 
   // Check for main menu / go back requests
   const menuWords = ["main menu", "go back", "back", "menu", "start over"];
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     return twimlResponse(
       [
         say("Returning to the main menu.", v, lang),
-        redirect("/api/voice/incoming"),
+        redirect(`${B}/api/voice/incoming`),
       ].join("\n")
     );
   }
@@ -44,7 +45,7 @@ export async function POST(request: NextRequest) {
     return twimlResponse(
       [
         say("Sorry, I couldn't find that person in our directory. Let me try again.", v, lang),
-        redirect("/api/voice/directory"),
+        redirect(`${B}/api/voice/directory`),
       ].join("\n")
     );
   }
@@ -55,9 +56,9 @@ export async function POST(request: NextRequest) {
     return twimlResponse(
       [
         say(`Connecting you to ${match.firstName.replace("Randy/Holly", "Holly")} ${match.lastName}.`, v, lang),
-        pause(0.5),
+        pause(1),
         // No callerId override — caller's real number passes through
-        `  <Dial timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
+        `  <Dial timeout="${phoneConfig.ringTimeout}" action="${B}/api/voice/operator-status">`,
         `    <Number>${match.number}</Number>`,
         `  </Dial>`,
       ].join("\n")
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
     gather({
       input: "dtmf speech",
       numDigits: 3,
-      action: "/api/voice/directory-route",
+      action: `${B}/api/voice/directory-route`,
       timeout: 8,
       speechTimeout: "auto",
       children: say(

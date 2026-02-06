@@ -15,6 +15,8 @@ import { dialTeamForConference } from "@/lib/twilio-api";
  * caller is routed to voicemail via the Dial action URL.
  */
 export async function POST(request: NextRequest) {
+  const B = phoneConfig.baseUrl;
+
   try {
     const formData = await request.formData();
     const callerNumber = formData.get("From")?.toString() || "unknown";
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
         confName,
         callType: "operator",
         callerNumber,
-        baseUrl: phoneConfig.baseUrl,
+        baseUrl: B,
         timeout: phoneConfig.ringTimeout,
       });
     } catch (dialErr) {
@@ -41,9 +43,9 @@ export async function POST(request: NextRequest) {
     // Put caller into conference with hold music
     const body = [
       say("One moment while I connect you.", v, lang),
-      pause(0.5),
-      `  <Dial action="/api/voice/operator-status">`,
-      `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+      pause(1),
+      `  <Dial action="${B}/api/voice/operator-status">`,
+      `    <Conference waitUrl="${B}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
       `      ${confName}`,
       `    </Conference>`,
       `  </Dial>`,

@@ -12,7 +12,6 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const dialCallStatus = formData.get("DialCallStatus")?.toString() || "";
   const v = phoneConfig.voice;
-  const lang = phoneConfig.voiceLanguage;
 
   // If the call was answered, Twilio already connected them — nothing to do.
   if (dialCallStatus === "completed") {
@@ -26,7 +25,7 @@ export async function POST(request: NextRequest) {
         "Sorry, no one is available right now. Please leave a message after the tone and we'll get back to you as soon as possible.",
         v
       ),
-      redirect(`${phoneConfig.baseUrl}/api/voice/voicemail`),
+      redirect("/api/voice/voicemail"),
     ].join("\n")
   );
 }
