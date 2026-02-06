@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
       timeout: 5,
       speechTimeout: "auto",
       children: say(
-        "Company directory. Please say the name of the person you are trying to reach, or enter their three digit extension.",
+        "Company directory. Please say the name of the person you are trying to reach, enter their three digit extension, or say main menu to go back.",
         v
       ),
     }),

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { twimlResponse, say, redirect } from "@/lib/twiml";
+import { twimlResponse, say, gather, redirect } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 
 /**
@@ -20,14 +20,24 @@ export async function POST(request: NextRequest) {
 
   switch (path.route) {
     case "services":
-      // Services / learn more → ring Andrew + David (same as sales)
+      // Services / learn more → read overview, then offer options with short timeout
       return twimlResponse(
         [
-          say(
-            "Voyage Advisory is a management consulting firm. We help clients elevate service, drive performance, and power transformation. We work across a variety of industries including utilities, financial services, supply chain, and the public sector. Let me connect you with someone who can tell you more.",
-            v,
-            lang
-          ),
+          gather({
+            input: "dtmf speech",
+            numDigits: 1,
+            action: "/api/voice/services-menu",
+            timeout: 4,
+            speechTimeout: "auto",
+            children: say(
+              "Voyage Advisory is a management consulting firm. We help clients elevate service, drive performance, and power transformation. We work across a variety of industries including utilities, financial services, supply chain, and the public sector. " +
+                "To hear this again, press 1. To return to the main menu, press 2. Or stay on the line and I'll connect you with someone.",
+              v,
+              lang
+            ),
+          }),
+          // No input within timeout → transfer to sales
+          say("Let me connect you with someone who can tell you more.", v, lang),
           `  <Dial timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
           `    <Number>${phoneConfig.salesNumbers[0]}</Number>`,
           `    <Number>${phoneConfig.salesNumbers[1]}</Number>`,

@@ -26,6 +26,17 @@ export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
 
+  // Check for main menu / go back requests
+  const menuWords = ["main menu", "go back", "back", "menu", "start over"];
+  if (menuWords.some((w) => speech.includes(w))) {
+    return twimlResponse(
+      [
+        say("Returning to the main menu.", v, lang),
+        redirect("/api/voice/incoming"),
+      ].join("\n")
+    );
+  }
+
   const matches = findDirectoryMatches(digits, speech);
 
   // No match
