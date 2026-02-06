@@ -1161,10 +1161,11 @@ All polish items fixed:
 ```
 Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
   → POST /api/voice/incoming → Greeting + IVR menu
-  → Press 1 (services) → Brief overview → Transfer to operator
-  → Press 2 (directory) → Andrew (ext 1), Emma (ext 2)
-  → Press 0 (operator) → Rings Andrew + Emma simultaneously
-    → No answer → Voicemail → Transcribed → Logged
+  → Press 1 (services) → Overview → Options: hear again (1), main menu (2), or wait to connect
+    → No input after 4s → Auto-transfer to sales (Andrew + David)
+  → Press 2 (directory) → Say name, extension, or "main menu" to go back
+  → Press 0 (operator) → Rings Andrew + Emma + Olivia simultaneously
+    → No answer → Voicemail → Transcribed → Emailed
 ```
 
 ### API Routes (all unauthenticated — Twilio webhooks)
@@ -1178,8 +1179,9 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 | `POST /api/voice/directory-route` | Connects to selected person |
 | `POST /api/voice/voicemail` | Records voicemail |
 | `POST /api/voice/voicemail-complete` | Thanks caller, hangs up |
-| `POST /api/voice/voicemail-transcription` | Receives transcription, emails to hello@ |
-| `POST /api/voice/sms-incoming` | Incoming SMS → emails to hello@ (with MMS attachments) |
+| `POST /api/voice/voicemail-transcription` | Receives transcription, emails to hello@ + astudee@ |
+| `POST /api/voice/sms-incoming` | Incoming SMS → emails to hello@ + astudee@ |
+| `POST /api/voice/services-menu` | Post-overview options: hear again, main menu, or connect |
 | `GET /api/voice/setup` | Show current Twilio webhook config for all numbers |
 | `POST /api/voice/setup` | Configure voice + SMS webhooks on all Twilio numbers |
 
