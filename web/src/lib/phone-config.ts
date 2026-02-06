@@ -71,12 +71,10 @@ export const phoneConfig = {
   baseUrl: process.env.PHONE_SYSTEM_BASE_URL || "https://your-app.vercel.app",
 
   // TTS voice — Generative voices sound most natural
-  // Options (best to worst):
-  //   "Polly.Joanna-Generative"          — best Polly, very natural (public beta)
-  //   "Google.en-US-Chirp3-HD-Leda"      — best Google, very natural (public beta)
-  //   "Polly.Joanna-Neural"              — good, clearly synthesized but smooth
-  //   "Polly.Joanna"                     — standard, robotic
+  // Google Chirp3-HD (female): Aoede, Kore, Leda, Zephyr
+  // Google Chirp3-HD (male): Puck, Charon, Fenrir, Orus
+  // Amazon Polly Generative: Polly.Joanna-Generative
   // Note: Generative voices require language="en-US" on the <Say> tag
-  voice: "Polly.Joanna-Generative" as const,
+  voice: "Google.en-US-Chirp3-HD-Aoede" as const,
   voiceLanguage: "en-US" as const,
 } as const;
