@@ -23,13 +23,16 @@ export async function POST(request: NextRequest) {
   );
 
   const body = [
+    // Pause before Gather prevents connection noise from triggering speech recognition
+    pause(1),
     gather({
       input: "dtmf speech",
       numDigits: 1,
       action: "/api/voice/menu",
       timeout: 6,
       speechTimeout: "auto",
-      children: greeting,
+      // Pause inside Gather delays when DTMF/speech input is accepted
+      children: pause(1) + "\n" + greeting,
     }),
     // If no input, try once more then connect to operator
     say(
