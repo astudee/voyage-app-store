@@ -55,15 +55,19 @@ export async function POST(request: NextRequest) {
     case "sales": {
       // Sales → conference with hold music + dial sales team
       const confName = `voyage-sales-${Date.now()}`;
-      await dialTeamForConference({
-        numbers: [...phoneConfig.salesNumbers],
-        from: phoneConfig.twilioNumber,
-        confName,
-        callType: "sales",
-        callerNumber,
-        baseUrl: phoneConfig.baseUrl,
-        timeout: phoneConfig.ringTimeout,
-      });
+      try {
+        await dialTeamForConference({
+          numbers: [...phoneConfig.salesNumbers],
+          from: phoneConfig.twilioNumber,
+          confName,
+          callType: "sales",
+          callerNumber,
+          baseUrl: phoneConfig.baseUrl,
+          timeout: phoneConfig.ringTimeout,
+        });
+      } catch (dialErr) {
+        console.error("[menu/sales] Failed to dial team:", dialErr);
+      }
 
       return twimlResponse(
         [

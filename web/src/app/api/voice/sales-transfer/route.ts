@@ -10,35 +10,46 @@ import { dialTeamForConference } from "@/lib/twilio-api";
  * Used as a redirect target from services overview and services-menu.
  */
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
-  const callerNumber = formData.get("From")?.toString() || "unknown";
-  const v = phoneConfig.voice;
-  const lang = phoneConfig.voiceLanguage;
+  try {
+    const formData = await request.formData();
+    const callerNumber = formData.get("From")?.toString() || "unknown";
+    const v = phoneConfig.voice;
+    const lang = phoneConfig.voiceLanguage;
 
-  const confName = `voyage-sales-${Date.now()}`;
+    const confName = `voyage-sales-${Date.now()}`;
 
-  // Fire off outbound calls to sales team (must await on Vercel)
-  await dialTeamForConference({
-    numbers: [...phoneConfig.salesNumbers],
-    from: phoneConfig.twilioNumber,
-    confName,
-    callType: "sales",
-    callerNumber,
-    baseUrl: phoneConfig.baseUrl,
-    timeout: phoneConfig.ringTimeout,
-  });
+    // Fire off outbound calls to sales team — errors must not block TwiML
+    try {
+      await dialTeamForConference({
+        numbers: [...phoneConfig.salesNumbers],
+        from: phoneConfig.twilioNumber,
+        confName,
+        callType: "sales",
+        callerNumber,
+        baseUrl: phoneConfig.baseUrl,
+        timeout: phoneConfig.ringTimeout,
+      });
+    } catch (dialErr) {
+      console.error("[sales-transfer] Failed to dial team:", dialErr);
+    }
 
-  return twimlResponse(
-    [
-      say("Let me connect you with someone who can tell you more.", v, lang),
-      pause(0.5),
-      `  <Dial action="/api/voice/operator-status">`,
-      `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
-      `      ${confName}`,
-      `    </Conference>`,
-      `  </Dial>`,
-    ].join("\n")
-  );
+    return twimlResponse(
+      [
+        say("Let me connect you with someone who can tell you more.", v, lang),
+        pause(0.5),
+        `  <Dial action="/api/voice/operator-status">`,
+        `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+        `      ${confName}`,
+        `    </Conference>`,
+        `  </Dial>`,
+      ].join("\n")
+    );
+  } catch (err) {
+    console.error("[sales-transfer] Unhandled error:", err);
+    return twimlResponse(
+      say("We're experiencing a technical issue. Please try again later.", phoneConfig.voice, phoneConfig.voiceLanguage)
+    );
+  }
 }
 
 export async function GET(request: NextRequest) {
