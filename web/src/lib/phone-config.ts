@@ -6,8 +6,8 @@
  */
 
 export const phoneConfig = {
-  // Primary Twilio phone number
-  twilioNumber: process.env.TWILIO_PHONE_NUMBER || "+12029984405",
+  // Primary Twilio phone number (set in Vercel env: +12029984405)
+  twilioNumber: process.env.TWILIO_PHONE_NUMBER || "+1XXXXXXXXXX",
 
   // Operator path (press 0 / help / catch-all) — ring these simultaneously
   operatorNumbers: [
