@@ -12,11 +12,12 @@ export async function POST(request: NextRequest) {
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
 
+  const screenUrl = `${phoneConfig.baseUrl}/api/voice/screen?type=operator`;
   const body = [
     say("One moment while I connect you.", v, lang),
     pause(0.5),
     dial({
-      numbers: [...phoneConfig.operatorNumbers],
+      numbers: phoneConfig.operatorNumbers.map((n) => ({ number: n, url: screenUrl })),
       callerId: phoneConfig.twilioNumber,
       timeout: phoneConfig.ringTimeout,
       action: "/api/voice/operator-status",

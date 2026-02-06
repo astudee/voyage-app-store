@@ -38,9 +38,9 @@ export async function POST(request: NextRequest) {
           }),
           // No input within timeout → transfer to sales
           say("Let me connect you with someone who can tell you more.", v, lang),
-          `  <Dial timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-          `    <Number>${phoneConfig.salesNumbers[0]}</Number>`,
-          `    <Number>${phoneConfig.salesNumbers[1]}</Number>`,
+          `  <Dial callerId="${phoneConfig.twilioNumber}" timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
+          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[0]}</Number>`,
+          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[1]}</Number>`,
           `  </Dial>`,
         ].join("\n")
       );
@@ -58,9 +58,9 @@ export async function POST(request: NextRequest) {
       return twimlResponse(
         [
           say("Let me connect you with our team.", v, lang),
-          `  <Dial timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-          `    <Number>${phoneConfig.salesNumbers[0]}</Number>`,
-          `    <Number>${phoneConfig.salesNumbers[1]}</Number>`,
+          `  <Dial callerId="${phoneConfig.twilioNumber}" timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
+          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[0]}</Number>`,
+          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[1]}</Number>`,
           `  </Dial>`,
         ].join("\n")
       );

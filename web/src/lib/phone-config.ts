@@ -23,7 +23,8 @@ export const phoneConfig = {
   ],
 
   // How long to ring before going to voicemail (seconds)
-  ringTimeout: 25,
+  // Keep shorter than cell voicemail (~25s) so our VM catches first
+  ringTimeout: 18,
 
   // Voicemail max length (seconds)
   voicemailMaxLength: 120,

@@ -39,7 +39,7 @@ export function gather(opts: {
 }
 
 export function dial(opts: {
-  numbers: string[];
+  numbers: (string | { number: string; url?: string })[];
   callerId?: string;
   timeout?: number;
   action?: string;
@@ -52,7 +52,11 @@ export function dial(opts: {
     .filter(Boolean)
     .join(" ");
   const numberTags = opts.numbers
-    .map((n) => `    <Number>${n}</Number>`)
+    .map((n) => {
+      if (typeof n === "string") return `    <Number>${n}</Number>`;
+      const urlAttr = n.url ? ` url="${n.url}"` : "";
+      return `    <Number${urlAttr}>${n.number}</Number>`;
+    })
     .join("\n");
   return `  <Dial ${attrs}>\n${numberTags}\n  </Dial>`;
 }
