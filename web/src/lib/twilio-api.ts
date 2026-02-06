@@ -99,3 +99,77 @@ export async function dialTeamForConference(opts: {
   // so we must ensure the REST API calls complete first.
   await Promise.all(promises);
 }
+
+/**
+ * Send the caller in a conference to voicemail.
+ * Finds the in-progress conference by name, lists its participants,
+ * and redirects each participant's call to the voicemail URL.
+ *
+ * Used when a team member presses 2 (reject) during screening.
+ * Errors are logged but never thrown — caller falls back to hold music timeout.
+ */
+export async function sendCallerToVoicemail(
+  confName: string,
+  voicemailUrl: string
+): Promise<void> {
+  const { accountSid, authToken } = getCredentials();
+  const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+
+  // 1. Find the conference by friendly name
+  const confRes = await fetch(
+    `${BASE_URL}/Accounts/${accountSid}/Conferences.json?FriendlyName=${encodeURIComponent(confName)}&Status=in-progress`,
+    { headers: { Authorization: authHeader } }
+  );
+
+  if (!confRes.ok) {
+    console.error("[sendCallerToVoicemail] Failed to find conference:", await confRes.text());
+    return;
+  }
+
+  const confData = await confRes.json();
+  const conferences = confData.conferences || [];
+  if (conferences.length === 0) {
+    console.error("[sendCallerToVoicemail] No in-progress conference:", confName);
+    return;
+  }
+
+  const confSid = conferences[0].sid;
+
+  // 2. List participants in the conference
+  const partRes = await fetch(
+    `${BASE_URL}/Accounts/${accountSid}/Conferences/${confSid}/Participants.json`,
+    { headers: { Authorization: authHeader } }
+  );
+
+  if (!partRes.ok) {
+    console.error("[sendCallerToVoicemail] Failed to list participants:", await partRes.text());
+    return;
+  }
+
+  const partData = await partRes.json();
+  const participants = partData.participants || [];
+  if (participants.length === 0) {
+    console.error("[sendCallerToVoicemail] No participants in conference:", confName);
+    return;
+  }
+
+  // 3. Redirect each participant's call to the voicemail URL
+  for (const p of participants) {
+    try {
+      await fetch(`${BASE_URL}/Accounts/${accountSid}/Calls/${p.call_sid}.json`, {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          Url: voicemailUrl,
+          Method: "POST",
+        }).toString(),
+      });
+      console.log(`[sendCallerToVoicemail] Redirected ${p.call_sid} to voicemail`);
+    } catch (err) {
+      console.error(`[sendCallerToVoicemail] Failed to redirect ${p.call_sid}:`, err);
+    }
+  }
+}

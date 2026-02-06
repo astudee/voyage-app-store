@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { twimlResponse, say, gather } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
+import { sendCallerToVoicemail } from "@/lib/twilio-api";
 
 /**
  * POST /api/voice/connect
@@ -40,7 +41,16 @@ export async function POST(request: NextRequest) {
           `  <Dial><Conference beep="false" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
         );
       }
-      // Reject or other key — hang up this leg
+      // Press 2 — explicitly send caller to voicemail via REST API
+      if (digits === "2") {
+        try {
+          const voicemailUrl = `${phoneConfig.baseUrl}/api/voice/operator-status?action=voicemail`;
+          await sendCallerToVoicemail(confName, voicemailUrl);
+        } catch (err) {
+          console.error("[connect] Failed to redirect caller to voicemail:", err);
+        }
+      }
+      // Hang up this team member's leg
       return twimlResponse(`  <Hangup />`);
     }
 
