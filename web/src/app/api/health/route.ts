@@ -872,6 +872,61 @@ async function checkZendesk(): Promise<HealthResult> {
   }
 }
 
+// Check Twilio API
+async function checkTwilio(): Promise<HealthResult> {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  const phoneNumber = process.env.TWILIO_PHONE_NUMBER;
+
+  if (!accountSid || !authToken || accountSid.startsWith("ACxxx")) {
+    return {
+      status: "not_configured",
+      message: "Twilio not configured",
+      details: "Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to environment variables",
+    };
+  }
+
+  try {
+    const credentials = Buffer.from(`${accountSid}:${authToken}`).toString("base64");
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${accountSid}.json`,
+      {
+        headers: {
+          Authorization: `Basic ${credentials}`,
+        },
+      }
+    );
+
+    if (response.status === 200) {
+      const data = await response.json();
+      const friendlyName = data.friendly_name || accountSid;
+      const status = data.status || "unknown";
+      return {
+        status: status === "active" ? "success" : "warning",
+        message: status === "active" ? "Connected successfully" : `Account status: ${status}`,
+        details: `Account: ${friendlyName}. Phone: ${phoneNumber || "not set"}.`,
+      };
+    } else if (response.status === 401) {
+      return {
+        status: "error",
+        message: "Authentication failed",
+        details: "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN is invalid",
+      };
+    }
+    return {
+      status: "error",
+      message: `HTTP ${response.status}`,
+      details: (await response.text()).substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
 // GET /api/health - Run all health checks
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -892,6 +947,7 @@ export async function GET(request: Request) {
     bigtime,
     quickbooks,
     zendesk,
+    twilio,
     cloudflareR2,
     claude,
     chatgpt,
@@ -906,6 +962,7 @@ export async function GET(request: Request) {
     checkBigTime(),
     checkQuickBooks(),
     checkZendesk(),
+    checkTwilio(),
     checkCloudflareR2(),
     checkClaude(),
     checkChatGPT(),
@@ -922,6 +979,7 @@ export async function GET(request: Request) {
   results["QuickBooks"] = quickbooks;
   results["Pipedrive"] = pipedrive;
   results["Zendesk"] = zendesk;
+  results["Twilio"] = twilio;
   results["Cloudflare R2"] = cloudflareR2;
   results["Google Drive"] = googleDrive;
   results["Google Docs"] = googleDocs;
