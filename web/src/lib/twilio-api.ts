@@ -94,6 +94,8 @@ export async function dialTeamForConference(opts: {
     })
   );
 
-  // Fire all calls in parallel, don't wait for completion
-  Promise.all(promises).catch(console.error);
+  // Wait for all outbound calls to be created before returning.
+  // On Vercel, the serverless function freezes after the response is sent,
+  // so we must ensure the REST API calls complete first.
+  await Promise.all(promises);
 }

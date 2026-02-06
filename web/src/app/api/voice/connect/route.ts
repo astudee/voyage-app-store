@@ -19,58 +19,64 @@ import { phoneConfig } from "@/lib/phone-config";
  *   3. Press 2 or timeout → hangs up (caller stays on hold)
  */
 export async function POST(request: NextRequest) {
-  const formData = await request.formData();
-  const digits = formData.get("Digits")?.toString() || "";
+  try {
+    const formData = await request.formData();
+    const digits = formData.get("Digits")?.toString() || "";
 
-  const url = request.nextUrl;
-  const confName = url.searchParams.get("conf") || "";
-  const callType = url.searchParams.get("type") || "operator";
-  const callerNumber = url.searchParams.get("caller") || "unknown";
-  const isAcceptPhase = url.searchParams.get("accept") === "1";
+    const url = request.nextUrl;
+    const confName = url.searchParams.get("conf") || "";
+    const callType = url.searchParams.get("type") || "operator";
+    const callerNumber = url.searchParams.get("caller") || "unknown";
+    const isAcceptPhase = url.searchParams.get("accept") === "1";
 
-  const v = phoneConfig.voice;
-  const lang = phoneConfig.voiceLanguage;
+    const v = phoneConfig.voice;
+    const lang = phoneConfig.voiceLanguage;
 
-  // Phase 2: They pressed a key during screening
-  if (isAcceptPhase) {
-    if (digits === "1") {
-      // Accept — join the conference
-      return twimlResponse(
-        `  <Dial><Conference beep="false" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
-      );
+    // Phase 2: They pressed a key during screening
+    if (isAcceptPhase) {
+      if (digits === "1") {
+        // Accept — join the conference
+        return twimlResponse(
+          `  <Dial><Conference beep="false" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
+        );
+      }
+      // Reject or other key — hang up this leg
+      return twimlResponse(`  <Hangup />`);
     }
-    // Reject or other key — hang up this leg
+
+    // Phase 1: Play screening prompt
+    const spokenNumber = formatNumberForSpeech(callerNumber);
+    const label = callType === "sales" ? "Voyage sales call" : "Voyage operator call";
+
+    const acceptUrl =
+      `/api/voice/connect` +
+      `?conf=${encodeURIComponent(confName)}` +
+      `&type=${encodeURIComponent(callType)}` +
+      `&caller=${encodeURIComponent(callerNumber)}` +
+      `&accept=1`;
+
+    const body = [
+      gather({
+        input: "dtmf",
+        numDigits: 1,
+        action: acceptUrl,
+        timeout: 4,
+        children: say(
+          `${label} from ${spokenNumber}. Press 1 to accept. Press 2 for voicemail.`,
+          v,
+          lang
+        ),
+      }),
+      // No input → reject (hang up this leg)
+      `  <Hangup />`,
+    ].join("\n");
+
+    return twimlResponse(body);
+  } catch (error) {
+    console.error("[connect] Error:", error);
+    // Return valid TwiML even on error — hang up gracefully
     return twimlResponse(`  <Hangup />`);
   }
-
-  // Phase 1: Play screening prompt
-  const spokenNumber = formatNumberForSpeech(callerNumber);
-  const label = callType === "sales" ? "Voyage sales call" : "Voyage operator call";
-
-  const acceptUrl =
-    `/api/voice/connect` +
-    `?conf=${encodeURIComponent(confName)}` +
-    `&type=${encodeURIComponent(callType)}` +
-    `&caller=${encodeURIComponent(callerNumber)}` +
-    `&accept=1`;
-
-  const body = [
-    gather({
-      input: "dtmf",
-      numDigits: 1,
-      action: acceptUrl,
-      timeout: 4,
-      children: say(
-        `${label} from ${spokenNumber}. Press 1 to accept. Press 2 for voicemail.`,
-        v,
-        lang
-      ),
-    }),
-    // No input → reject (hang up this leg)
-    `  <Hangup />`,
-  ].join("\n");
-
-  return twimlResponse(body);
 }
 
 /**

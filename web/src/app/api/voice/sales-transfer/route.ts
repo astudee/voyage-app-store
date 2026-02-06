@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
 
   const confName = `voyage-sales-${Date.now()}`;
 
-  // Fire off outbound calls to sales team (non-blocking)
-  dialTeamForConference({
+  // Fire off outbound calls to sales team (must await on Vercel)
+  await dialTeamForConference({
     numbers: [...phoneConfig.salesNumbers],
     from: phoneConfig.twilioNumber,
     confName,

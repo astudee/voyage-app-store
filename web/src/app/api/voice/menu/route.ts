@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     case "sales": {
       // Sales → conference with hold music + dial sales team
       const confName = `voyage-sales-${Date.now()}`;
-      dialTeamForConference({
+      await dialTeamForConference({
         numbers: [...phoneConfig.salesNumbers],
         from: phoneConfig.twilioNumber,
         confName,
