@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-05 (Twilio phone system added)
+> **Last updated:** 2026-02-06 (SMS forwarding deployed, 202 number configured)
 
 ---
 
@@ -901,7 +901,7 @@ This is where reference files are uploaded for Claude to review:
 - **Call flow:** Greeting → IVR menu (services/directory/operator) → simultaneous ring → voicemail
 - **Twilio number:** +1 (844) 790-5332
 - **Operators:** Andrew (+13122120815) and Emma (+12404401901) ring simultaneously
-- **Voicemail email:** hello@voyageadvisory.com
+- **Notification emails:** hello@voyageadvisory.com + astudee@voyageadvisory.com
 - **Middleware updated:** `api/voice` routes excluded from auth (Twilio webhooks need unauthenticated access)
 - **Vercel env vars created:** TWILIO_PHONE_NUMBER, OPERATOR_PHONE_1/2, PHONE_SYSTEM_BASE_URL, VOICEMAIL_EMAIL
 - **Still needed:** Andrew must update TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN with real values in Vercel Dashboard
@@ -1152,13 +1152,14 @@ All polish items fixed:
 
 ## Twilio Phone System (IVR)
 
-**Status:** LIVE (voice + SMS webhooks configured)
-**Twilio Number:** +1 (844) 790-5332
+**Status:** LIVE (voice + SMS webhooks configured on all numbers)
+**Primary Number:** +1 (202) 998-4405 (local DC number)
+**Toll-Free Number:** +1 (844) 790-5332 (may be dropped)
 **Documentation:** `docs/phone-system.md`
 
 ### Call Flow
 ```
-Caller dials +1 (844) 790-5332
+Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
   → POST /api/voice/incoming → Greeting + IVR menu
   → Press 1 (services) → Brief overview → Transfer to operator
   → Press 2 (directory) → Andrew (ext 1), Emma (ext 2)
@@ -1196,11 +1197,11 @@ Caller dials +1 (844) 790-5332
 |----------|-------|--------|
 | `TWILIO_ACCOUNT_SID` | AC... | Set |
 | `TWILIO_AUTH_TOKEN` | (secret) | Set |
-| `TWILIO_PHONE_NUMBER` | +18447905332 | Set |
+| `TWILIO_PHONE_NUMBER` | +18447905332 | Set (update to +12029984405 when 844 is dropped) |
 | `OPERATOR_PHONE_1` | +13122120815 (Andrew) | Set |
 | `OPERATOR_PHONE_2` | +12404401901 (Emma) | Set |
 | `PHONE_SYSTEM_BASE_URL` | https://apps.voyage.xyz | Set |
-| `VOICEMAIL_EMAIL` | hello@voyageadvisory.com | Set |
+| `VOICEMAIL_EMAIL` | (no longer used — hardcoded in phone-config.ts) | Can remove |
 
 ### To Go Live
 1. Andrew updates `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in Vercel Dashboard

@@ -6,8 +6,8 @@
  */
 
 export const phoneConfig = {
-  // Your Twilio phone number (set in env)
-  twilioNumber: process.env.TWILIO_PHONE_NUMBER || "+1XXXXXXXXXX",
+  // Primary Twilio phone number
+  twilioNumber: process.env.TWILIO_PHONE_NUMBER || "+12029984405",
 
   // Operator path (press 0 / help / catch-all) — ring these simultaneously
   operatorNumbers: [
@@ -28,9 +28,10 @@ export const phoneConfig = {
   // Voicemail max length (seconds)
   voicemailMaxLength: 120,
 
-  // Email addresses for voicemail notifications
+  // Email addresses for voicemail and SMS notifications
   voicemailEmails: [
-    process.env.VOICEMAIL_EMAIL || "hello@voyageadvisory.com",
+    "hello@voyageadvisory.com",
+    "astudee@voyageadvisory.com",
   ],
 
   // Company directory entries
