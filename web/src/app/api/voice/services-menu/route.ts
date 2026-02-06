@@ -36,11 +36,8 @@ export async function POST(request: NextRequest) {
           speechTimeout: "auto",
           children: say(SERVICES_OVERVIEW, v, lang),
         }),
-        say("Let me connect you with someone who can tell you more.", v, lang),
-        `  <Dial callerId="${phoneConfig.twilioNumber}" timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-        `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[0]}</Number>`,
-        `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[1]}</Number>`,
-        `  </Dial>`,
+        // No input → transfer to sales via conference
+        redirect("/api/voice/sales-transfer"),
       ].join("\n")
     );
   }
@@ -61,16 +58,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Talk to someone / connect / anything else → transfer to sales
-  return twimlResponse(
-    [
-      say("Let me connect you with someone who can tell you more.", v, lang),
-      `  <Dial timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-      `    <Number>${phoneConfig.salesNumbers[0]}</Number>`,
-      `    <Number>${phoneConfig.salesNumbers[1]}</Number>`,
-      `  </Dial>`,
-    ].join("\n")
-  );
+  // Talk to someone / connect / anything else → transfer to sales via conference
+  return twimlResponse(redirect("/api/voice/sales-transfer"));
 }
 
 export async function GET(request: NextRequest) {

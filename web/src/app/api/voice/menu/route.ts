@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
-import { twimlResponse, say, gather, redirect } from "@/lib/twiml";
+import { twimlResponse, say, gather, redirect, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
+import { dialTeamForConference } from "@/lib/twilio-api";
 
 /**
  * POST /api/voice/menu
@@ -13,6 +14,7 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const digits = formData.get("Digits")?.toString() || "";
   const speech = formData.get("SpeechResult")?.toString().toLowerCase() || "";
+  const callerNumber = formData.get("From")?.toString() || "unknown";
   const v = phoneConfig.voice;
   const lang = phoneConfig.voiceLanguage;
 
@@ -21,6 +23,7 @@ export async function POST(request: NextRequest) {
   switch (path.route) {
     case "services":
       // Services / learn more → read overview, then offer options with short timeout
+      // If no input, falls through to sales conference transfer
       return twimlResponse(
         [
           gather({
@@ -36,12 +39,8 @@ export async function POST(request: NextRequest) {
               lang
             ),
           }),
-          // No input within timeout → transfer to sales
-          say("Let me connect you with someone who can tell you more.", v, lang),
-          `  <Dial callerId="${phoneConfig.twilioNumber}" timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[0]}</Number>`,
-          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[1]}</Number>`,
-          `  </Dial>`,
+          // No input within timeout → redirect to sales-transfer which sets up conference
+          redirect("/api/voice/sales-transfer"),
         ].join("\n")
       );
 
@@ -53,17 +52,31 @@ export async function POST(request: NextRequest) {
       // and go straight to the directory router with the speech result
       return twimlResponse(redirect(`/api/voice/directory-route?speech=${encodeURIComponent(path.nameQuery || "")}`));
 
-    case "sales":
-      // Sales / services / learn more → ring Andrew + David
+    case "sales": {
+      // Sales → conference with hold music + dial sales team
+      const confName = `voyage-sales-${Date.now()}`;
+      dialTeamForConference({
+        numbers: [...phoneConfig.salesNumbers],
+        from: phoneConfig.twilioNumber,
+        confName,
+        callType: "sales",
+        callerNumber,
+        baseUrl: phoneConfig.baseUrl,
+        timeout: phoneConfig.ringTimeout,
+      });
+
       return twimlResponse(
         [
           say("Let me connect you with our team.", v, lang),
-          `  <Dial callerId="${phoneConfig.twilioNumber}" timeout="${phoneConfig.ringTimeout}" action="/api/voice/operator-status">`,
-          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[0]}</Number>`,
-          `    <Number url="${phoneConfig.baseUrl}/api/voice/screen?type=sales">${phoneConfig.salesNumbers[1]}</Number>`,
+          pause(0.5),
+          `  <Dial action="/api/voice/operator-status">`,
+          `    <Conference waitUrl="${phoneConfig.baseUrl}/api/voice/hold-music" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+          `      ${confName}`,
+          `    </Conference>`,
           `  </Dial>`,
         ].join("\n")
       );
+    }
 
     case "operator":
       return twimlResponse(redirect("/api/voice/operator"));
