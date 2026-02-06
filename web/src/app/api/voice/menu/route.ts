@@ -24,8 +24,7 @@ export async function POST(request: NextRequest) {
       return twimlResponse(
         [
           say(
-            "Voyage Advisory is a management consulting firm specializing in operational transformation for utilities, government agencies, and large organizations. " +
-              "Let me connect you with someone who can tell you more.",
+            "Voyage Advisory is a management consulting firm. We help clients elevate service, drive performance, and power transformation. We work across a variety of industries including utilities, financial services, supply chain, and the public sector. Let me connect you with someone who can tell you more.",
             v,
             lang
           ),
