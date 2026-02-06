@@ -117,7 +117,7 @@ function routeFromInput(
 
   // Operator / help keywords
   const operatorWords = [
-    "help", "operator", "someone", "human", "agent",
+    "help", "team", "operator", "someone", "human", "agent",
     "zero", "connect me", "talk to someone", "receptionist",
   ];
 
