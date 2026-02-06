@@ -14,10 +14,10 @@ export async function POST(request: NextRequest) {
 
   const greeting = say(
     "Welcome to Voyage Advisory. " +
-      "You can ask to learn about our services, " +
-      "ask to speak with a specific person, " +
-      "ask to talk to sales, " +
-      "or just say help and we'll connect you with someone right away.",
+      "To learn about our services, say learn more. " +
+      "To speak with sales, say sales. " +
+      "To reach a specific person, say their name or say directory. " +
+      "For everything else, say help.",
     v,
     lang
   );
