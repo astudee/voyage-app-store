@@ -1173,15 +1173,18 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 |-------|---------|
 | `POST /api/voice/incoming` | Main greeting + IVR menu |
 | `POST /api/voice/menu` | Routes keypress/speech selection |
-| `POST /api/voice/operator` | Simultaneous ring (Andrew + Emma) |
+| `POST /api/voice/operator` | Conference + hold music + dial operators via REST API |
 | `POST /api/voice/operator-status` | No answer → voicemail |
+| `POST /api/voice/sales-transfer` | Conference + hold music + dial sales via REST API |
+| `POST /api/voice/services-menu` | Post-overview options: hear again, main menu, or connect |
+| `POST /api/voice/connect` | Call screening for conference-based transfers |
+| `POST /api/voice/hold-music` | Classical hold music TwiML (waitUrl for conferences) |
 | `POST /api/voice/directory` | Company directory menu |
-| `POST /api/voice/directory-route` | Connects to selected person |
+| `POST /api/voice/directory-route` | Connects to selected person (caller ID passthrough) |
 | `POST /api/voice/voicemail` | Records voicemail |
 | `POST /api/voice/voicemail-complete` | Thanks caller, hangs up |
 | `POST /api/voice/voicemail-transcription` | Receives transcription, emails to hello@ + astudee@ |
 | `POST /api/voice/sms-incoming` | Incoming SMS → emails to hello@ + astudee@ |
-| `POST /api/voice/services-menu` | Post-overview options: hear again, main menu, or connect |
 | `GET /api/voice/setup` | Show current Twilio webhook config for all numbers |
 | `POST /api/voice/setup` | Configure voice + SMS webhooks on all Twilio numbers |
 
@@ -1189,9 +1192,10 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 | File | Purpose |
 |------|---------|
 | `web/src/lib/twiml.ts` | Lightweight TwiML XML helper (no Twilio SDK needed) |
+| `web/src/lib/twilio-api.ts` | Twilio REST API helper (outbound calls for conference transfers) |
 | `web/src/lib/phone-config.ts` | Phone numbers, directory entries, settings |
 | `web/src/lib/gmail.ts` | Shared Gmail API helper (used by voicemail + SMS notifications) |
-| `web/src/app/api/voice/*/route.ts` | 11 API route handlers |
+| `web/src/app/api/voice/*/route.ts` | 17 API route handlers |
 | `docs/phone-system.md` | Full documentation |
 
 ### Environment Variables (Vercel)
