@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-06 (SMS forwarding deployed, 202 number configured)
+> **Last updated:** 2026-02-08 (Favicon updated to green, brand colors confirmed)
 
 ---
 
@@ -252,7 +252,7 @@ This folder is for temporary uploads and reference files — things the user sha
 | Dark Charcoal | #333333 | Text, headers |
 | Dark Blue | #336699 | Active nav items, links |
 | Medium Blue | #6699cc | Secondary accents |
-| Teal | #669999 | Sidebar background |
+| Green (Teal) | #669999 | Sidebar background, favicon, theme color |
 | Gray | #999999 | Muted text |
 | Navy | #0D3B66 | Primary buttons |
 

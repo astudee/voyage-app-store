@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       if (digits === "1") {
         // Accept — join the conference
         return twimlResponse(
-          `  <Dial><Conference beep="false" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
+          `  <Dial><Conference beep="true" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
         );
       }
       // Press 2 — explicitly send caller to voicemail via REST API
@@ -55,8 +55,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Phase 1: Play screening prompt
-    const spokenNumber = formatNumberForSpeech(callerNumber);
-    const label = callType === "sales" ? "Voyage sales call" : "Voyage operator call";
+    const label = callType === "sales" ? "Voyage sales" : "Voyage operator";
 
     const acceptUrl =
       `${phoneConfig.baseUrl}/api/voice/connect` +
@@ -72,7 +71,7 @@ export async function POST(request: NextRequest) {
         action: acceptUrl,
         timeout: 4,
         children: say(
-          `${label} from ${spokenNumber}. Press 1 to accept. Press 2 for voicemail.`,
+          `${label}. Press 1 to accept.`,
           v,
           lang
         ),
@@ -87,25 +86,6 @@ export async function POST(request: NextRequest) {
     // Return valid TwiML even on error — hang up gracefully
     return twimlResponse(`  <Hangup />`);
   }
-}
-
-/**
- * Format a phone number for natural speech.
- * "+13122120815" → "3 1 2, 2 1 2, 0 8 1 5"
- */
-function formatNumberForSpeech(number: string): string {
-  const digits = number.replace(/\D/g, "");
-  const local =
-    digits.startsWith("1") && digits.length === 11 ? digits.slice(1) : digits;
-
-  if (local.length === 10) {
-    const area = local.slice(0, 3).split("").join(" ");
-    const prefix = local.slice(3, 6).split("").join(" ");
-    const line = local.slice(6).split("").join(" ");
-    return `${area}, ${prefix}, ${line}`;
-  }
-
-  return local.split("").join(" ");
 }
 
 function escapeXml(text: string): string {

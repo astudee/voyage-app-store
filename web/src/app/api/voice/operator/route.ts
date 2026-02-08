@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
       say("One moment while I connect you.", v, lang),
       pause(1),
       `  <Dial action="${escapeAttr(`${B}/api/voice/operator-status`)}">`,
-      `    <Conference waitUrl="${escapeAttr(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+      `    <Conference waitUrl="${escapeAttr(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="true" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
       `      ${confName}`,
       `    </Conference>`,
       `  </Dial>`,

@@ -11,6 +11,10 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Voyage App Store",
   description: "Voyage Consulting Configuration Management",
+  other: {
+    "theme-color": "#669999",
+    "msapplication-TileColor": "#669999",
+  },
 };
 
 export default function RootLayout({
