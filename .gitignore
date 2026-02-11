@@ -8,6 +8,9 @@ token_vault.json
 !web/components.json
 !workers/*/package.json
 !workers/*/tsconfig.json
+!e2e/package.json
+!e2e/package-lock.json
+!e2e/tsconfig.json
 .streamlit/secrets.toml
 __pycache__/
 *.pyc
