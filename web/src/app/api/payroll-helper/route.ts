@@ -227,11 +227,11 @@ export async function GET(request: NextRequest) {
         hourlyEmployees.push({
           name: formatNameLastFirst(staffName),
           type: empType,
-          regular: Math.round(hours.regular * 10) / 10,
-          paidLeave: Math.round(hours.paidLeave * 10) / 10,
-          sickLeave: Math.round(hours.sickLeave * 10) / 10,
-          holiday: Math.round(hours.holiday * 10) / 10,
-          unpaidLeave: Math.round(hours.unpaidLeave * 10) / 10,
+          regular: Math.round(hours.regular * 100) / 100,
+          paidLeave: Math.round(hours.paidLeave * 100) / 100,
+          sickLeave: Math.round(hours.sickLeave * 100) / 100,
+          holiday: Math.round(hours.holiday * 100) / 100,
+          unpaidLeave: Math.round(hours.unpaidLeave * 100) / 100,
         });
       } else if (empType !== "International") {
         // Full-time - only show if they have leave hours
@@ -240,10 +240,10 @@ export async function GET(request: NextRequest) {
           fullTimeEmployees.push({
             name: formatNameLastFirst(staffName),
             type: empType,
-            paidLeave: Math.round(hours.paidLeave * 10) / 10,
-            sickLeave: Math.round(hours.sickLeave * 10) / 10,
-            holiday: Math.round(hours.holiday * 10) / 10,
-            unpaidLeave: Math.round(hours.unpaidLeave * 10) / 10,
+            paidLeave: Math.round(hours.paidLeave * 100) / 100,
+            sickLeave: Math.round(hours.sickLeave * 100) / 100,
+            holiday: Math.round(hours.holiday * 100) / 100,
+            unpaidLeave: Math.round(hours.unpaidLeave * 100) / 100,
           });
         }
       }
