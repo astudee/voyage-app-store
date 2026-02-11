@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -133,23 +133,6 @@ function getTypeBadgeColor(doc: Document): string {
   return "bg-teal-100 text-teal-800";
 }
 
-function getDateValue(doc: Document): Date | null {
-  // Use unified document_date first
-  if (doc.document_date) {
-    return new Date(doc.document_date);
-  }
-  // Legacy fallback
-  const category = doc.document_type_category;
-  if (category === "contract" || doc.is_contract) {
-    return doc.executed_date ? new Date(doc.executed_date) : null;
-  }
-  if (category === "invoice") {
-    return doc.due_date ? new Date(doc.due_date) : null;
-  }
-  const dateStr = doc.letter_date || doc.period_end_date;
-  return dateStr ? new Date(dateStr) : null;
-}
-
 export default function ArchivePage() {
   const router = useRouter();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -168,73 +151,28 @@ export default function ArchivePage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalDocuments, setTotalDocuments] = useState(0);
 
-  // Sort displayed documents
-  const sortedDocuments = useMemo(() => {
-    if (!sortKey || !sortDir) return displayedDocuments;
-
-    return [...displayedDocuments].sort((a, b) => {
-      let aVal: string | number | Date | null = null;
-      let bVal: string | number | Date | null = null;
-
-      switch (sortKey) {
-        case "party":
-          aVal = getPartyDisplay(a).toLowerCase();
-          bVal = getPartyDisplay(b).toLowerCase();
-          break;
-        case "date":
-          aVal = getDateValue(a);
-          bVal = getDateValue(b);
-          break;
-        case "type":
-          aVal = getTypeDisplay(a).toLowerCase();
-          bVal = getTypeDisplay(b).toLowerCase();
-          break;
-        case "notes":
-          aVal = (a.notes || "").toLowerCase();
-          bVal = (b.notes || "").toLowerCase();
-          break;
-        case "uploaded":
-          aVal = new Date(a.created_at);
-          bVal = new Date(b.created_at);
-          break;
-      }
-
-      // Handle nulls
-      if (aVal === null && bVal === null) return 0;
-      if (aVal === null) return sortDir === "asc" ? 1 : -1;
-      if (bVal === null) return sortDir === "asc" ? -1 : 1;
-
-      // Compare dates
-      if (aVal instanceof Date && bVal instanceof Date) {
-        return sortDir === "asc"
-          ? aVal.getTime() - bVal.getTime()
-          : bVal.getTime() - aVal.getTime();
-      }
-
-      // Compare strings
-      if (typeof aVal === "string" && typeof bVal === "string") {
-        return sortDir === "asc"
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
-      }
-
-      return 0;
-    });
-  }, [displayedDocuments, sortKey, sortDir]);
+  // When not searching, documents are sorted server-side.
+  // When searching/filtering locally, use displayedDocuments directly (no client sort needed).
+  const sortedDocuments = displayedDocuments;
 
   const handleSort = (key: SortKey) => {
+    let newKey: SortKey | null = key;
+    let newDir: SortDir;
     if (sortKey === key) {
-      // Cycle: asc -> desc -> none
       if (sortDir === "asc") {
-        setSortDir("desc");
-      } else if (sortDir === "desc") {
-        setSortKey(null);
-        setSortDir(null);
+        newDir = "desc";
+      } else {
+        newKey = null;
+        newDir = null;
       }
     } else {
-      setSortKey(key);
-      setSortDir("asc");
+      newDir = "asc";
     }
+    setSortKey(newKey);
+    setSortDir(newDir);
+    // Re-fetch with new sort (reset to page 1)
+    setCurrentPage(1);
+    fetchDocuments(1, newKey, newDir);
   };
 
   const getSortIndicator = (key: SortKey) => {
@@ -242,12 +180,18 @@ export default function ArchivePage() {
     return sortDir === "asc" ? " ▲" : " ▼";
   };
 
-  const fetchDocuments = async (page: number = 1) => {
+  const fetchDocuments = async (page: number = 1, overrideSortKey?: SortKey | null, overrideSortDir?: SortDir) => {
     try {
       setLoading(true);
       setError(null);
       const offset = (page - 1) * PAGE_SIZE;
-      const res = await fetch(`/api/documents?status=archived&limit=${PAGE_SIZE}&offset=${offset}`);
+      const sk = overrideSortKey !== undefined ? overrideSortKey : sortKey;
+      const sd = overrideSortDir !== undefined ? overrideSortDir : sortDir;
+      let url = `/api/documents?status=archived&limit=${PAGE_SIZE}&offset=${offset}`;
+      if (sk && sd) {
+        url += `&sortBy=${sk}&sortDir=${sd}`;
+      }
+      const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
       setDocuments(data.documents);

@@ -49,6 +49,18 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const limit = parseInt(searchParams.get("limit") || "100");
     const offset = parseInt(searchParams.get("offset") || "0");
+    const sortBy = searchParams.get("sortBy");
+    const sortDir = searchParams.get("sortDir") === "asc" ? "ASC" : "DESC";
+
+    // Map frontend sort keys to SQL columns
+    const sortColumnMap: Record<string, string> = {
+      party: "PARTY",
+      type: "COALESCE(CONTRACT_TYPE, DOCUMENT_TYPE)",
+      date: "DOCUMENT_DATE",
+      notes: "NOTES",
+      uploaded: "CREATED_AT",
+    };
+    const orderColumn = sortColumnMap[sortBy || ""] || "CREATED_AT";
 
     let sqlQuery = `
       SELECT *
@@ -62,7 +74,7 @@ export async function GET(request: NextRequest) {
       params.push(status);
     }
 
-    sqlQuery += ` ORDER BY CREATED_AT DESC LIMIT ? OFFSET ?`;
+    sqlQuery += ` ORDER BY ${orderColumn} ${sortDir} NULLS LAST LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     const rows = await query<Record<string, unknown>>(sqlQuery, params);
