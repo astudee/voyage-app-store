@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     try {
       await dialTeamForConference({
         numbers: [...phoneConfig.salesNumbers],
-        from: phoneConfig.twilioNumber,
+        from: phoneConfig.mainNumber,
         confName,
         callType: "sales",
         callerNumber,
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         say("Let me connect you with someone who can tell you more.", v, lang),
         pause(1),
         `  <Dial action="${esc(`${B}/api/voice/operator-status`)}">`,
-        `    <Conference waitUrl="${esc(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="true" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
+        `    <Conference waitUrl="${esc(`${B}/api/voice/hold-music`)}" waitMethod="POST" beep="false" startConferenceOnEnter="true" endConferenceOnExit="true" maxParticipants="2">`,
         `      ${confName}`,
         `    </Conference>`,
         `  </Dial>`,

@@ -6,8 +6,11 @@
  */
 
 export const phoneConfig = {
-  // Primary Twilio phone number (set in Vercel env: +12029984405)
+  // Primary Twilio phone number (set in Vercel env)
   twilioNumber: process.env.TWILIO_PHONE_NUMBER || "+1XXXXXXXXXX",
+
+  // Main business number — used as caller ID for operator/sales outbound calls
+  mainNumber: "+13128698000",
 
   // Operator path (press 0 / help / catch-all) — ring these simultaneously
   operatorNumbers: [
@@ -22,9 +25,9 @@ export const phoneConfig = {
     process.env.SALES_PHONE_2 || "+19206916440", // David
   ],
 
-  // How long to ring before going to voicemail (seconds)
-  // Keep shorter than cell voicemail (~25s) so our VM catches first
-  ringTimeout: 18,
+  // How long to ring before giving up (seconds)
+  // With call screening, cell voicemail can't press 1, so safe to go longer.
+  ringTimeout: 25,
 
   // Voicemail max length (seconds)
   voicemailMaxLength: 120,

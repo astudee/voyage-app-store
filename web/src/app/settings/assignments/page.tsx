@@ -82,6 +82,11 @@ export default function AssignmentsSettingsPage() {
   const [bookingLoading, setBookingLoading] = useState(false);
   const [actualsData, setActualsData] = useState<ActualsData | null>(null);
   const [actualsLoading, setActualsLoading] = useState(false);
+  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const [bigTimeProjects, setBigTimeProjects] = useState<{ id: number; projectName: string; clientName: string }[]>([]);
+  const [bigTimeLoading, setBigTimeLoading] = useState(false);
+  const [projectSearch, setProjectSearch] = useState("");
+  const [addingProject, setAddingProject] = useState(false);
 
   // Fetch projects on mount
   useEffect(() => {
@@ -104,7 +109,7 @@ export default function AssignmentsSettingsPage() {
         const response = await fetch("/api/staff");
         if (!response.ok) throw new Error("Failed to fetch staff");
         const data = await response.json();
-        setStaffList(data.map((s: { NAME: string }) => s.NAME));
+        setStaffList(data.filter((s: { IS_ACTIVE: boolean }) => s.IS_ACTIVE !== false).map((s: { STAFF_NAME: string }) => s.STAFF_NAME));
       } catch (error) {
         console.error("Error fetching staff:", error);
       }
@@ -508,6 +513,71 @@ export default function AssignmentsSettingsPage() {
     return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
   };
 
+  // Fetch BigTime projects when Add Project dialog opens
+  useEffect(() => {
+    if (!addProjectOpen) return;
+    let cancelled = false;
+    setBigTimeLoading(true);
+    fetch("/api/bigtime/clients?includeInactive=false")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to fetch BigTime projects");
+        return res.json();
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const existingIds = new Set(projects.map((p) => p.PROJECT_ID));
+        const available = (data.projects || []).filter(
+          (p: { id: number }) => !existingIds.has(p.id)
+        );
+        setBigTimeProjects(available);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error("Error fetching BigTime projects:", error);
+      })
+      .finally(() => {
+        if (!cancelled) setBigTimeLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [addProjectOpen, projects]);
+
+  // Add a new project from BigTime
+  const handleAddProject = async (btProject: { id: number; projectName: string; clientName: string }) => {
+    setAddingProject(true);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: btProject.id,
+          client_name: btProject.clientName,
+          project_name: btProject.projectName,
+          project_status: "Active",
+          project_type: "T&M",
+          bill_rate: 0,
+        }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to create project");
+      }
+      const created = await response.json();
+      // Add to local projects list and select it
+      setProjects((prev) => [...prev, created].sort((a, b) =>
+        a.CLIENT_NAME.localeCompare(b.CLIENT_NAME) || a.PROJECT_NAME.localeCompare(b.PROJECT_NAME)
+      ));
+      setSelectedProjectId(created.PROJECT_ID.toString());
+      setAddProjectOpen(false);
+      setProjectSearch("");
+      toast.success(`Added ${btProject.clientName} | ${btProject.projectName}`);
+    } catch (error) {
+      console.error("Error adding project:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to add project");
+    } finally {
+      setAddingProject(false);
+    }
+  };
+
   // Month options
   const monthOptions = [
     { value: "01", label: "January" },
@@ -559,6 +629,12 @@ export default function AssignmentsSettingsPage() {
               </SelectContent>
             </Select>
           </div>
+          <Button
+            variant="outline"
+            onClick={() => setAddProjectOpen(true)}
+          >
+            + Add Project
+          </Button>
           {saving && <span className="text-sm text-gray-500">Saving...</span>}
         </div>
 
@@ -881,20 +957,26 @@ export default function AssignmentsSettingsPage() {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Staff Member</label>
-              <Select value={newStaffName} onValueChange={setNewStaffName}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select staff member..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {staffList
-                    .filter((name) => !staffRows.some((r) => r.staffName === name))
-                    .map((name) => (
-                      <SelectItem key={name} value={name}>
-                        {name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <Input
+                list="staff-suggestions"
+                placeholder="Type or select a name..."
+                value={newStaffName}
+                onChange={(e) => setNewStaffName(e.target.value)}
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
+                data-form-type="other"
+              />
+              <datalist id="staff-suggestions">
+                {staffList
+                  .filter((name) => !staffRows.some((r) => r.staffName === name))
+                  .map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+              </datalist>
+              <p className="text-xs text-gray-500">
+                Pick from staff list or type any name (e.g. for contractors)
+              </p>
             </div>
             <div className="space-y-2">
               <label className="text-sm font-medium">Bill Rate ($/hr)</label>
@@ -991,6 +1073,66 @@ export default function AssignmentsSettingsPage() {
               disabled={!newMonthYear || !newMonthMonth || !!yearError || months.includes(`${newMonthYear}-${newMonthMonth}`)}
             >
               Add Month
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Project Dialog */}
+      <Dialog open={addProjectOpen} onOpenChange={(open) => {
+        setAddProjectOpen(open);
+        if (!open) setProjectSearch("");
+      }}>
+        <DialogContent className="max-w-lg max-h-[80vh] flex flex-col" onOpenAutoFocus={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Add Project from BigTime</DialogTitle>
+            <DialogDescription>
+              Select a BigTime project to add to assignments tracking.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            <Input
+              placeholder="Filter projects..."
+              value={projectSearch}
+              onChange={(e) => setProjectSearch(e.target.value)}
+              autoComplete="off"
+              data-lpignore="true"
+              data-1p-ignore="true"
+              data-form-type="other"
+              name="bt-project-filter"
+              role="searchbox"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto border rounded-md min-h-0" style={{ maxHeight: '400px' }}>
+            {bigTimeLoading ? (
+              <div className="p-8 text-center text-gray-500">Loading BigTime projects...</div>
+            ) : bigTimeProjects.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">All BigTime projects are already added</div>
+            ) : (
+              <div className="divide-y">
+                {bigTimeProjects
+                  .filter((p) => {
+                    if (!projectSearch) return true;
+                    const search = projectSearch.toLowerCase();
+                    return p.clientName.toLowerCase().includes(search) || p.projectName.toLowerCase().includes(search) || p.id.toString().includes(search);
+                  })
+                  .map((p) => (
+                    <button
+                      key={p.id}
+                      className="w-full text-left px-4 py-3 hover:bg-gray-50 disabled:opacity-50"
+                      disabled={addingProject}
+                      onClick={() => handleAddProject(p)}
+                    >
+                      <div className="font-medium text-sm">{p.clientName} | {p.projectName}</div>
+                      <div className="text-xs text-gray-500">BigTime ID: {p.id}</div>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setAddProjectOpen(false); setProjectSearch(""); }}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

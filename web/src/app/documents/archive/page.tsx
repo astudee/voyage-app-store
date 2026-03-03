@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppLayout } from "@/components/app-layout";
@@ -32,7 +32,7 @@ interface Document {
   original_filename: string;
   file_path: string;
   document_type_category: "contract" | "document" | "invoice" | null;
-  is_contract: boolean | null; // Legacy
+  is_contract: boolean | null;
   document_category: string | null;
   contract_type: string | null;
   party: string | null;
@@ -108,34 +108,21 @@ function getTypeDisplay(doc: Document): string {
 }
 
 function getDateDisplay(doc: Document): string {
-  // Use unified document_date first, then fall back to legacy fields
-  if (doc.document_date) {
-    return formatDate(doc.document_date);
-  }
-  // Legacy fallback
-  if (doc.document_type_category === "contract" || doc.is_contract) {
-    return formatDate(doc.executed_date);
-  }
-  if (doc.document_type_category === "invoice") {
-    return formatDate(doc.due_date);
-  }
+  if (doc.document_date) return formatDate(doc.document_date);
+  if (doc.document_type_category === "contract" || doc.is_contract) return formatDate(doc.executed_date);
+  if (doc.document_type_category === "invoice") return formatDate(doc.due_date);
   return formatDate(doc.letter_date || doc.period_end_date);
 }
 
 function getTypeBadgeColor(doc: Document): string {
   const category = doc.document_type_category;
-  if (category === "contract" || doc.is_contract) {
-    return "bg-purple-100 text-purple-800";
-  }
-  if (category === "invoice") {
-    return "bg-amber-100 text-amber-800";
-  }
+  if (category === "contract" || doc.is_contract) return "bg-purple-100 text-purple-800";
+  if (category === "invoice") return "bg-amber-100 text-amber-800";
   return "bg-teal-100 text-teal-800";
 }
 
 export default function ArchivePage() {
   const router = useRouter();
-  const [documents, setDocuments] = useState<Document[]>([]);
   const [displayedDocuments, setDisplayedDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
@@ -147,15 +134,13 @@ export default function ArchivePage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [deleting, setDeleting] = useState(false);
-  // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const [totalDocuments, setTotalDocuments] = useState(0);
-
-  // When not searching, documents are sorted server-side.
-  // When searching/filtering locally, use displayedDocuments directly (no client sort needed).
-  const sortedDocuments = displayedDocuments;
+  // Track whether we're showing search results or paginated browse
+  const [isSearchResults, setIsSearchResults] = useState(false);
 
   const handleSort = (key: SortKey) => {
+    if (isSearchResults) return; // Don't re-sort search results
     let newKey: SortKey | null = key;
     let newDir: SortDir;
     if (sortKey === key) {
@@ -170,12 +155,12 @@ export default function ArchivePage() {
     }
     setSortKey(newKey);
     setSortDir(newDir);
-    // Re-fetch with new sort (reset to page 1)
     setCurrentPage(1);
     fetchDocuments(1, newKey, newDir);
   };
 
   const getSortIndicator = (key: SortKey) => {
+    if (isSearchResults) return null;
     if (sortKey !== key) return null;
     return sortDir === "asc" ? " ▲" : " ▼";
   };
@@ -194,11 +179,11 @@ export default function ArchivePage() {
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data: DocumentsResponse = await res.json();
-      setDocuments(data.documents);
       setDisplayedDocuments(data.documents);
       setTotalDocuments(data.total);
       setCurrentPage(page);
       setSearchType(null);
+      setIsSearchResults(false);
       setSelectedIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -210,15 +195,11 @@ export default function ArchivePage() {
   const totalPages = Math.ceil(totalDocuments / PAGE_SIZE);
 
   const handlePrevPage = () => {
-    if (currentPage > 1) {
-      fetchDocuments(currentPage - 1);
-    }
+    if (currentPage > 1) fetchDocuments(currentPage - 1);
   };
 
   const handleNextPage = () => {
-    if (currentPage < totalPages) {
-      fetchDocuments(currentPage + 1);
-    }
+    if (currentPage < totalPages) fetchDocuments(currentPage + 1);
   };
 
   useEffect(() => {
@@ -229,124 +210,25 @@ export default function ArchivePage() {
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === sortedDocuments.length && sortedDocuments.length > 0) {
+    if (selectedIds.size === displayedDocuments.length && displayedDocuments.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(sortedDocuments.map((d) => d.id)));
+      setSelectedIds(new Set(displayedDocuments.map((d) => d.id)));
     }
   };
 
-  // Parse boolean query into terms and phrases
-  const parseQuery = (queryStr: string): { mustMatch: string[]; mustNotMatch: string[]; isAnd: boolean } => {
-    const mustMatch: string[] = [];
-    const mustNotMatch: string[] = [];
-
-    // Check if AND is used (case insensitive)
-    const hasAnd = /\bAND\b/i.test(queryStr);
-    const isAnd = hasAnd;
-
-    // Remove AND/OR operators for parsing
-    let cleaned = queryStr.replace(/\b(AND|OR)\b/gi, " ");
-
-    // Extract quoted phrases
-    const phraseRegex = /"([^"]+)"/g;
-    let match;
-    while ((match = phraseRegex.exec(cleaned)) !== null) {
-      mustMatch.push(match[1].toLowerCase());
-    }
-    cleaned = cleaned.replace(phraseRegex, " ");
-
-    // Extract NOT terms (prefixed with - or NOT)
-    const notRegex = /(?:NOT\s+|-)([\w]+)/gi;
-    while ((match = notRegex.exec(cleaned)) !== null) {
-      mustNotMatch.push(match[1].toLowerCase());
-    }
-    cleaned = cleaned.replace(notRegex, " ");
-
-    // Extract remaining terms
-    const terms = cleaned
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((t) => t.length > 0);
-
-    mustMatch.push(...terms);
-
-    return { mustMatch, mustNotMatch, isAnd };
-  };
-
-  // Local text filtering (instant) with boolean support
-  const performLocalFilter = useCallback(
-    (term: string) => {
-      if (!term) {
-        setDisplayedDocuments(documents);
-        setSearchType(null);
-        return;
-      }
-
-      const { mustMatch, mustNotMatch, isAnd } = parseQuery(term);
-
-      const filtered = documents.filter((doc) => {
-        const searchableText = [
-          doc.party,
-          doc.sub_party,
-          doc.original_filename,
-          doc.contract_type,
-          doc.document_type,
-          doc.ai_summary,
-          doc.notes,
-          doc.document_date,
-          doc.amount?.toString(),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-
-        // Check for must-not-match terms
-        for (const notTerm of mustNotMatch) {
-          if (searchableText.includes(notTerm)) {
-            return false;
-          }
-        }
-
-        // Check for must-match terms
-        let matchedCount = 0;
-        for (const matchTerm of mustMatch) {
-          if (searchableText.includes(matchTerm)) {
-            matchedCount++;
-          }
-        }
-
-        // For AND queries, all terms must match
-        if (isAnd) {
-          return matchedCount === mustMatch.length;
-        }
-
-        // For OR queries (default), at least one term must match
-        return matchedCount > 0;
-      });
-
-      setDisplayedDocuments(filtered);
-      setSearchType("local");
-      setSelectedIds(new Set()); // Clear selection on filter
-    },
-    [documents]
-  );
-
-  // AI-powered search
-  const performSmartSearch = async (query: string) => {
-    if (!query || query.length < 2) {
-      setDisplayedDocuments(documents);
-      setSearchType(null);
+  // Perform search (both modes go to server)
+  const performSearch = async (query: string, smart: boolean) => {
+    if (!query || query.trim().length < 2) {
+      // Clear search, go back to browse mode
+      fetchDocuments(1);
       return;
     }
 
@@ -357,7 +239,7 @@ export default function ArchivePage() {
       const res = await fetch("/api/documents/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ q: query }),
+        body: JSON.stringify({ q: query, mode: smart ? "ai" : "text" }),
       });
 
       const data: SearchResponse = await res.json();
@@ -367,8 +249,10 @@ export default function ArchivePage() {
       }
 
       setDisplayedDocuments(data.results);
-      setSearchType(data.search_type || "ai");
-      setSelectedIds(new Set()); // Clear selection on search
+      setTotalDocuments(data.total);
+      setSearchType(data.search_type || (smart ? "ai" : "text"));
+      setIsSearchResults(true);
+      setSelectedIds(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
       setDisplayedDocuments([]);
@@ -377,63 +261,51 @@ export default function ArchivePage() {
     }
   };
 
-  // Handle search input change
-  const handleSearchChange = (value: string) => {
-    setSearchTerm(value);
-
-    if (!isSmartSearch) {
-      performLocalFilter(value);
-    }
-  };
-
-  // Handle search submit (for smart search)
+  // Handle search submit (Enter key or button click)
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSmartSearch && searchTerm) {
-      performSmartSearch(searchTerm);
+    if (searchTerm.trim().length >= 2) {
+      performSearch(searchTerm, isSmartSearch);
     }
   };
 
-  // Toggle smart search
+  // Toggle smart search mode
   const toggleSmartSearch = () => {
     const newValue = !isSmartSearch;
     setIsSmartSearch(newValue);
-
-    if (newValue) {
-      // Switching to smart search - clear results until user searches
-      if (searchTerm) {
-        performSmartSearch(searchTerm);
-      }
-    } else {
-      // Switching to local filter
-      performLocalFilter(searchTerm);
+    // If there's a current search term, re-search with the new mode
+    if (searchTerm.trim().length >= 2) {
+      performSearch(searchTerm, newValue);
     }
   };
 
   // Clear search
   const clearSearch = () => {
     setSearchTerm("");
-    setDisplayedDocuments(documents);
     setSearchType(null);
+    setIsSearchResults(false);
     setSelectedIds(new Set());
+    fetchDocuments(1);
   };
 
   const handleDeleteOne = async (id: string) => {
     if (!confirm("Delete this document?")) return;
-
     try {
       const res = await fetch("/api/documents/batch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: [id] }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Delete failed");
       }
-
-      fetchDocuments();
+      if (isSearchResults) {
+        // Remove from displayed results without re-fetching
+        setDisplayedDocuments((prev) => prev.filter((d) => d.id !== id));
+      } else {
+        fetchDocuments(currentPage);
+      }
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     }
@@ -450,14 +322,14 @@ export default function ArchivePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "delete", ids: Array.from(selectedIds) }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Delete failed");
-      }
-
+      if (!res.ok) throw new Error(data.error || "Delete failed");
       setSelectedIds(new Set());
-      fetchDocuments();
+      if (isSearchResults) {
+        setDisplayedDocuments((prev) => prev.filter((d) => !selectedIds.has(d.id)));
+      } else {
+        fetchDocuments(currentPage);
+      }
     } catch (err) {
       alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
@@ -466,39 +338,24 @@ export default function ArchivePage() {
   };
 
   const handleDownload = async (doc: Document) => {
-    try {
-      // Use the download endpoint for proper Content-Disposition
-      window.location.href = `/api/documents/${doc.id}/download`;
-    } catch (err) {
-      alert(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
-    }
+    window.location.href = `/api/documents/${doc.id}/download`;
   };
 
   const handleDownloadSelected = async () => {
     if (selectedIds.size === 0) return;
-
-    // Download each selected document
     for (const id of selectedIds) {
-      const doc = sortedDocuments.find((d) => d.id === id);
-      if (doc) {
-        // Create a temporary link for each download
-        const link = document.createElement("a");
-        link.href = `/api/documents/${id}/download`;
-        link.download = "";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        // Small delay between downloads
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
+      const link = document.createElement("a");
+      link.href = `/api/documents/${id}/download`;
+      link.download = "";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      await new Promise((resolve) => setTimeout(resolve, 200));
     }
   };
 
   const handleRowClick = (e: React.MouseEvent, id: string) => {
-    // Don't navigate if clicking on checkbox or dropdown
-    if ((e.target as HTMLElement).closest("[data-no-navigate]")) {
-      return;
-    }
+    if ((e.target as HTMLElement).closest("[data-no-navigate]")) return;
     router.push(`/documents/review/${id}`);
   };
 
@@ -509,14 +366,10 @@ export default function ArchivePage() {
         <div className="mb-6 flex items-center justify-between border-b">
           <div className="flex gap-2">
             <Link href="/documents/import">
-              <Button variant="ghost" className="rounded-none">
-                Import
-              </Button>
+              <Button variant="ghost" className="rounded-none">Import</Button>
             </Link>
             <Link href="/documents/review">
-              <Button variant="ghost" className="rounded-none">
-                Review
-              </Button>
+              <Button variant="ghost" className="rounded-none">Review</Button>
             </Link>
             <Link href="/documents/archive">
               <Button variant="ghost" className="rounded-none border-b-2 border-blue-500">
@@ -534,11 +387,11 @@ export default function ArchivePage() {
                 <Input
                   placeholder={
                     isSmartSearch
-                      ? "Find ECS MOD files from 2025..."
-                      : '"ECS Federal" AND MOD'
+                      ? "Find all ECS contracts from 2025..."
+                      : "ECS AND contract"
                   }
                   value={searchTerm}
-                  onChange={(e) => handleSearchChange(e.target.value)}
+                  onChange={(e) => setSearchTerm(e.target.value)}
                   className="pr-20"
                 />
                 {searchTerm && (
@@ -557,25 +410,22 @@ export default function ArchivePage() {
                 onClick={toggleSmartSearch}
                 className="whitespace-nowrap"
               >
-                {isSmartSearch ? "✨ Smart Search" : "Smart Search"}
+                {isSmartSearch ? "AI Search" : "AI Search"}
               </Button>
-              {isSmartSearch && (
-                <Button type="submit" disabled={searching || !searchTerm}>
-                  {searching ? "Searching..." : "Search"}
-                </Button>
-              )}
+              <Button type="submit" disabled={searching || searchTerm.trim().length < 2}>
+                {searching ? "Searching..." : "Search"}
+              </Button>
             </form>
             <div className="mt-2 text-xs text-gray-500">
               {searchType ? (
                 <>
                   {searchType === "ai" && "AI-powered semantic search"}
-                  {searchType === "text" && "Text-based search (AI unavailable)"}
-                  {searchType === "local" && "Instant filter"}
-                  {displayedDocuments.length > 0 && ` • ${displayedDocuments.length} results`}
+                  {searchType === "text" && "Boolean text search"}
+                  {displayedDocuments.length > 0 && ` — ${displayedDocuments.length} results`}
                 </>
               ) : (
                 <>
-                  Supports boolean filter: &quot;ECS Federal&quot; AND MOD. Toggle Smart Search for sentence queries like &quot;Find ECS MOD files from 2025&quot;.
+                  Press Enter to search. Supports: &quot;quoted phrase&quot;, AND, NOT, -exclude. Toggle AI Search for natural language queries.
                 </>
               )}
             </div>
@@ -586,7 +436,7 @@ export default function ArchivePage() {
         <div className="mb-4 flex items-center justify-between">
           <div className="flex items-center gap-2" data-no-navigate>
             <Checkbox
-              checked={selectedIds.size === sortedDocuments.length && sortedDocuments.length > 0}
+              checked={selectedIds.size === displayedDocuments.length && displayedDocuments.length > 0}
               onCheckedChange={toggleSelectAll}
             />
             <span className="text-sm text-gray-500">
@@ -596,22 +446,15 @@ export default function ArchivePage() {
           <div className="flex gap-2">
             {selectedIds.size > 0 && (
               <>
-                <Button
-                  variant="outline"
-                  onClick={handleDownloadSelected}
-                >
+                <Button variant="outline" onClick={handleDownloadSelected}>
                   Download Selected ({selectedIds.size})
                 </Button>
-                <Button
-                  variant="destructive"
-                  onClick={handleDeleteSelected}
-                  disabled={deleting}
-                >
+                <Button variant="destructive" onClick={handleDeleteSelected} disabled={deleting}>
                   {deleting ? "Deleting..." : "Delete"}
                 </Button>
               </>
             )}
-            <Button variant="outline" onClick={() => fetchDocuments(currentPage)} disabled={loading}>
+            <Button variant="outline" onClick={() => isSearchResults ? performSearch(searchTerm, isSmartSearch) : fetchDocuments(currentPage)} disabled={loading || searching}>
               Refresh
             </Button>
           </div>
@@ -623,31 +466,27 @@ export default function ArchivePage() {
             <CardContent className="py-8">
               <p className="text-center text-red-500">{error}</p>
               <div className="mt-4 flex justify-center">
-                <Button variant="outline" onClick={() => fetchDocuments()}>
-                  Try Again
-                </Button>
+                <Button variant="outline" onClick={() => fetchDocuments()}>Try Again</Button>
               </div>
             </CardContent>
           </Card>
-        ) : loading ? (
+        ) : loading || searching ? (
           <Card>
             <CardContent className="py-8">
-              <p className="text-center text-gray-500">Loading documents...</p>
+              <p className="text-center text-gray-500">
+                {searching ? "Searching..." : "Loading documents..."}
+              </p>
             </CardContent>
           </Card>
         ) : displayedDocuments.length === 0 ? (
           <Card>
             <CardContent className="py-8">
               <p className="text-center text-gray-500">
-                {searchTerm
-                  ? "No documents match your search."
-                  : "No archived documents yet."}
+                {isSearchResults ? "No documents match your search." : "No archived documents yet."}
               </p>
-              {searchTerm && (
+              {isSearchResults && (
                 <div className="mt-4 flex justify-center">
-                  <Button variant="outline" onClick={clearSearch}>
-                    Clear Search
-                  </Button>
+                  <Button variant="outline" onClick={clearSearch}>Clear Search</Button>
                 </div>
               )}
             </CardContent>
@@ -659,31 +498,31 @@ export default function ArchivePage() {
                 <TableRow>
                   <TableHead className="w-10" data-no-navigate></TableHead>
                   <TableHead
-                    className="cursor-pointer hover:bg-gray-100 select-none"
+                    className={`${isSearchResults ? "" : "cursor-pointer hover:bg-gray-100"} select-none`}
                     onClick={() => handleSort("party")}
                   >
                     Party{getSortIndicator("party")}
                   </TableHead>
                   <TableHead
-                    className="w-32 cursor-pointer hover:bg-gray-100 select-none"
+                    className={`w-32 ${isSearchResults ? "" : "cursor-pointer hover:bg-gray-100"} select-none`}
                     onClick={() => handleSort("type")}
                   >
                     Type{getSortIndicator("type")}
                   </TableHead>
                   <TableHead
-                    className="cursor-pointer hover:bg-gray-100 select-none"
+                    className={`${isSearchResults ? "" : "cursor-pointer hover:bg-gray-100"} select-none`}
                     onClick={() => handleSort("notes")}
                   >
                     Notes{getSortIndicator("notes")}
                   </TableHead>
                   <TableHead
-                    className="w-28 cursor-pointer hover:bg-gray-100 select-none"
+                    className={`w-28 ${isSearchResults ? "" : "cursor-pointer hover:bg-gray-100"} select-none`}
                     onClick={() => handleSort("date")}
                   >
                     Date{getSortIndicator("date")}
                   </TableHead>
                   <TableHead
-                    className="w-24 cursor-pointer hover:bg-gray-100 select-none"
+                    className={`w-24 ${isSearchResults ? "" : "cursor-pointer hover:bg-gray-100"} select-none`}
                     onClick={() => handleSort("uploaded")}
                   >
                     Uploaded{getSortIndicator("uploaded")}
@@ -692,7 +531,7 @@ export default function ArchivePage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sortedDocuments.map((doc) => (
+                {displayedDocuments.map((doc) => (
                   <TableRow
                     key={doc.id}
                     className="cursor-pointer hover:bg-gray-50"
@@ -724,23 +563,16 @@ export default function ArchivePage() {
                     <TableCell data-no-navigate>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            ⋮
-                          </Button>
+                          <Button variant="ghost" size="sm">⋮</Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem
-                            onClick={() => router.push(`/documents/review/${doc.id}`)}
-                          >
+                          <DropdownMenuItem onClick={() => router.push(`/documents/review/${doc.id}`)}>
                             View Details
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => handleDownload(doc)}>
                             Download
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-red-600"
-                            onClick={() => handleDeleteOne(doc.id)}
-                          >
+                          <DropdownMenuItem className="text-red-600" onClick={() => handleDeleteOne(doc.id)}>
                             Delete
                           </DropdownMenuItem>
                         </DropdownMenuContent>
@@ -750,30 +582,18 @@ export default function ArchivePage() {
                 ))}
               </TableBody>
             </Table>
-            {/* Pagination Controls */}
-            {totalPages > 1 && !searchTerm && (
+            {/* Pagination Controls (only in browse mode, not search results) */}
+            {!isSearchResults && totalPages > 1 && (
               <div className="flex items-center justify-between border-t p-4">
                 <div className="text-sm text-gray-500">
                   Showing {(currentPage - 1) * PAGE_SIZE + 1}-{Math.min(currentPage * PAGE_SIZE, totalDocuments)} of {totalDocuments}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handlePrevPage}
-                    disabled={currentPage === 1 || loading}
-                  >
+                  <Button variant="outline" size="sm" onClick={handlePrevPage} disabled={currentPage === 1 || loading}>
                     ← Previous
                   </Button>
-                  <span className="text-sm text-gray-600 px-2">
-                    Page {currentPage} of {totalPages}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleNextPage}
-                    disabled={currentPage === totalPages || loading}
-                  >
+                  <span className="text-sm text-gray-600 px-2">Page {currentPage} of {totalPages}</span>
+                  <Button variant="outline" size="sm" onClick={handleNextPage} disabled={currentPage === totalPages || loading}>
                     Next →
                   </Button>
                 </div>

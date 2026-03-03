@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { twimlResponse, say, gather, redirect, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 import { dialTeamForConference } from "@/lib/twilio-api";
+import { getActiveDirectory, toClientEntries } from "@/lib/phone-directory";
 
 /**
  * POST /api/voice/menu
@@ -19,7 +20,21 @@ export async function POST(request: NextRequest) {
   const lang = phoneConfig.voiceLanguage;
   const B = phoneConfig.baseUrl;
 
-  const path = routeFromInput(digits, speech);
+  // Load directory from Snowflake (with fallback to hardcoded config)
+  let directoryEntries: { firstName: string; lastName: string; aliases?: string[] }[];
+  try {
+    const rows = await getActiveDirectory();
+    directoryEntries = toClientEntries(rows);
+  } catch (err) {
+    console.error("[menu] Failed to load directory from Snowflake:", err);
+    directoryEntries = phoneConfig.directory.map((d) => ({
+      firstName: d.firstName,
+      lastName: d.lastName,
+      aliases: "aliases" in d ? [...(d as { aliases: readonly string[] }).aliases] : undefined,
+    }));
+  }
+
+  const path = routeFromInput(digits, speech, directoryEntries);
 
   switch (path.route) {
     case "services":
@@ -98,7 +113,8 @@ export async function POST(request: NextRequest) {
 
 function routeFromInput(
   digits: string,
-  speech: string
+  speech: string,
+  directory: { firstName: string; lastName: string; aliases?: string[] }[]
 ): { route: string; nameQuery?: string } {
   // DTMF routing (legacy support)
   if (digits === "1") return { route: "services" };
@@ -139,7 +155,7 @@ function routeFromInput(
     "can i talk", "put me through",
   ];
 
-  const mentionsName = phoneConfig.directory.some((entry) => {
+  const mentionsName = directory.some((entry) => {
     const first = entry.firstName.toLowerCase();
     const last = entry.lastName.toLowerCase();
     return (

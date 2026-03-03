@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
       // No body is fine — configure all numbers
     }
     const targetNumber = body?.phoneNumber;
+    // Allow overriding the voice URL (e.g., for temporary forwarding)
+    const customVoiceUrl = body?.voiceUrl;
 
     // List all numbers on the account
     const data = await twilioFetch("/IncomingPhoneNumbers.json");
@@ -119,9 +121,11 @@ export async function POST(request: NextRequest) {
         smsUrl: num.sms_url,
       };
 
+      const effectiveVoiceUrl = customVoiceUrl || voiceUrl;
+
       // Update the phone number's webhooks
       await twilioFetch(`/IncomingPhoneNumbers/${num.sid}.json`, "POST", {
-        VoiceUrl: voiceUrl,
+        VoiceUrl: effectiveVoiceUrl,
         VoiceMethod: "POST",
         SmsUrl: smsUrl,
         SmsMethod: "POST",
@@ -133,7 +137,7 @@ export async function POST(request: NextRequest) {
         sid: num.sid,
         before,
         after: {
-          voiceUrl,
+          voiceUrl: effectiveVoiceUrl,
           smsUrl,
         },
         status: "configured",

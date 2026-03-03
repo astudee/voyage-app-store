@@ -1,6 +1,18 @@
 import { NextRequest } from "next/server";
 import { twimlResponse, say, gather, redirect, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
+import { getActiveDirectory, toClientEntries } from "@/lib/phone-directory";
+
+interface ClientDirectoryEntry {
+  id: number;
+  extension: string;
+  firstName: string;
+  lastName: string;
+  title: string;
+  number: string;
+  aliases?: string[];
+  isActive: boolean;
+}
 
 /**
  * POST /api/voice/directory-route
@@ -38,7 +50,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const matches = findDirectoryMatches(digits, speech);
+  // Load directory from Snowflake
+  let directory: ClientDirectoryEntry[];
+  try {
+    const rows = await getActiveDirectory();
+    directory = toClientEntries(rows) as ClientDirectoryEntry[];
+  } catch (err) {
+    console.error("[directory-route] Failed to load directory from Snowflake:", err);
+    // Fallback to hardcoded config
+    directory = phoneConfig.directory.map((d, i) => ({
+      id: i,
+      extension: d.extension,
+      firstName: d.firstName,
+      lastName: d.lastName,
+      title: d.title,
+      number: d.number,
+      aliases: "aliases" in d ? [...(d as { aliases: readonly string[] }).aliases] : undefined,
+      isActive: true,
+    }));
+  }
+
+  const matches = findDirectoryMatches(digits, speech, directory);
 
   // No match
   if (matches.length === 0) {
@@ -89,15 +121,14 @@ export async function POST(request: NextRequest) {
   );
 }
 
-type DirectoryEntry = (typeof phoneConfig.directory)[number];
-
 function findDirectoryMatches(
   digits: string,
-  speech: string
-): DirectoryEntry[] {
+  speech: string,
+  directory: ClientDirectoryEntry[]
+): ClientDirectoryEntry[] {
   // Match by 3-digit extension
   if (digits) {
-    const match = phoneConfig.directory.find(
+    const match = directory.find(
       (entry) => entry.extension === digits
     );
     return match ? [match] : [];
@@ -109,16 +140,13 @@ function findDirectoryMatches(
   const normalized = speech.toLowerCase().trim();
 
   // Score each entry by match quality
-  const scored = phoneConfig.directory
+  const scored = directory
     .map((entry) => {
       const first = entry.firstName.toLowerCase();
       const last = entry.lastName.toLowerCase();
       const full = `${first} ${last}`;
 
-      // Check aliases (for Randy/Holly Tran)
-      const aliasNames: string[] = "aliases" in entry
-        ? (entry as DirectoryEntry & { aliases?: string[] }).aliases?.map((a: string) => a.toLowerCase()) || []
-        : [];
+      const aliasNames: string[] = (entry.aliases || []).map((a: string) => a.toLowerCase());
 
       let score = 0;
 

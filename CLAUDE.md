@@ -1,7 +1,7 @@
 # Voyage App Store - Project Context
 
 > This file tracks our journey and context so Claude doesn't lose track between sessions.
-> **Last updated:** 2026-02-08 (Favicon updated to green, brand colors confirmed)
+> **Last updated:** 2026-03-03
 
 ---
 
@@ -64,7 +64,12 @@
 - **Streamlit completely removed** (Home.py, .streamlit folder, requirements.txt reference all deleted)
 - Old Streamlit apps preserved in `archived/pages/` for reference only
 
-**What's Next:** Document Manager enhancements and maintenance
+**New apps added (post-migration):**
+- Asset Tracker → `/assets` (IT asset inventory with assignment tracking)
+- Ticket Watcher → `/tickets` (support ticket snapshots by agent)
+- Phone Manager → `/phone` (call log, voicemails, SMS, click-to-call)
+
+**What's Next:** Ongoing enhancements and maintenance
 
 **Key Technical Notes:**
 - BigTime API credentials are in `.env` AND Vercel environment variables
@@ -134,6 +139,9 @@ All 22 apps migrated. Streamlit has been completely removed from the project.
 | 16 | Revenue Forecaster | Actuals + Plan + Pipeline forecast | BigTime, Pipedrive, Snowflake |
 | 17 | Contract Reviewer | AI-powered contract analysis | PDF upload, Claude/Gemini |
 | 18 | Sales Snapshot | Pipeline by stage with probability | Pipedrive API |
+| 19 | Asset Tracker | IT asset inventory (laptops, monitors, etc.) | Snowflake |
+| 20 | Ticket Watcher | Support ticket snapshots by agent | Snowflake |
+| 21 | Phone Manager | Call log, voicemails, SMS, click-to-call | Twilio API |
 | 96 | Snowflake Test | Connection testing | Snowflake |
 | 97 | BigTime Client Lookup | Client search utility | BigTime API |
 | 98 | QuickBooks Token Refresh | OAuth token management | QuickBooks API |
@@ -214,11 +222,11 @@ All 22 apps migrated. Streamlit has been completely removed from the project.
 
 ---
 
-## Uploads Folder
+## Dropbox Folder
 
-**Location:** `/workspaces/voyage-app-store/uploads/`
+**Location:** `/workspaces/voyage-app-store/dropbox/`
 
-This folder is for temporary uploads and reference files — things the user shares for Claude to review (Excel exports, screenshots, instruction docs, code snippets, etc.). Files here may come and go. **Never use this folder as a source directory for application code or data.** If something from uploads needs to be kept permanently, move it to `docs/` instead.
+A scratch folder for exchanging files between the user and Claude — uploads, screenshots, generated files, etc. Files here are ephemeral and may be deleted at any time. **Never use this folder as a source directory for application code or data.** If something from dropbox needs to be kept permanently, move it to `docs/` instead.
 
 ---
 
@@ -260,7 +268,7 @@ This folder is for temporary uploads and reference files — things the user sha
 - `voyage-logo.png` - Full color (for light backgrounds)
 - `voyage-logo-white.png` - White/reversed (for teal sidebar)
 
-**Brand Identity Source:** `/uploads/voyage-identity/Voyage Advisory Identity/`
+**Brand Identity Source:** `docs/brand-identity/` (logos, brand guide, fonts, submarks)
 
 ---
 
@@ -325,6 +333,54 @@ This folder is for temporary uploads and reference files — things the user sha
 - `GET /api/project-health?status=X` - Fetch project health data (combines Pipedrive, Snowflake, BigTime)
 - `GET/POST /api/client-states` - Client-to-state mappings (for revenue apportionment)
 - `GET /api/reports/revenue-by-client?year=YYYY` - Revenue by client report from QuickBooks
+- `GET/POST /api/assets` - List/create IT assets
+- `GET/PUT/DELETE /api/assets/[id]` - Individual asset operations
+- `POST /api/tickets/snapshot` - Create ticket snapshot
+- `GET /api/tickets/snapshots` - List snapshots
+- `GET /api/tickets/snapshots/[id]` - Get snapshot details
+- `GET /api/tickets/snapshots/[id]/tickets` - Get tickets for snapshot
+- `GET /api/phone/calls` - Fetch Twilio call history
+- `POST /api/phone/click-to-call` - Initiate outbound call
+- `GET /api/phone/config` - Get phone system config/directory
+- `GET /api/phone/messages` - Fetch SMS history
+- `POST /api/phone/messages/send` - Send SMS
+- `GET /api/phone/recording/[sid]` - Proxy call recording audio
+- `GET/POST /api/phone/directory` - List/create phone directory entries (Snowflake-backed)
+- `GET/PUT/DELETE /api/phone/directory/[id]` - Individual directory entry operations
+
+---
+
+## Authentication
+
+**System:** NextAuth.js v4.24.13 with Credentials provider (username/password, JWT sessions)
+
+**Key Files:**
+| File | Purpose |
+|------|---------|
+| `web/src/lib/auth.ts` | Auth config — credentials validation, JWT callbacks |
+| `web/src/lib/auth-provider.tsx` | Client `<SessionProvider>` wrapper |
+| `web/src/middleware.ts` | Global route protection (all routes protected by default) |
+| `web/src/app/api/auth/[...nextauth]/route.ts` | NextAuth API handler |
+| `web/src/app/login/page.tsx` | Login page |
+| `web/src/types/next-auth.d.ts` | TypeScript type extensions |
+
+**Environment Variables:**
+- `AUTH_USERS` — Comma-separated `user:pass` pairs (e.g., `alice:secret,bob:pass123`)
+- `NEXTAUTH_SECRET` — JWT encryption key (generate with `openssl rand -base64 64`)
+- `NEXTAUTH_URL` — Production base URL (`https://apps.voyage.xyz`)
+
+**How it works:**
+- Middleware protects ALL routes by default; exceptions listed in `matcher` regex
+- Unauthenticated requests redirect to `/login`
+- API routes also check `getServerSession(authOptions)` for defense-in-depth
+- External webhook routes (Twilio `/api/voice/*`, email `/api/documents/from-email`) are excluded from middleware
+- Email webhook uses custom `Bearer` token auth via `EMAIL_WEBHOOK_SECRET`
+
+**To make a new route public:** Add the path prefix to the `(?!...)` group in `middleware.ts` matcher.
+
+**To protect a new API route:** No middleware change needed (protected by default). Add `getServerSession()` check in the route handler.
+
+**Full reference:** `dropbox/auth-reference.zip` contains detailed INSTRUCTIONS.md and all code artifacts.
 
 ---
 
@@ -338,6 +394,9 @@ This folder is for temporary uploads and reference files — things the user sha
 | Benefits API | `web/src/app/api/benefits/route.ts` |
 | Staff API | `web/src/app/api/staff/route.ts` |
 | Document upload API | `web/src/app/api/documents/upload/route.ts` |
+| Auth config | `web/src/lib/auth.ts` |
+| Route protection middleware | `web/src/middleware.ts` |
+| Login page | `web/src/app/login/page.tsx` |
 
 ---
 
@@ -892,7 +951,7 @@ This folder is for temporary uploads and reference files — things the user sha
   - Phone config with directory entries (`web/src/lib/phone-config.ts`)
   - Documentation at `docs/phone-system.md`
 - **Call flow:** Greeting → IVR menu (services/directory/operator) → simultaneous ring → voicemail
-- **Twilio number:** +1 (844) 790-5332
+- **Twilio main number:** +1 (312) 869-8000
 - **Operators:** Andrew (+13122120815) and Emma (+12404401901) ring simultaneously
 - **Notification emails:** hello@voyageadvisory.com + astudee@voyageadvisory.com
 - **Middleware updated:** `api/voice` routes excluded from auth (Twilio webhooks need unauthenticated access)
@@ -916,6 +975,22 @@ This folder is for temporary uploads and reference files — things the user sha
   - Runs on Vercel where Twilio credentials are available at runtime
   - Designed for multiple numbers — re-run after adding a new Twilio number to configure it
 - **To activate:** Deploy to Vercel, then `curl -X POST https://apps.voyage.xyz/api/voice/setup`
+
+### 2026-03-03 - Phone Directory CRUD & Number Fix
+- **Moved phone directory from hardcoded config to Snowflake:**
+  - Created `VC_PHONE_DIRECTORY` table (30 entries seeded from `phone-config.ts`)
+  - Created `web/src/lib/phone-directory.ts` helper for reading directory from Snowflake
+  - Created `/api/phone/directory` CRUD API routes (GET, POST, PUT, DELETE)
+  - Updated Directory tab UI with Add/Edit/Delete functionality:
+    - "Add Person" button with form modal (auto-suggests next extension)
+    - Edit/delete buttons on hover for each row
+    - Delete confirmation modal
+    - Form validation (required fields, phone format, unique extension)
+  - Updated IVR routes (`directory-route`, `menu`) to read from Snowflake with hardcoded fallback
+  - Updated `/api/phone/config` to read directory from Snowflake
+- **Fixed phone header:** Changed from showing first Twilio number (was +13122487952) to always showing main number +13128698000
+- **Deleted `/api/voice/forward-temp`:** Was temporarily forwarding +13122487952 to Olivia; no longer needed
+- **After deploy:** Run `curl -X POST https://apps.voyage.xyz/api/voice/setup` to reconfigure +13122487952 to point back to main IVR
 
 ---
 
@@ -1146,13 +1221,13 @@ All polish items fixed:
 ## Twilio Phone System (IVR)
 
 **Status:** LIVE (voice + SMS webhooks configured on all numbers)
-**Primary Number:** +1 (202) 998-4405 (local DC number)
-**Toll-Free Number:** +1 (844) 790-5332 (may be dropped)
+**Main Number:** +1 (312) 869-8000 (used as caller ID for operator/sales outbound calls)
+**Additional Numbers:** +1 (312) 248-7952, +1 (202) 998-4405 — all route to same IVR
 **Documentation:** `docs/phone-system.md`
 
 ### Call Flow
 ```
-Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
+Caller dials any Voyage number → all route to same IVR
   → POST /api/voice/incoming → Greeting + IVR menu
   → Press 1 (services) → Overview → Options: hear again (1), main menu (2), or wait to connect
     → No input after 4s → Auto-transfer to sales (Andrew + David)
@@ -1166,12 +1241,12 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 |-------|---------|
 | `POST /api/voice/incoming` | Main greeting + IVR menu |
 | `POST /api/voice/menu` | Routes keypress/speech selection |
-| `POST /api/voice/operator` | Conference + hold music + dial operators via REST API |
+| `POST /api/voice/operator` | Conference + "please hold" + dial operators via REST API |
 | `POST /api/voice/operator-status` | No answer → voicemail |
-| `POST /api/voice/sales-transfer` | Conference + hold music + dial sales via REST API |
+| `POST /api/voice/sales-transfer` | Conference + "please hold" + dial sales via REST API |
 | `POST /api/voice/services-menu` | Post-overview options: hear again, main menu, or connect |
 | `POST /api/voice/connect` | Call screening for conference-based transfers |
-| `POST /api/voice/hold-music` | Classical hold music TwiML (waitUrl for conferences) |
+| `POST /api/voice/hold-music` | "Please hold" + 30s wait (waitUrl for conferences) |
 | `POST /api/voice/directory` | Company directory menu |
 | `POST /api/voice/directory-route` | Connects to selected person (caller ID passthrough) |
 | `POST /api/voice/voicemail` | Records voicemail |
@@ -1181,14 +1256,42 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 | `GET /api/voice/setup` | Show current Twilio webhook config for all numbers |
 | `POST /api/voice/setup` | Configure voice + SMS webhooks on all Twilio numbers |
 
+### Phone Management UI
+
+**URL:** https://apps.voyage.xyz/phone
+**Page:** `web/src/app/phone/page.tsx`
+
+A web dashboard for viewing call history, voicemails, and SMS messages from Twilio. Features:
+- **Call Log tab** — lists recent inbound/outbound calls with duration, status, direction
+- **Voicemails tab** — playback recordings with transcriptions
+- **Messages tab** — SMS conversation view with send capability
+- **Directory tab** — view/manage phone directory entries
+- **Click-to-Call** — initiate outbound calls from the browser
+
+**Phone Management API Routes:**
+| Route | Purpose |
+|-------|---------|
+| `GET /api/phone/calls` | Fetch call history from Twilio |
+| `POST /api/phone/click-to-call` | Initiate outbound call (Twilio connects two legs) |
+| `GET /api/phone/config` | Get phone system configuration (directory from Snowflake) |
+| `GET/POST /api/phone/directory` | List/create directory entries (Snowflake VC_PHONE_DIRECTORY) |
+| `GET/PUT/DELETE /api/phone/directory/[id]` | Individual directory entry CRUD |
+| `GET /api/phone/messages` | Fetch SMS message history |
+| `POST /api/phone/messages/send` | Send an SMS message |
+| `GET /api/phone/recording/[sid]` | Stream/proxy a call recording |
+
 ### Key Files
 | File | Purpose |
 |------|---------|
 | `web/src/lib/twiml.ts` | Lightweight TwiML XML helper (no Twilio SDK needed) |
 | `web/src/lib/twilio-api.ts` | Twilio REST API helper (outbound calls for conference transfers) |
-| `web/src/lib/phone-config.ts` | Phone numbers, directory entries, settings |
+| `web/src/lib/twilio-client.ts` | Twilio REST API read client (calls, recordings, messages) |
+| `web/src/lib/phone-config.ts` | Phone numbers, hunt groups, IVR settings (directory moved to Snowflake) |
+| `web/src/lib/phone-directory.ts` | Phone directory helper — reads/writes VC_PHONE_DIRECTORY in Snowflake |
 | `web/src/lib/gmail.ts` | Shared Gmail API helper (used by voicemail + SMS notifications) |
-| `web/src/app/api/voice/*/route.ts` | 17 API route handlers |
+| `web/src/app/api/voice/*/route.ts` | 17 IVR webhook route handlers |
+| `web/src/app/api/phone/*/route.ts` | 6 phone management API routes |
+| `web/src/app/phone/page.tsx` | Phone management UI page |
 | `docs/phone-system.md` | Full documentation |
 
 ### Environment Variables (Vercel)
@@ -1196,20 +1299,15 @@ Caller dials +1 (202) 998-4405 (or +1 (844) 790-5332)
 |----------|-------|--------|
 | `TWILIO_ACCOUNT_SID` | AC... | Set |
 | `TWILIO_AUTH_TOKEN` | (secret) | Set |
-| `TWILIO_PHONE_NUMBER` | +18447905332 | Set (update to +12029984405 when 844 is dropped) |
+| `TWILIO_PHONE_NUMBER` | +13128698000 | Set (main number) |
 | `OPERATOR_PHONE_1` | +13122120815 (Andrew) | Set |
 | `OPERATOR_PHONE_2` | +12404401901 (Emma) | Set |
 | `PHONE_SYSTEM_BASE_URL` | https://apps.voyage.xyz | Set |
-| `VOICEMAIL_EMAIL` | (no longer used — hardcoded in phone-config.ts) | Can remove |
 
-### To Go Live
-1. Andrew updates `TWILIO_ACCOUNT_SID` and `TWILIO_AUTH_TOKEN` in Vercel Dashboard
-2. Deploy to production: `npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3`
-3. Configure webhooks (choose one):
-   - **Auto (recommended):** `curl -X POST https://apps.voyage.xyz/api/voice/setup` — configures all numbers
-   - **Manual:** In Twilio Console → Phone Numbers → your number:
-     - Voice → A Call Comes In: `https://apps.voyage.xyz/api/voice/incoming` (HTTP POST)
-     - Messaging → A Message Comes In: `https://apps.voyage.xyz/api/voice/sms-incoming` (HTTP POST)
+### Adding New Phone Numbers
+1. Purchase number in Twilio Console
+2. Deploy: `npx vercel --prod --token gcsACrDUYSjDtKnf0EQda6f3`
+3. Configure webhooks: `curl -X POST https://apps.voyage.xyz/api/voice/setup` — configures ALL numbers on the account
 4. Verify: `curl https://apps.voyage.xyz/api/voice/setup` — shows current webhook config
 5. Call and text the number to test
 

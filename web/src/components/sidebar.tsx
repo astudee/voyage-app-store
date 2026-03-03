@@ -50,6 +50,7 @@ const navigation = [
       { name: "Forecasted Billable Hours", href: "/apps/forecasted-hours" },
       { name: "Payroll Calculator", href: "/apps/payroll-calc" },
       { name: "Payroll Helper", href: "/apps/payroll-helper" },
+      { name: "Phone", href: "/phone" },
       { name: "Project Health Monitor", href: "/apps/project-health" },
       { name: "Resource Checker", href: "/apps/resource-checker" },
       { name: "Revenue Apportionment", href: "/reports/revenue-by-client" },

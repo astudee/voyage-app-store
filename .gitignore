@@ -17,6 +17,9 @@ __pycache__/
 
 # Upload folder for sharing files with Claude
 uploads/
+
+# Dropbox folder for exchanging files between user and Claude
+dropbox/
 .vercel
 .env
 .env*.local

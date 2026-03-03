@@ -1,7 +1,11 @@
 import { NextRequest } from "next/server";
 import { twimlResponse, say, gather } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
-import { sendCallerToVoicemail } from "@/lib/twilio-api";
+import {
+  sendCallerToVoicemail,
+  getConferenceParticipantCount,
+  cancelOtherOutboundCalls,
+} from "@/lib/twilio-api";
 
 /**
  * POST /api/voice/connect
@@ -36,9 +40,33 @@ export async function POST(request: NextRequest) {
     // Phase 2: They pressed a key during screening
     if (isAcceptPhase) {
       if (digits === "1") {
+        // Check if someone else already joined (conference full)
+        try {
+          const count = await getConferenceParticipantCount(confName);
+          if (count >= 2) {
+            return twimlResponse(
+              [
+                say("This call has already been answered by another team member.", v, lang),
+                `  <Hangup />`,
+              ].join("\n")
+            );
+          }
+        } catch (err) {
+          console.error("[connect] Failed to check conference count:", err);
+          // On error, let them try to join (existing behavior)
+        }
+
+        // Cancel other ringing outbound legs so their phones stop ringing
+        const callSid = formData.get("CallSid")?.toString() || "";
+        try {
+          await cancelOtherOutboundCalls(phoneConfig.twilioNumber, callSid);
+        } catch (err) {
+          console.error("[connect] Failed to cancel other calls:", err);
+        }
+
         // Accept — join the conference
         return twimlResponse(
-          `  <Dial><Conference beep="true" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
+          `  <Dial><Conference beep="false" endConferenceOnExit="true">${escapeXml(confName)}</Conference></Dial>`
         );
       }
       // Press 2 — explicitly send caller to voicemail via REST API

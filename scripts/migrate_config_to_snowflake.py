@@ -19,7 +19,7 @@ SNOWFLAKE_CONFIG = {
     'schema': 'PUBLIC'
 }
 
-EXCEL_FILE = 'uploads/Voyage_Global_Config 2026.01.21.xlsx'
+EXCEL_FILE = 'temp/Voyage_Global_Config 2026.01.21.xlsx'  # Original file deleted; migration already completed Jan 2026
 
 
 def get_connection():

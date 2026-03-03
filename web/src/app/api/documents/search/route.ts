@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { query } from "@/lib/snowflake";
 
+const SELECT_FIELDS = `
+  ID, ORIGINAL_FILENAME, FILE_PATH, PARTY, SUB_PARTY, DOCUMENT_TYPE,
+  DOCUMENT_TYPE_CATEGORY, DOCUMENT_CATEGORY, CONTRACT_TYPE,
+  AI_SUMMARY, DOCUMENT_DATE, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE,
+  AMOUNT, DUE_DATE, INVOICE_TYPE, NOTES, CREATED_AT, REVIEWED_AT
+`;
+
 interface ArchivedDocument {
   ID: string;
   ORIGINAL_FILENAME: string;
+  FILE_PATH: string;
   PARTY: string | null;
   SUB_PARTY: string | null;
   DOCUMENT_TYPE: string | null;
@@ -20,81 +28,212 @@ interface ArchivedDocument {
   INVOICE_TYPE: string | null;
   NOTES: string | null;
   CREATED_AT: string;
+  REVIEWED_AT: string | null;
 }
 
-// POST - AI-powered semantic search of archived documents
+/**
+ * POST /api/documents/search
+ *
+ * Two modes:
+ *   mode=text (default) — SQL ILIKE boolean search across all archived documents.
+ *     Supports: quoted phrases, AND, NOT/-, implicit OR.
+ *   mode=ai — Gemini semantic search for natural language queries.
+ */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
     const body = await request.json();
-    const { q } = body as { q: string };
+    const { q, mode = "text" } = body as { q: string; mode?: "text" | "ai" };
 
     if (!q || q.trim().length < 2) {
       return NextResponse.json({ error: "Query too short (min 2 characters)" }, { status: 400 });
     }
 
     const searchQuery = q.trim();
-    console.log(`[search] Searching for: "${searchQuery}"`);
+    console.log(`[search] mode=${mode} query="${searchQuery}"`);
 
-    // Get archived documents with all searchable fields
-    const documents = await query<ArchivedDocument>(`
-      SELECT
-        ID, ORIGINAL_FILENAME, PARTY, SUB_PARTY, DOCUMENT_TYPE,
-        DOCUMENT_TYPE_CATEGORY, DOCUMENT_CATEGORY, CONTRACT_TYPE,
-        AI_SUMMARY, DOCUMENT_DATE, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE,
-        AMOUNT, DUE_DATE, INVOICE_TYPE, NOTES, CREATED_AT
-      FROM DOCUMENTS
-      WHERE STATUS = 'archived'
-      AND DELETED_AT IS NULL
-      ORDER BY CREATED_AT DESC
-      LIMIT 500
-    `);
-
-    if (documents.length === 0) {
-      return NextResponse.json({
-        results: [],
-        total: 0,
-        query: searchQuery,
-        message: "No archived documents found",
-      });
+    if (mode === "ai") {
+      return performAiSearch(searchQuery, startTime);
     }
 
-    console.log(`[search] Found ${documents.length} archived documents to search`);
+    return performSqlSearch(searchQuery, startTime);
+  } catch (error) {
+    console.error("[search] Error:", error);
+    return NextResponse.json(
+      { error: "Search failed", details: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
+  }
+}
 
-    // Build context for AI - include all searchable fields
-    const docsContext = documents
-      .map((d, i) => {
-        // Use DOCUMENT_DATE if available, fall back to legacy fields
-        const docDate = d.DOCUMENT_DATE || d.EXECUTED_DATE || d.LETTER_DATE || d.PERIOD_END_DATE;
-        const parts = [
-          `[${i}]`,
-          `File: ${d.ORIGINAL_FILENAME}`,
-          d.PARTY ? `Party: ${d.PARTY}` : null,
-          d.SUB_PARTY ? `Sub-party: ${d.SUB_PARTY}` : null,
-          d.DOCUMENT_TYPE_CATEGORY ? `Type: ${d.DOCUMENT_TYPE_CATEGORY}` : null,
-          d.DOCUMENT_CATEGORY ? `Category: ${d.DOCUMENT_CATEGORY}` : null,
-          d.CONTRACT_TYPE ? `Contract: ${d.CONTRACT_TYPE}` : null,
-          d.DOCUMENT_TYPE ? `Doc type: ${d.DOCUMENT_TYPE}` : null,
-          d.AMOUNT ? `Amount: $${d.AMOUNT}` : null,
-          docDate ? `Date: ${docDate}` : null,
-          d.AI_SUMMARY ? `Summary: ${d.AI_SUMMARY}` : null,
-          d.NOTES ? `Notes: ${d.NOTES}` : null,
-        ]
-          .filter(Boolean)
-          .join(" | ");
-        return parts;
-      })
-      .join("\n");
+// ---------------------------------------------------------------------------
+// SQL-based boolean search (normal search)
+// ---------------------------------------------------------------------------
 
-    // Call Gemini for semantic search ranking
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      console.log("[search] Gemini API key not configured, falling back to text search");
-      return performTextSearch(documents, searchQuery);
+/** The columns we search with ILIKE */
+const SEARCH_COLUMNS = [
+  "PARTY", "SUB_PARTY", "ORIGINAL_FILENAME", "CONTRACT_TYPE",
+  "DOCUMENT_TYPE", "DOCUMENT_TYPE_CATEGORY", "DOCUMENT_CATEGORY",
+  "AI_SUMMARY", "NOTES", "INVOICE_TYPE",
+];
+
+function parseQuery(queryStr: string): { mustMatch: string[]; mustNotMatch: string[]; isAnd: boolean } {
+  const mustMatch: string[] = [];
+  const mustNotMatch: string[] = [];
+
+  const isAnd = /\bAND\b/.test(queryStr);
+
+  let cleaned = queryStr.replace(/\b(AND|OR)\b/gi, " ");
+
+  // Extract quoted phrases
+  const phraseRegex = /"([^"]+)"/g;
+  let m;
+  while ((m = phraseRegex.exec(cleaned)) !== null) {
+    mustMatch.push(m[1]);
+  }
+  cleaned = cleaned.replace(phraseRegex, " ");
+
+  // Extract NOT / - terms
+  const notRegex = /(?:\bNOT\s+|-)(\S+)/gi;
+  while ((m = notRegex.exec(cleaned)) !== null) {
+    mustNotMatch.push(m[1]);
+  }
+  cleaned = cleaned.replace(notRegex, " ");
+
+  // Remaining terms
+  const terms = cleaned.split(/\s+/).filter((t) => t.length > 0);
+  mustMatch.push(...terms);
+
+  return { mustMatch, mustNotMatch, isAnd };
+}
+
+/**
+ * Build a SQL condition for one term: (col1 ILIKE ? OR col2 ILIKE ? OR ...)
+ * Returns the SQL fragment and an array of bind values (one per placeholder).
+ */
+function termCondition(term: string): { sql: string; binds: string[] } {
+  const pattern = `%${term}%`;
+  const clauses = SEARCH_COLUMNS.map((col) => `${col} ILIKE ?`);
+  clauses.push(`CAST(AMOUNT AS VARCHAR) ILIKE ?`);
+  clauses.push(`CAST(COALESCE(DOCUMENT_DATE, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE) AS VARCHAR) ILIKE ?`);
+  const bindCount = clauses.length;
+  return { sql: `(${clauses.join(" OR ")})`, binds: Array(bindCount).fill(pattern) };
+}
+
+async function performSqlSearch(queryStr: string, startTime: number) {
+  const { mustMatch, mustNotMatch, isAnd } = parseQuery(queryStr);
+
+  if (mustMatch.length === 0 && mustNotMatch.length === 0) {
+    return NextResponse.json({ results: [], total: 0, query: queryStr, search_type: "text" });
+  }
+
+  const conditions: string[] = ["STATUS = 'archived'", "DELETED_AT IS NULL"];
+  const allBinds: string[] = [];
+
+  // Must-match terms
+  if (mustMatch.length > 0) {
+    if (isAnd) {
+      // AND: every term must appear somewhere
+      for (const term of mustMatch) {
+        const { sql, binds } = termCondition(term);
+        conditions.push(sql);
+        allBinds.push(...binds);
+      }
+    } else {
+      // OR: at least one term must match — combine into one big OR group
+      const orParts: string[] = [];
+      for (const term of mustMatch) {
+        const { sql, binds } = termCondition(term);
+        orParts.push(sql);
+        allBinds.push(...binds);
+      }
+      conditions.push(`(${orParts.join(" OR ")})`);
     }
+  }
 
-    const prompt = `You are a document search assistant. Given a search query and a list of documents, identify which documents are relevant.
+  // Must-NOT-match terms
+  for (const term of mustNotMatch) {
+    const pattern = `%${term}%`;
+    const notClauses = SEARCH_COLUMNS.map(() => `?`);
+    const notSql = SEARCH_COLUMNS.map((col, i) => `${col} ILIKE ${notClauses[i]}`);
+    conditions.push(`NOT (${notSql.join(" OR ")})`);
+    allBinds.push(...Array(SEARCH_COLUMNS.length).fill(pattern));
+  }
+
+  const sql = `
+    SELECT ${SELECT_FIELDS}
+    FROM DOCUMENTS
+    WHERE ${conditions.join("\n      AND ")}
+    ORDER BY COALESCE(DOCUMENT_DATE, EXECUTED_DATE, LETTER_DATE, PERIOD_END_DATE) DESC NULLS LAST
+    LIMIT 200
+  `;
+
+  console.log(`[search/sql] Running query with ${allBinds.length} bind params`);
+
+  const documents = await query<ArchivedDocument>(sql, allBinds);
+
+  const results = documents.map(formatDocument);
+  const duration = Date.now() - startTime;
+  console.log(`[search/sql] Found ${results.length} results in ${duration}ms`);
+
+  return NextResponse.json({
+    results,
+    total: results.length,
+    query: queryStr,
+    search_type: "text",
+    duration_ms: duration,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AI-powered semantic search (smart search)
+// ---------------------------------------------------------------------------
+
+async function performAiSearch(searchQuery: string, startTime: number) {
+  // Load all archived docs for AI to consider
+  const documents = await query<ArchivedDocument>(`
+    SELECT ${SELECT_FIELDS}
+    FROM DOCUMENTS
+    WHERE STATUS = 'archived' AND DELETED_AT IS NULL
+    ORDER BY CREATED_AT DESC
+    LIMIT 1000
+  `);
+
+  if (documents.length === 0) {
+    return NextResponse.json({ results: [], total: 0, query: searchQuery, search_type: "ai" });
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.log("[search/ai] Gemini API key not configured, falling back to SQL search");
+    return performSqlSearch(searchQuery, startTime);
+  }
+
+  // Build context for Gemini
+  const docsContext = documents
+    .map((d, i) => {
+      const docDate = d.DOCUMENT_DATE || d.EXECUTED_DATE || d.LETTER_DATE || d.PERIOD_END_DATE;
+      return [
+        `[${i}]`,
+        `File: ${d.ORIGINAL_FILENAME}`,
+        d.PARTY ? `Party: ${d.PARTY}` : null,
+        d.SUB_PARTY ? `Sub-party: ${d.SUB_PARTY}` : null,
+        d.DOCUMENT_TYPE_CATEGORY ? `Type: ${d.DOCUMENT_TYPE_CATEGORY}` : null,
+        d.DOCUMENT_CATEGORY ? `Category: ${d.DOCUMENT_CATEGORY}` : null,
+        d.CONTRACT_TYPE ? `Contract: ${d.CONTRACT_TYPE}` : null,
+        d.DOCUMENT_TYPE ? `Doc type: ${d.DOCUMENT_TYPE}` : null,
+        d.AMOUNT ? `Amount: $${d.AMOUNT}` : null,
+        docDate ? `Date: ${docDate}` : null,
+        d.AI_SUMMARY ? `Summary: ${d.AI_SUMMARY}` : null,
+        d.NOTES ? `Notes: ${d.NOTES}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+    })
+    .join("\n");
+
+  const prompt = `You are a document search assistant. Given a natural language search query and a list of documents, identify which documents are relevant.
 
 Search query: "${searchQuery}"
 
@@ -102,219 +241,80 @@ Documents:
 ${docsContext}
 
 Instructions:
-1. Find documents that match the search query semantically
-2. Consider matches in: filenames, party names, sub-parties, document types, AI summaries, notes, amounts, and dates
-3. Rank results by relevance (most relevant first)
-4. Only include documents that are actually relevant to the query
+1. Interpret the query as a natural language request
+2. Find documents that semantically match what the user is looking for
+3. Consider: party names, document types, dates, amounts, summaries, notes
+4. Partial name matches count (e.g., "ECS" matches "ECS Federal")
+5. Understand date references: "last year" = previous calendar year, "this year" = current year, "from 2024" = year 2024
+6. Understand amount queries: "over $5000" = amount > 5000
+7. Rank results by relevance (most relevant first)
+8. Only include documents that are actually relevant
 
-Boolean Query Support:
-- If query contains AND (e.g., "principal insurance AND invoice"), ALL terms must match
-- If query has quoted phrases like "principal insurance", match the exact phrase
-- If query has -term or NOT term, exclude documents containing that term
-
-Natural Language Support:
-- "utility bills from 2024" → find documents with type containing "bill" or "utility" AND date in 2024
-- "contracts with ECS" → find documents where party contains "ECS" AND type is contract
-- "invoices over $5000" → find invoices with amount > 5000
-- "contract modifications" or "amendments" → find contracts with type containing "modification" or "amendment"
-
-Date Filtering:
-- "from 2024" or "in 2024" → dates with year 2024
-- "last year" → dates from previous calendar year
-- "this year" → dates from current year
-
-Entity Matching:
-- If the query is about a person, company, or entity, look for matches in party, sub_party, and filenames
-- Partial matches count (e.g., "ECS" matches "ECS Federal")
-
-Return ONLY a JSON object with this format (no markdown, no explanation):
+Return ONLY a JSON object (no markdown, no explanation):
 {"matches": [0, 5, 12]}
 
-Return an empty array if no documents match:
+Return empty array if nothing matches:
 {"matches": []}`;
 
-    console.log("[search] Calling Gemini for semantic search...");
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      console.log(`[search] Gemini returned ${response.status}, falling back to text search`);
-      return performTextSearch(documents, searchQuery);
+  console.log("[search/ai] Calling Gemini...");
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 1000 },
+      }),
     }
+  );
 
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"matches":[]}';
-    console.log("[search] Gemini response:", text.substring(0, 100));
-
-    // Parse the response
-    const match = text.match(/\{[\s\S]*\}/);
-    if (!match) {
-      console.log("[search] Could not parse Gemini response, falling back to text search");
-      return performTextSearch(documents, searchQuery);
-    }
-
-    let parsed: { matches: number[] };
-    try {
-      parsed = JSON.parse(match[0]);
-    } catch {
-      console.log("[search] JSON parse failed, falling back to text search");
-      return performTextSearch(documents, searchQuery);
-    }
-
-    // Return matched documents in order
-    const results = (parsed.matches || [])
-      .filter((idx: number) => idx >= 0 && idx < documents.length)
-      .map((idx: number) => formatDocument(documents[idx]));
-
-    const duration = Date.now() - startTime;
-    console.log(`[search] Found ${results.length} results in ${duration}ms`);
-
-    return NextResponse.json({
-      results,
-      total: results.length,
-      query: searchQuery,
-      search_type: "ai",
-      duration_ms: duration,
-    });
-  } catch (error) {
-    console.error("[search] Error:", error);
-    return NextResponse.json(
-      {
-        error: "Search failed",
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+  if (!response.ok) {
+    console.log(`[search/ai] Gemini returned ${response.status}, falling back to SQL search`);
+    return performSqlSearch(searchQuery, startTime);
   }
-}
 
-// Parse boolean query into terms and phrases
-// Supports: "quoted phrase", AND, OR (implicit), NOT/-
-function parseQuery(queryStr: string): { mustMatch: string[]; mustNotMatch: string[]; isAnd: boolean } {
-  const mustMatch: string[] = [];
-  const mustNotMatch: string[] = [];
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{"matches":[]}';
+  console.log("[search/ai] Gemini response:", text.substring(0, 200));
 
-  // Check if AND is used (case insensitive)
-  const hasAnd = /\bAND\b/i.test(queryStr);
-  const isAnd = hasAnd;
-
-  // Remove AND/OR operators for parsing
-  let cleaned = queryStr.replace(/\b(AND|OR)\b/gi, " ");
-
-  // Extract quoted phrases
-  const phraseRegex = /"([^"]+)"/g;
-  let match;
-  while ((match = phraseRegex.exec(cleaned)) !== null) {
-    mustMatch.push(match[1].toLowerCase());
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    console.log("[search/ai] Could not parse response, falling back to SQL search");
+    return performSqlSearch(searchQuery, startTime);
   }
-  cleaned = cleaned.replace(phraseRegex, " ");
 
-  // Extract NOT terms (prefixed with - or NOT)
-  const notRegex = /(?:NOT\s+|-)([\w]+)/gi;
-  while ((match = notRegex.exec(cleaned)) !== null) {
-    mustNotMatch.push(match[1].toLowerCase());
+  let parsed: { matches: number[] };
+  try {
+    parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    console.log("[search/ai] JSON parse failed, falling back to SQL search");
+    return performSqlSearch(searchQuery, startTime);
   }
-  cleaned = cleaned.replace(notRegex, " ");
 
-  // Extract remaining terms
-  const terms = cleaned
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 0);
+  const results = (parsed.matches || [])
+    .filter((idx: number) => idx >= 0 && idx < documents.length)
+    .map((idx: number) => formatDocument(documents[idx]));
 
-  mustMatch.push(...terms);
-
-  return { mustMatch, mustNotMatch, isAnd };
-}
-
-// Fallback text-based search with boolean support
-function performTextSearch(documents: ArchivedDocument[], queryStr: string) {
-  const { mustMatch, mustNotMatch, isAnd } = parseQuery(queryStr);
-
-  const scored = documents.map((doc) => {
-    const searchableText = [
-      doc.ORIGINAL_FILENAME,
-      doc.PARTY,
-      doc.SUB_PARTY,
-      doc.DOCUMENT_TYPE,
-      doc.DOCUMENT_TYPE_CATEGORY,
-      doc.DOCUMENT_CATEGORY,
-      doc.CONTRACT_TYPE,
-      doc.AI_SUMMARY,
-      doc.NOTES,
-      doc.INVOICE_TYPE,
-      doc.AMOUNT?.toString(),
-      doc.EXECUTED_DATE,
-      doc.LETTER_DATE,
-      doc.PERIOD_END_DATE,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    // Check for must-not-match terms
-    for (const term of mustNotMatch) {
-      if (searchableText.includes(term)) {
-        return { doc, score: 0 };
-      }
-    }
-
-    // Score based on matching
-    let matchedCount = 0;
-    let score = 0;
-
-    for (const term of mustMatch) {
-      if (searchableText.includes(term)) {
-        matchedCount++;
-        score++;
-        // Bonus for exact word match (not just substring)
-        const words = searchableText.split(/[\s.,;:()\[\]{}\/\\-]+/);
-        if (words.includes(term)) {
-          score += 0.5;
-        }
-        // Extra bonus for party/sub_party match
-        if ((doc.PARTY || "").toLowerCase().includes(term) ||
-            (doc.SUB_PARTY || "").toLowerCase().includes(term)) {
-          score += 1;
-        }
-      }
-    }
-
-    // For AND queries, all terms must match
-    if (isAnd && matchedCount < mustMatch.length) {
-      return { doc, score: 0 };
-    }
-
-    return { doc, score };
-  });
-
-  const results = scored
-    .filter((s) => s.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 100)
-    .map((s) => formatDocument(s.doc));
+  const duration = Date.now() - startTime;
+  console.log(`[search/ai] Found ${results.length} results in ${duration}ms`);
 
   return NextResponse.json({
     results,
     total: results.length,
-    query: queryStr,
-    search_type: "text",
+    query: searchQuery,
+    search_type: "ai",
+    duration_ms: duration,
   });
 }
+
+// ---------------------------------------------------------------------------
 
 function formatDocument(doc: ArchivedDocument) {
   return {
     id: doc.ID,
     original_filename: doc.ORIGINAL_FILENAME,
+    file_path: doc.FILE_PATH,
     party: doc.PARTY,
     sub_party: doc.SUB_PARTY,
     document_type: doc.DOCUMENT_TYPE,
@@ -331,5 +331,6 @@ function formatDocument(doc: ArchivedDocument) {
     invoice_type: doc.INVOICE_TYPE,
     notes: doc.NOTES,
     created_at: doc.CREATED_AT,
+    reviewed_at: doc.REVIEWED_AT,
   };
 }

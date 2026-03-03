@@ -101,6 +101,79 @@ export async function dialTeamForConference(opts: {
 }
 
 /**
+ * Check how many participants are currently in a conference.
+ * Returns 0 if the conference doesn't exist or on error.
+ */
+export async function getConferenceParticipantCount(confName: string): Promise<number> {
+  const { accountSid, authToken } = getCredentials();
+  const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+
+  const confRes = await fetch(
+    `${BASE_URL}/Accounts/${accountSid}/Conferences.json?FriendlyName=${encodeURIComponent(confName)}&Status=in-progress`,
+    { headers: { Authorization: authHeader } }
+  );
+
+  if (!confRes.ok) return 0;
+
+  const confData = await confRes.json();
+  const conferences = confData.conferences || [];
+  if (conferences.length === 0) return 0;
+
+  const confSid = conferences[0].sid;
+
+  const partRes = await fetch(
+    `${BASE_URL}/Accounts/${accountSid}/Conferences/${confSid}/Participants.json`,
+    { headers: { Authorization: authHeader } }
+  );
+
+  if (!partRes.ok) return 0;
+
+  const partData = await partRes.json();
+  return (partData.participants || []).length;
+}
+
+/**
+ * Cancel all currently-ringing outbound calls from a given number,
+ * except the specified call SID (the one we want to keep).
+ *
+ * Used after an operator accepts a call — stops the other phones from ringing.
+ */
+export async function cancelOtherOutboundCalls(
+  fromNumber: string,
+  keepCallSid: string
+): Promise<void> {
+  const { accountSid, authToken } = getCredentials();
+  const authHeader = `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`;
+
+  const res = await fetch(
+    `${BASE_URL}/Accounts/${accountSid}/Calls.json?From=${encodeURIComponent(fromNumber)}&Status=ringing`,
+    { headers: { Authorization: authHeader } }
+  );
+
+  if (!res.ok) return;
+
+  const data = await res.json();
+  const calls = data.calls || [];
+
+  for (const call of calls) {
+    if (call.sid === keepCallSid) continue;
+    try {
+      await fetch(`${BASE_URL}/Accounts/${accountSid}/Calls/${call.sid}.json`, {
+        method: "POST",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({ Status: "completed" }).toString(),
+      });
+      console.log(`[cancelOtherCalls] Canceled ${call.sid}`);
+    } catch (err) {
+      console.error(`[cancelOtherCalls] Failed to cancel ${call.sid}:`, err);
+    }
+  }
+}
+
+/**
  * Send the caller in a conference to voicemail.
  * Finds the in-progress conference by name, lists its participants,
  * and redirects each participant's call to the voicemail URL.
