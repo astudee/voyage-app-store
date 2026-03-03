@@ -82,3 +82,59 @@ export function toClientEntry(row: DirectoryEntry) {
 export function toClientEntries(rows: DirectoryEntry[]) {
   return rows.map(toClientEntry);
 }
+
+// ─── Hunt Groups ────────────────────────────────────────────────
+
+export interface HuntGroupMemberRow {
+  MEMBER_ID: number;
+  GROUP_NAME: string;
+  PHONE_NUMBER: string;
+  DISPLAY_NAME: string;
+  CREATED_AT: string;
+}
+
+const CREATE_HUNT_GROUP_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS VC_HUNT_GROUP_MEMBERS (
+  MEMBER_ID NUMBER(38,0) AUTOINCREMENT PRIMARY KEY,
+  GROUP_NAME VARCHAR(20) NOT NULL,
+  PHONE_NUMBER VARCHAR(20) NOT NULL,
+  DISPLAY_NAME VARCHAR(200),
+  CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+)`;
+
+let huntGroupTableEnsured = false;
+
+export async function ensureHuntGroupTable() {
+  if (huntGroupTableEnsured) return;
+  await execute(CREATE_HUNT_GROUP_TABLE_SQL);
+  huntGroupTableEnsured = true;
+}
+
+/**
+ * Get all members of a hunt group ('operator' or 'sales').
+ */
+export async function getHuntGroupMembers(groupName: string): Promise<HuntGroupMemberRow[]> {
+  await ensureHuntGroupTable();
+  return query<HuntGroupMemberRow>(
+    `SELECT * FROM VC_HUNT_GROUP_MEMBERS WHERE GROUP_NAME = ? ORDER BY MEMBER_ID`,
+    [groupName]
+  );
+}
+
+/**
+ * Get phone numbers for a hunt group (used by IVR routes).
+ */
+export async function getHuntGroupNumbers(groupName: string): Promise<string[]> {
+  const members = await getHuntGroupMembers(groupName);
+  return members.map((m) => m.PHONE_NUMBER);
+}
+
+/**
+ * Get all hunt group members (both groups).
+ */
+export async function getAllHuntGroupMembers(): Promise<HuntGroupMemberRow[]> {
+  await ensureHuntGroupTable();
+  return query<HuntGroupMemberRow>(
+    `SELECT * FROM VC_HUNT_GROUP_MEMBERS ORDER BY GROUP_NAME, MEMBER_ID`
+  );
+}

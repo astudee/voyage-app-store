@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { twimlResponse, say, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 import { dialTeamForConference } from "@/lib/twilio-api";
+import { getHuntGroupNumbers } from "@/lib/phone-directory";
 
 /**
  * POST /api/voice/sales-transfer
@@ -20,10 +21,19 @@ export async function POST(request: NextRequest) {
 
     const confName = `voyage-sales-${Date.now()}`;
 
+    // Load sales numbers from Snowflake (fallback to hardcoded)
+    let salesNumbers: string[];
+    try {
+      salesNumbers = await getHuntGroupNumbers("sales");
+      if (salesNumbers.length === 0) salesNumbers = [...phoneConfig.salesNumbers];
+    } catch {
+      salesNumbers = [...phoneConfig.salesNumbers];
+    }
+
     // Fire off outbound calls to sales team — errors must not block TwiML
     try {
       await dialTeamForConference({
-        numbers: [...phoneConfig.salesNumbers],
+        numbers: salesNumbers,
         from: phoneConfig.mainNumber,
         confName,
         callType: "sales",

@@ -347,6 +347,7 @@ A scratch folder for exchanging files between the user and Claude — uploads, s
 - `GET /api/phone/recording/[sid]` - Proxy call recording audio
 - `GET/POST /api/phone/directory` - List/create phone directory entries (Snowflake-backed)
 - `GET/PUT/DELETE /api/phone/directory/[id]` - Individual directory entry operations
+- `GET/POST/DELETE /api/phone/hunt-groups` - Hunt group member management (Snowflake-backed)
 
 ---
 
@@ -991,6 +992,17 @@ A scratch folder for exchanging files between the user and Claude — uploads, s
 - **Fixed phone header:** Changed from showing first Twilio number (was +13122487952) to always showing main number +13128698000
 - **Deleted `/api/voice/forward-temp`:** Was temporarily forwarding +13122487952 to Olivia; no longer needed
 - **After deploy:** Run `curl -X POST https://apps.voyage.xyz/api/voice/setup` to reconfigure +13122487952 to point back to main IVR
+- **Moved hunt groups from hardcoded config to Snowflake:**
+  - Created `VC_HUNT_GROUP_MEMBERS` table (5 entries: 3 operator, 2 sales)
+  - Added hunt group helpers to `phone-directory.ts` (`getHuntGroupNumbers`, `getHuntGroupMembers`)
+  - Created `/api/phone/hunt-groups` API (GET list, POST add member, DELETE remove member)
+  - Enforces minimum 1 member per group on delete
+  - Updated Config tab with add/remove member UI:
+    - "Add" button on each hunt group card opens inline person picker (from directory)
+    - X button on each member to remove (hidden when only 1 member remains)
+    - Remove confirmation modal
+  - Updated IVR routes (`operator`, `sales-transfer`, `menu`) to read from Snowflake with hardcoded fallback
+  - Updated `/api/phone/config` to build hunt groups from Snowflake
 
 ---
 
@@ -1276,6 +1288,7 @@ A web dashboard for viewing call history, voicemails, and SMS messages from Twil
 | `GET /api/phone/config` | Get phone system configuration (directory from Snowflake) |
 | `GET/POST /api/phone/directory` | List/create directory entries (Snowflake VC_PHONE_DIRECTORY) |
 | `GET/PUT/DELETE /api/phone/directory/[id]` | Individual directory entry CRUD |
+| `GET/POST/DELETE /api/phone/hunt-groups` | Hunt group member management (Snowflake VC_HUNT_GROUP_MEMBERS) |
 | `GET /api/phone/messages` | Fetch SMS message history |
 | `POST /api/phone/messages/send` | Send an SMS message |
 | `GET /api/phone/recording/[sid]` | Stream/proxy a call recording |

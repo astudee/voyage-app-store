@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { twimlResponse, say, gather, redirect, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 import { dialTeamForConference } from "@/lib/twilio-api";
-import { getActiveDirectory, toClientEntries } from "@/lib/phone-directory";
+import { getActiveDirectory, toClientEntries, getHuntGroupNumbers } from "@/lib/phone-directory";
 
 /**
  * POST /api/voice/menu
@@ -71,9 +71,16 @@ export async function POST(request: NextRequest) {
     case "sales": {
       // Sales → conference with hold music + dial sales team
       const confName = `voyage-sales-${Date.now()}`;
+      let salesNumbers: string[];
+      try {
+        salesNumbers = await getHuntGroupNumbers("sales");
+        if (salesNumbers.length === 0) salesNumbers = [...phoneConfig.salesNumbers];
+      } catch {
+        salesNumbers = [...phoneConfig.salesNumbers];
+      }
       try {
         await dialTeamForConference({
-          numbers: [...phoneConfig.salesNumbers],
+          numbers: salesNumbers,
           from: phoneConfig.twilioNumber,
           confName,
           callType: "sales",

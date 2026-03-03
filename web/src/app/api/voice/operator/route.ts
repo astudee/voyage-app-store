@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { twimlResponse, say, pause } from "@/lib/twiml";
 import { phoneConfig } from "@/lib/phone-config";
 import { dialTeamForConference } from "@/lib/twilio-api";
+import { getHuntGroupNumbers } from "@/lib/phone-directory";
 
 /**
  * POST /api/voice/operator
@@ -25,10 +26,19 @@ export async function POST(request: NextRequest) {
 
     const confName = `voyage-op-${Date.now()}`;
 
+    // Load operator numbers from Snowflake (fallback to hardcoded)
+    let operatorNumbers: string[];
+    try {
+      operatorNumbers = await getHuntGroupNumbers("operator");
+      if (operatorNumbers.length === 0) operatorNumbers = [...phoneConfig.operatorNumbers];
+    } catch {
+      operatorNumbers = [...phoneConfig.operatorNumbers];
+    }
+
     // Fire off outbound calls to operator team — errors must not block TwiML
     try {
       await dialTeamForConference({
-        numbers: [...phoneConfig.operatorNumbers],
+        numbers: operatorNumbers,
         from: phoneConfig.mainNumber,
         confName,
         callType: "operator",

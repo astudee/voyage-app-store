@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { phoneConfig } from "@/lib/phone-config";
 import { twilioGet } from "@/lib/twilio-client";
-import { getActiveDirectory, toClientEntries } from "@/lib/phone-directory";
+import {
+  getActiveDirectory,
+  toClientEntries,
+  getHuntGroupMembers,
+} from "@/lib/phone-directory";
 
 interface TwilioPhoneNumber {
   sid: string;
@@ -50,35 +54,70 @@ export async function GET() {
       }));
     }
 
-    // Build hunt groups from phone-config (these still use env vars for phone numbers)
-    const huntGroups = {
-      sales: {
-        label: "Sales",
-        description: "Inbound sales inquiries — callers who say 'sales' or ask about pricing",
-        ringTimeout: phoneConfig.ringTimeout,
-        members: phoneConfig.salesNumbers.map((num) => {
-          const person = directory.find((d) => d.number === num);
+    // Build hunt groups from Snowflake (with fallback to hardcoded config)
+    let huntGroups;
+    try {
+      const [salesMembers, operatorMembers] = await Promise.all([
+        getHuntGroupMembers("sales"),
+        getHuntGroupMembers("operator"),
+      ]);
+
+      const buildMembers = (rows: typeof salesMembers) =>
+        rows.map((r) => {
+          const person = directory.find((d) => d.number === r.PHONE_NUMBER);
           return {
-            name: person ? `${person.firstName} ${person.lastName}` : num,
-            phone: num,
+            id: r.MEMBER_ID,
+            name: r.DISPLAY_NAME || (person ? `${person.firstName} ${person.lastName}` : r.PHONE_NUMBER),
+            phone: r.PHONE_NUMBER,
             extension: person?.extension || null,
           };
-        }),
-      },
-      operator: {
-        label: "Main / Operator",
-        description: "General calls — callers who press 0 or say 'help'",
-        ringTimeout: phoneConfig.ringTimeout,
-        members: phoneConfig.operatorNumbers.map((num) => {
-          const person = directory.find((d) => d.number === num);
-          return {
-            name: person ? `${person.firstName} ${person.lastName}` : num,
-            phone: num,
-            extension: person?.extension || null,
-          };
-        }),
-      },
-    };
+        });
+
+      huntGroups = {
+        sales: {
+          label: "Sales",
+          description: "Inbound sales inquiries — callers who say 'sales' or ask about pricing",
+          ringTimeout: phoneConfig.ringTimeout,
+          members: buildMembers(salesMembers),
+        },
+        operator: {
+          label: "Main / Operator",
+          description: "General calls — callers who press 0 or say 'help'",
+          ringTimeout: phoneConfig.ringTimeout,
+          members: buildMembers(operatorMembers),
+        },
+      };
+    } catch (err) {
+      console.error("[phone/config] Failed to fetch hunt groups from Snowflake, using fallback:", err);
+      huntGroups = {
+        sales: {
+          label: "Sales",
+          description: "Inbound sales inquiries — callers who say 'sales' or ask about pricing",
+          ringTimeout: phoneConfig.ringTimeout,
+          members: phoneConfig.salesNumbers.map((num) => {
+            const person = directory.find((d) => d.number === num);
+            return {
+              name: person ? `${person.firstName} ${person.lastName}` : num,
+              phone: num,
+              extension: person?.extension || null,
+            };
+          }),
+        },
+        operator: {
+          label: "Main / Operator",
+          description: "General calls — callers who press 0 or say 'help'",
+          ringTimeout: phoneConfig.ringTimeout,
+          members: phoneConfig.operatorNumbers.map((num) => {
+            const person = directory.find((d) => d.number === num);
+            return {
+              name: person ? `${person.firstName} ${person.lastName}` : num,
+              phone: num,
+              extension: person?.extension || null,
+            };
+          }),
+        },
+      };
+    }
 
     return NextResponse.json({
       directory,

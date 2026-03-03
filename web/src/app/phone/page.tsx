@@ -60,6 +60,7 @@ interface DirectoryEntry {
 }
 
 interface HuntGroupMember {
+  id?: number;
   name: string;
   phone: string;
   extension: string | null;
@@ -1128,76 +1129,212 @@ function DirectoryTab({ directory: initialDirectory }: { directory: DirectoryEnt
 }
 
 // ─── Config Tab ─────────────────────────────────────────────────
-function ConfigTab({ config }: { config: ConfigData | null }) {
+function ConfigTab({ config, onConfigChange }: { config: ConfigData | null; onConfigChange: () => void }) {
+  const [addingTo, setAddingTo] = useState<string | null>(null); // 'sales' or 'operator'
+  const [removeConfirm, setRemoveConfirm] = useState<{ member: HuntGroupMember; groupKey: string } | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<DirectoryEntry | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState("");
+
   if (!config) {
     return (
       <div className="p-6 text-center text-slate-400 text-sm">Loading configuration...</div>
     );
   }
 
-  const { huntGroups, twilioNumbers, voicemailEmails, voicemailMaxLength } = config;
+  const { huntGroups, twilioNumbers, voicemailEmails, voicemailMaxLength, directory } = config;
 
-  const HuntGroupCard = ({ group }: { group: HuntGroup }) => (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
-      <div className="bg-slate-50 px-5 py-4 border-b border-slate-200">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-slate-900">{group.label} Hunt Group</h3>
-            <p className="text-xs text-slate-500 mt-0.5">{group.description}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-xs text-slate-500">Ring timeout:</label>
-            <span className="text-sm font-medium text-slate-700">{group.ringTimeout}s</span>
+  async function handleAddMember() {
+    if (!addingTo || !selectedPerson) return;
+    setError("");
+    setSaving(true);
+    try {
+      const res = await fetch("/api/phone/hunt-groups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupName: addingTo,
+          phoneNumber: selectedPerson.number,
+          displayName: `${selectedPerson.firstName} ${selectedPerson.lastName}`,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Failed to add member.");
+        return;
+      }
+      setAddingTo(null);
+      setSelectedPerson(null);
+      onConfigChange();
+    } catch (err) {
+      setError("Network error.");
+      console.error(err);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleRemoveMember() {
+    if (!removeConfirm) return;
+    setRemoving(true);
+    try {
+      const res = await fetch("/api/phone/hunt-groups", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: removeConfirm.member.id,
+          groupName: removeConfirm.groupKey,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Failed to remove member.");
+        setRemoving(false);
+        return;
+      }
+      setRemoveConfirm(null);
+      onConfigChange();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  const HuntGroupCard = ({ group, groupKey }: { group: HuntGroup; groupKey: string }) => {
+    // Filter out people already in this group for the add-member picker
+    const existingPhones = new Set(group.members.map((m) => m.phone));
+    const availablePeople = (directory || []).filter((d) => !existingPhones.has(d.number));
+
+    return (
+      <div className="border border-slate-200 rounded-xl overflow-hidden">
+        <div className="bg-slate-50 px-5 py-4 border-b border-slate-200">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">{group.label} Hunt Group</h3>
+              <p className="text-xs text-slate-500 mt-0.5">{group.description}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-500">Ring timeout:</label>
+                <span className="text-sm font-medium text-slate-700">{group.ringTimeout}s</span>
+              </div>
+              <button
+                onClick={() => { setAddingTo(groupKey); setSelectedPerson(null); setError(""); }}
+                className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white rounded-md transition-colors"
+                style={{ backgroundColor: brand.navy }}
+              >
+                <Plus size={12} />
+                Add
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      <div className="p-4">
-        <div className="space-y-2">
-          {group.members.map((member, idx) => (
-            <div
-              key={member.phone}
-              className="flex items-center justify-between px-4 py-2.5 bg-white border border-slate-200 rounded-lg"
-            >
-              <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-slate-400 w-5">{idx + 1}</span>
-                <div className="w-8 h-8 rounded-full bg-[#e8f0f0] text-[#336699] flex items-center justify-center text-xs font-bold">
-                  {member.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
+        <div className="p-4">
+          <div className="space-y-2">
+            {group.members.map((member, idx) => (
+              <div
+                key={member.id || member.phone}
+                className="flex items-center justify-between px-4 py-2.5 bg-white border border-slate-200 rounded-lg group"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="text-xs font-bold text-slate-400 w-5">{idx + 1}</span>
+                  <div className="w-8 h-8 rounded-full bg-[#e8f0f0] text-[#336699] flex items-center justify-center text-xs font-bold">
+                    {member.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .join("")}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">{member.name}</p>
+                    <p className="text-xs text-slate-400 font-mono">{formatPhone(member.phone)}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{member.name}</p>
-                  <p className="text-xs text-slate-400 font-mono">{formatPhone(member.phone)}</p>
+                <div className="flex items-center gap-2">
+                  {member.extension && (
+                    <span className="text-xs text-slate-400">ext {member.extension}</span>
+                  )}
+                  <button
+                    onClick={() => setRemoveConfirm({ member, groupKey })}
+                    className="p-1 rounded-md hover:bg-red-50 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all"
+                    title={group.members.length <= 1 ? "Cannot remove last member" : "Remove from group"}
+                    disabled={group.members.length <= 1}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
-              {member.extension && (
-                <span className="text-xs text-slate-400">ext {member.extension}</span>
-              )}
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+        <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center gap-2 text-xs text-slate-500">
+          <span>All members ring simultaneously.</span>
+          <span>If no answer after {group.ringTimeout}s → voicemail.</span>
+        </div>
+
+        {/* Inline add-member picker */}
+        {addingTo === groupKey && (
+          <div className="px-5 py-4 border-t border-slate-200 bg-white">
+            {error && (
+              <div className="px-3 py-2 mb-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                {error}
+              </div>
+            )}
+            <label className="block text-xs font-medium text-slate-600 mb-1.5">Select a person from the directory</label>
+            <div className="flex items-center gap-2">
+              <select
+                value={selectedPerson?.number || ""}
+                onChange={(e) => {
+                  const person = availablePeople.find((p) => p.number === e.target.value);
+                  setSelectedPerson(person || null);
+                }}
+                className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#c2d6d6] focus:border-[#669999] bg-white"
+              >
+                <option value="">-- Choose person --</option>
+                {availablePeople.map((p) => (
+                  <option key={p.number} value={p.number}>
+                    {p.firstName} {p.lastName} — {formatPhone(p.number)}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddMember}
+                disabled={!selectedPerson || saving}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium text-white rounded-lg transition-colors disabled:opacity-50"
+                style={{ backgroundColor: brand.navy }}
+              >
+                <Check size={14} />
+                {saving ? "Adding..." : "Add"}
+              </button>
+              <button
+                onClick={() => { setAddingTo(null); setError(""); }}
+                className="px-3 py-1.5 text-sm text-slate-500 hover:text-slate-700"
+              >
+                Cancel
+              </button>
+            </div>
+            {availablePeople.length === 0 && (
+              <p className="text-xs text-slate-400 mt-2">All directory members are already in this group.</p>
+            )}
+          </div>
+        )}
       </div>
-      <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center gap-2 text-xs text-slate-500">
-        <span>All members ring simultaneously.</span>
-        <span>If no answer after {group.ringTimeout}s → voicemail.</span>
-      </div>
-    </div>
-  );
+    );
+  };
 
   return (
     <div className="p-4 max-w-3xl">
       <div className="mb-6">
         <h2 className="text-sm font-semibold text-slate-900 mb-1">Call Routing Configuration</h2>
         <p className="text-xs text-slate-500">
-          Hunt groups and phone numbers are managed in <code className="text-xs bg-slate-100 px-1 rounded">phone-config.ts</code>.
-          Editing will be available in v2.
+          Manage which team members are in each hunt group. All members ring simultaneously when a call comes in.
         </p>
       </div>
 
       <div className="space-y-6">
-        <HuntGroupCard group={huntGroups.sales} />
-        <HuntGroupCard group={huntGroups.operator} />
+        <HuntGroupCard group={huntGroups.sales} groupKey="sales" />
+        <HuntGroupCard group={huntGroups.operator} groupKey="operator" />
       </div>
 
       {/* Twilio Numbers */}
@@ -1243,6 +1380,45 @@ function ConfigTab({ config }: { config: ConfigData | null }) {
           </div>
         </div>
       </div>
+
+      {/* ── Remove Confirmation Modal ────────────────────── */}
+      {removeConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4">
+            <div className="px-5 py-4">
+              <h3 className="text-base font-semibold text-slate-900 mb-2">Remove from Hunt Group</h3>
+              <p className="text-sm text-slate-600">
+                Remove <span className="font-medium">{removeConfirm.member.name}</span> from the{" "}
+                <span className="font-medium">{removeConfirm.groupKey}</span> hunt group?
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                They will no longer receive calls routed to this group.
+              </p>
+              {error && (
+                <div className="px-3 py-2 mt-3 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg">
+                  {error}
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+              <button
+                onClick={() => { setRemoveConfirm(null); setError(""); }}
+                className="px-4 py-1.5 text-sm text-slate-600 hover:text-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRemoveMember}
+                disabled={removing}
+                className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium text-white bg-red-500 hover:bg-red-600 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={14} />
+                {removing ? "Removing..." : "Remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1576,7 +1752,7 @@ export default function PhonePage() {
               {activeTab === "calllog" && <CallLogTab calls={calls} />}
               {activeTab === "directory" && <DirectoryTab directory={config?.directory || []} />}
               {activeTab === "clicktocall" && <ClickToCallTab />}
-              {activeTab === "config" && <ConfigTab config={config} />}
+              {activeTab === "config" && <ConfigTab config={config} onConfigChange={fetchData} />}
             </>
           )}
         </div>
