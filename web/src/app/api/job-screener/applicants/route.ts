@@ -12,7 +12,10 @@ async function fetchApplicantStubs(jobId: string): Promise<any[]> {
 
   while (true) {
     const url = `${JAZZ_BASE}/applicants/page/${page}?apikey=${API_KEY}&job_id=${jobId}`
-    const res = await fetch(url, { next: { revalidate: 0 } })
+    const res = await fetch(url, {
+      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(10000),
+    })
 
     if (!res.ok) break
 
@@ -63,17 +66,12 @@ function parseQuestionnaire(questions: any[]): {
     const answer = q.answer || q.answers || ''
     const answerStr = Array.isArray(answer) ? answer.join(', ') : String(answer || '')
 
-    // Salary
     if (label.includes('salary') || label.includes('compensation') || label.includes('pay')) {
       result.salaryRequirement = answerStr
     }
-
-    // LinkedIn
     if (label.includes('linkedin')) {
       result.linkedinUrl = answerStr
     }
-
-    // US work eligibility
     if (
       label.includes('authorized') ||
       label.includes('eligible') ||
@@ -82,13 +80,9 @@ function parseQuestionnaire(questions: any[]): {
     ) {
       result.usEligible = answerStr
     }
-
-    // Education — degree field
     if (label.includes('degree') || label.includes('education')) {
       result.education.push({ degree: answerStr, school: '' })
     }
-
-    // School / university
     if (label.includes('university') || label.includes('college') || label.includes('school')) {
       if (result.education.length > 0) {
         result.education[result.education.length - 1].school = answerStr
@@ -115,6 +109,67 @@ function statusBucket(status: string): 'Active' | 'New' | 'Not Hired' {
   return 'Active'
 }
 
+// Build applicant object from stub (no detail call)
+function buildApplicantFromStub(stub: any, jobId: string) {
+  return {
+    id: stub.id,
+    firstName: stub.first_name || '',
+    lastName: stub.last_name || '',
+    name: `${stub.first_name || ''} ${stub.last_name || ''}`.trim(),
+    email: stub.email || '',
+    location: '',
+    applyDate: stub.apply_date || '',
+    status: stub.status || '',
+    statusBucket: statusBucket(stub.status || ''),
+    resumeUrl: '',
+    linkedinUrl: '',
+    salaryRequirement: '',
+    usEligible: '',
+    education: [] as Array<{ degree: string; school: string }>,
+    jobId: stub.job_id || jobId,
+    jobTitle: stub.job_title || '',
+    rating: stub.rating || '',
+    detailLoaded: false,
+  }
+}
+
+// Build enriched applicant from stub + detail
+function buildEnrichedApplicant(stub: any, detail: any, jobId: string) {
+  const merged = { ...stub, ...detail }
+  const qAnswers = merged.questionnaire || merged.questions || []
+  const parsed = parseQuestionnaire(qAnswers)
+
+  return {
+    id: merged.id,
+    firstName: merged.first_name || '',
+    lastName: merged.last_name || '',
+    name: `${merged.first_name || ''} ${merged.last_name || ''}`.trim(),
+    email: merged.email || '',
+    location: [merged.city, merged.state, merged.country].filter(Boolean).join(', '),
+    applyDate: merged.apply_date || '',
+    status: merged.status || '',
+    statusBucket: statusBucket(merged.status || ''),
+    resumeUrl: merged.resume_link || merged.resume || '',
+    linkedinUrl: parsed.linkedinUrl || merged.linkedin || merged.linkedin_url || '',
+    salaryRequirement: parsed.salaryRequirement || merged.desired_salary || merged.salary || '',
+    usEligible: parsed.usEligible || merged.us_work_authorization || '',
+    education: parsed.education,
+    jobId: merged.job_id || jobId,
+    jobTitle: merged.job_title || '',
+    rating: merged.rating || '',
+    detailLoaded: true,
+  }
+}
+
+function sortApplicants(list: any[]) {
+  const bucketOrder: Record<string, number> = { Active: 0, New: 1, 'Not Hired': 2 }
+  return list.sort((a, b) => {
+    const bo = bucketOrder[a.statusBucket] - bucketOrder[b.statusBucket]
+    if (bo !== 0) return bo
+    return new Date(b.applyDate).getTime() - new Date(a.applyDate).getTime()
+  })
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -124,86 +179,29 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const jobId = searchParams.get('job_id')
+    const applicantId = searchParams.get('applicant_id')
 
-    if (!jobId) return NextResponse.json({ error: 'job_id is required' }, { status: 400 })
-
-    // 1. Get all applicant stubs for this job
-    const stubs = await fetchApplicantStubs(jobId)
-
-    // 2. Enrich each with detail record (parallel, capped at 30 concurrent)
-    const CONCURRENCY = 30
-    const enriched: any[] = []
-
-    for (let i = 0; i < stubs.length; i += CONCURRENCY) {
-      const batch = stubs.slice(i, i + CONCURRENCY)
-      const details = await Promise.all(batch.map((s) => fetchApplicantDetail(s.id)))
-
-      for (let j = 0; j < batch.length; j++) {
-        const stub = batch[j]
-        const detail = details[j] || {}
-
-        // Merge — detail overrides stub where present
-        const merged = { ...stub, ...detail }
-
-        // Parse questionnaire
-        const qAnswers = merged.questionnaire || merged.questions || []
-        const parsed = parseQuestionnaire(qAnswers)
-
-        // Also check top-level fields that JazzHR sometimes surfaces directly
-        const linkedinUrl =
-          parsed.linkedinUrl ||
-          merged.linkedin ||
-          merged.linkedin_url ||
-          ''
-
-        const salaryRequirement =
-          parsed.salaryRequirement ||
-          merged.desired_salary ||
-          merged.salary ||
-          ''
-
-        const usEligible =
-          parsed.usEligible ||
-          merged.us_work_authorization ||
-          ''
-
-        const location = [merged.city, merged.state, merged.country]
-          .filter(Boolean)
-          .join(', ')
-
-        enriched.push({
-          id: merged.id,
-          firstName: merged.first_name || '',
-          lastName: merged.last_name || '',
-          name: `${merged.first_name || ''} ${merged.last_name || ''}`.trim(),
-          email: merged.email || '',
-          location,
-          applyDate: merged.apply_date || '',
-          status: merged.status || '',
-          statusBucket: statusBucket(merged.status || ''),
-          resumeUrl: merged.resume_link || merged.resume || '',
-          linkedinUrl,
-          salaryRequirement,
-          usEligible,
-          education: parsed.education,
-          jobId: merged.job_id || jobId,
-          jobTitle: merged.job_title || '',
-          rating: merged.rating || '',
-        })
-      }
+    if (!jobId && !applicantId) {
+      return NextResponse.json({ error: 'job_id or applicant_id is required' }, { status: 400 })
     }
 
-    // Sort: Active first, then New, then Not Hired; within each bucket by apply date desc
-    const bucketOrder: Record<string, number> = { Active: 0, New: 1, 'Not Hired': 2 }
-    enriched.sort((a, b) => {
-      const bo = bucketOrder[a.statusBucket] - bucketOrder[b.statusBucket]
-      if (bo !== 0) return bo
-      return new Date(b.applyDate).getTime() - new Date(a.applyDate).getTime()
-    })
+    // Single applicant detail fetch (for on-demand enrichment)
+    if (applicantId) {
+      const detail = await fetchApplicantDetail(applicantId)
+      if (!detail) return NextResponse.json({ error: 'Applicant not found' }, { status: 404 })
+
+      const enriched = buildEnrichedApplicant({}, detail, jobId || '')
+      return NextResponse.json({ applicant: enriched })
+    }
+
+    // List all applicants for a job — return stubs immediately (fast)
+    const stubs = await fetchApplicantStubs(jobId!)
+    const applicants = stubs.map((s) => buildApplicantFromStub(s, jobId!))
+    sortApplicants(applicants)
 
     return NextResponse.json({
-      applicants: enriched,
-      total: enriched.length,
+      applicants,
+      total: applicants.length,
     })
   } catch (err: any) {
     console.error('JazzHR applicants error:', err)
