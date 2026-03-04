@@ -103,6 +103,9 @@ export default function JobScreenerPage() {
   const [applicantsLoading, setApplicantsLoading] = useState(false)
   const [applicantsError, setApplicantsError] = useState('')
   const [applicantsFetched, setApplicantsFetched] = useState(false)
+  const [hasMoreApplicants, setHasMoreApplicants] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   // Detail loading state
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -141,16 +144,18 @@ export default function JobScreenerPage() {
     }
   }
 
-  // ── Fetch applicants (stubs only — fast) ──
+  // ── Fetch applicants (page 1 stubs — fast) ──
   async function handleFetchApplicants() {
     if (!selectedJobId) return
     setApplicantsLoading(true)
     setApplicantsError('')
     setApplicants([])
     setExpandedId(null)
+    setCurrentPage(1)
+    setHasMoreApplicants(false)
 
     try {
-      const res = await fetch(`/api/job-screener/applicants?job_id=${selectedJobId}`)
+      const res = await fetch(`/api/job-screener/applicants?job_id=${selectedJobId}&page=1`)
       const contentType = res.headers.get('content-type') || ''
       if (!contentType.includes('application/json')) {
         throw new Error(
@@ -162,11 +167,41 @@ export default function JobScreenerPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Failed to fetch applicants')
       setApplicants(data.applicants || [])
+      setHasMoreApplicants(data.hasMore || false)
       setApplicantsFetched(true)
     } catch (err: any) {
       setApplicantsError(err.message)
     } finally {
       setApplicantsLoading(false)
+    }
+  }
+
+  // ── Load more applicants (next page) ──
+  async function handleLoadMore() {
+    if (!selectedJobId || loadingMore) return
+    setLoadingMore(true)
+    const nextPage = currentPage + 1
+
+    try {
+      const res = await fetch(`/api/job-screener/applicants?job_id=${selectedJobId}&page=${nextPage}`)
+      const contentType = res.headers.get('content-type') || ''
+      if (!contentType.includes('application/json')) throw new Error('Server error')
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Failed to load more')
+
+      const newApplicants = data.applicants || []
+      // Deduplicate by id
+      setApplicants((prev) => {
+        const existingIds = new Set(prev.map((a) => a.id))
+        const unique = newApplicants.filter((a: Applicant) => !existingIds.has(a.id))
+        return [...prev, ...unique]
+      })
+      setHasMoreApplicants(data.hasMore || false)
+      setCurrentPage(nextPage)
+    } catch (err: any) {
+      setApplicantsError(err.message)
+    } finally {
+      setLoadingMore(false)
     }
   }
 
@@ -509,7 +544,7 @@ export default function JobScreenerPage() {
               <p className="text-sm text-slate-400 py-8 text-center">
                 No applicants found for this job.
               </p>
-            ) : (
+            ) : (<>
               <div className="bg-white border border-slate-200 rounded-lg overflow-hidden">
                 <Table>
                   <TableHeader>
@@ -762,6 +797,25 @@ export default function JobScreenerPage() {
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Load more button */}
+              {hasMoreApplicants && (
+                <div className="flex justify-center py-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleLoadMore}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? (
+                      <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />Loading more…</>
+                    ) : (
+                      'Load More Applicants'
+                    )}
+                  </Button>
+                </div>
+              )}
+            </>
             )}
           </>
         )}

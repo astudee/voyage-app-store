@@ -67,6 +67,7 @@
 **New apps added (post-migration):**
 - Asset Tracker → `/assets` (IT asset inventory with assignment tracking)
 - Ticket Watcher → `/tickets` (support ticket snapshots by agent)
+- Job Screener → `/job-screener` (JazzHR applicant screening by job posting)
 - Phone Manager → `/phone` (call log, voicemails, SMS, click-to-call)
 
 **What's Next:** Ongoing enhancements and maintenance
@@ -142,6 +143,7 @@ All 22 apps migrated. Streamlit has been completely removed from the project.
 | 19 | Asset Tracker | IT asset inventory (laptops, monitors, etc.) | Snowflake |
 | 20 | Ticket Watcher | Support ticket snapshots by agent | Snowflake |
 | 21 | Phone Manager | Call log, voicemails, SMS, click-to-call | Twilio API |
+| 22 | Job Screener | Screen JazzHR applicants by job posting | JazzHR API |
 | 96 | Snowflake Test | Connection testing | Snowflake |
 | 97 | BigTime Client Lookup | Client search utility | BigTime API |
 | 98 | QuickBooks Token Refresh | OAuth token management | QuickBooks API |
@@ -348,6 +350,8 @@ A scratch folder for exchanging files between the user and Claude — uploads, s
 - `GET/POST /api/phone/directory` - List/create phone directory entries (Snowflake-backed)
 - `GET/PUT/DELETE /api/phone/directory/[id]` - Individual directory entry operations
 - `GET/POST/DELETE /api/phone/hunt-groups` - Hunt group member management (Snowflake-backed)
+- `GET /api/job-screener/jobs` - Fetch JazzHR jobs (open/closed status filter, paginated)
+- `GET /api/job-screener/applicants` - Fetch and enrich applicants for a job (questionnaire parsing)
 
 ---
 
@@ -1222,6 +1226,7 @@ All polish items fixed:
 | Cloudflare R2 | WORKING | Document Manager |
 | Claude/Gemini | WORKING | Document Manager AI, Contract Reviewer |
 | Twilio | WORKING | Phone System IVR + SMS forwarding |
+| JazzHR | WORKING | Job Screener (applicant screening) |
 
 **Claude API Key Configuration:**
 - Use `CLAUDE_API_KEY` in Vercel (ANTHROPIC_API_KEY has been removed)

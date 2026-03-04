@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
+export const maxDuration = 60
+
 const JAZZ_BASE = 'https://api.resumatorapi.com/v1'
 const API_KEY = process.env.JAZZHR_API_KEY
 

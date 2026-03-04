@@ -2,24 +2,38 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 
+export const maxDuration = 60
+
 const JAZZ_BASE = 'https://api.resumatorapi.com/v1'
 const API_KEY = process.env.JAZZHR_API_KEY
 
-// Fetch all applicant stubs for a job (paginated)
-async function fetchApplicantStubs(jobId: string): Promise<any[]> {
+// Fetch applicant stubs for a job (paginated, supports partial fetching)
+async function fetchApplicantStubs(jobId: string, maxPages: number = 0): Promise<{ applicants: any[]; hasMore: boolean }> {
   const applicants: any[] = []
   let page = 1
+  let hasMore = false
 
   while (true) {
+    if (maxPages > 0 && page > maxPages) {
+      hasMore = true
+      break
+    }
+
     const url = `${JAZZ_BASE}/applicants/page/${page}?apikey=${API_KEY}&job_id=${jobId}`
     const res = await fetch(url, {
-      next: { revalidate: 0 },
-      signal: AbortSignal.timeout(10000),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15000),
     })
 
     if (!res.ok) break
 
-    const data = await res.json()
+    const text = await res.text()
+    let data: any
+    try {
+      data = JSON.parse(text)
+    } catch {
+      break
+    }
     if (!Array.isArray(data) || data.length === 0) break
 
     applicants.push(...data)
@@ -27,7 +41,7 @@ async function fetchApplicantStubs(jobId: string): Promise<any[]> {
     page++
   }
 
-  return applicants
+  return { applicants, hasMore }
 }
 
 // Fetch full applicant detail (includes questionnaire answers, resume, linkedin, etc.)
@@ -194,14 +208,18 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ applicant: enriched })
     }
 
-    // List all applicants for a job — return stubs immediately (fast)
-    const stubs = await fetchApplicantStubs(jobId!)
+    // List applicants for a job — fetch 1 page at a time (100 per page)
+    const page = parseInt(searchParams.get('page') || '1', 10)
+    const { applicants: stubs, hasMore } = await fetchApplicantStubs(jobId!, page)
+
     const applicants = stubs.map((s) => buildApplicantFromStub(s, jobId!))
     sortApplicants(applicants)
 
     return NextResponse.json({
       applicants,
       total: applicants.length,
+      hasMore,
+      page,
     })
   } catch (err: any) {
     console.error('JazzHR applicants error:', err)

@@ -810,6 +810,52 @@ async function checkGmail(sendTestEmail: boolean = false): Promise<HealthResult>
   }
 }
 
+// Check JazzHR API
+async function checkJazzHR(): Promise<HealthResult> {
+  const apiKey = process.env.JAZZHR_API_KEY;
+  if (!apiKey) {
+    return {
+      status: "not_configured",
+      message: "JAZZHR_API_KEY not configured",
+      details: "Add JAZZHR_API_KEY to environment variables",
+    };
+  }
+
+  try {
+    const response = await fetch(
+      `https://api.resumatorapi.com/v1/applicants/page/1?apikey=${apiKey}`,
+      { method: "GET" }
+    );
+
+    if (response.status === 200) {
+      const data = await response.json();
+      const count = Array.isArray(data) ? data.length : 0;
+      return {
+        status: "success",
+        message: "Connected successfully",
+        details: `API key valid. Found ${count} recent applicants.`,
+      };
+    } else if (response.status === 401 || response.status === 403) {
+      return {
+        status: "error",
+        message: "Authentication failed",
+        details: "Invalid API key",
+      };
+    }
+    return {
+      status: "error",
+      message: `HTTP ${response.status}`,
+      details: (await response.text()).substring(0, 200),
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
+}
+
 // Check Zendesk API
 async function checkZendesk(): Promise<HealthResult> {
   const subdomain = (process.env.ZENDESK_SUBDOMAIN || "").trim();
@@ -946,6 +992,7 @@ export async function GET(request: Request) {
     pipedrive,
     bigtime,
     quickbooks,
+    jazzhr,
     zendesk,
     twilio,
     cloudflareR2,
@@ -961,6 +1008,7 @@ export async function GET(request: Request) {
     checkPipedrive(),
     checkBigTime(),
     checkQuickBooks(),
+    checkJazzHR(),
     checkZendesk(),
     checkTwilio(),
     checkCloudflareR2(),
@@ -978,6 +1026,7 @@ export async function GET(request: Request) {
   results["BigTime"] = bigtime;
   results["QuickBooks"] = quickbooks;
   results["Pipedrive"] = pipedrive;
+  results["JazzHR"] = jazzhr;
   results["Zendesk"] = zendesk;
   results["Twilio"] = twilio;
   results["Cloudflare R2"] = cloudflareR2;
