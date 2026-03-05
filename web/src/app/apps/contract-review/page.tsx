@@ -24,8 +24,8 @@ export default function ContractReviewPage() {
   const extractTextFromPdf = async (file: File): Promise<string> => {
     const pdfjsLib = await import("pdfjs-dist");
 
-    // Set worker source
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+    // Disable worker to avoid CDN fetch issues - runs on main thread (fine for single PDFs)
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "";
 
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
