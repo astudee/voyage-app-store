@@ -48,6 +48,7 @@ const navigation = [
       { name: "Document Manager", href: "/documents" },
       { name: "Expense Reviewer", href: "/apps/expense-reviewer" },
       { name: "Forecasted Billable Hours", href: "/apps/forecasted-hours" },
+      { name: "Job Reviewer", href: "/apps/job-reviewer" },
       { name: "Job Screener", href: "/job-screener" },
       { name: "Payroll Calculator", href: "/apps/payroll-calc" },
       { name: "Payroll Helper", href: "/apps/payroll-helper" },
