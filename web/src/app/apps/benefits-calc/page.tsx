@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, Fragment } from "react";
 import { AppLayout } from "@/components/app-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -618,7 +618,7 @@ export default function BenefitsCalculatorPage() {
                         </th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y">
+                    <tbody>
                       {sortedEmployees.map((e) => {
                         const isExpanded = expandedRows.has(e.staffName);
                         const benefits = [
@@ -630,69 +630,63 @@ export default function BenefitsCalculatorPage() {
                           { label: "Life/AD&D", code: e.life.code, cost: e.life.cost },
                         ];
                         return (
-                          <tr key={e.staffName} className="hover:bg-gray-50 contents">
-                            <td colSpan={11} className="p-0">
-                              <table className="w-full">
-                                <tbody>
-                                  <tr
-                                    className="hover:bg-gray-50 cursor-pointer"
-                                    onClick={() => toggleExpanded(e.staffName)}
-                                  >
-                                    <td className="px-4 py-3 font-medium" style={{ width: "180px" }}>
-                                      <span className={`inline-block mr-1.5 text-gray-400 text-xs transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9654;</span>
-                                      {e.staffName}
-                                    </td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.medical.code || "-"}</td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.dental.code || "-"}</td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.vision.code || "-"}</td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.std.code || "-"}</td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.ltd.code || "-"}</td>
-                                    <td className="px-2 py-3 text-center text-xs text-gray-600">{e.life.code || "-"}</td>
-                                    <td className="px-4 py-3 text-right font-medium">{formatCurrency(e.totalMonthly)}</td>
-                                    <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(e.eeMonthly)}</td>
-                                    <td className="px-4 py-3 text-right text-green-600">{formatCurrency(e.firmMonthly)}</td>
-                                    <td className="px-4 py-3 text-right">{formatCurrency(e.totalYearly)}</td>
-                                  </tr>
-                                  {isExpanded && (
-                                    <tr>
-                                      <td colSpan={11} className="px-4 pb-3 pt-0">
-                                        <div className="ml-6 bg-gray-50 rounded-lg border">
-                                          <table className="w-full text-xs">
-                                            <thead className="text-gray-500">
-                                              <tr>
-                                                <th className="text-left px-3 py-2">Benefit</th>
-                                                <th className="text-left px-3 py-2">Plan</th>
-                                                <th className="text-right px-3 py-2">EE $/mo</th>
-                                                <th className="text-right px-3 py-2">Firm $/mo</th>
-                                                <th className="text-right px-3 py-2">Total $/mo</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-gray-200">
-                                              {benefits.filter(b => b.code).map((b) => (
-                                                <tr key={b.label}>
-                                                  <td className="px-3 py-1.5 text-gray-700">{b.label}</td>
-                                                  <td className="px-3 py-1.5 font-mono text-gray-500">{b.code}</td>
-                                                  <td className="px-3 py-1.5 text-right text-blue-600">{formatCurrency(b.cost.ee)}</td>
-                                                  <td className="px-3 py-1.5 text-right text-green-600">{formatCurrency(b.cost.firm)}</td>
-                                                  <td className="px-3 py-1.5 text-right font-medium">{formatCurrency(b.cost.total)}</td>
-                                                </tr>
-                                              ))}
-                                              <tr className="bg-gray-100 font-semibold text-xs">
-                                                <td className="px-3 py-1.5" colSpan={2}>Monthly Total</td>
-                                                <td className="px-3 py-1.5 text-right text-blue-600">{formatCurrency(e.eeMonthly)}</td>
-                                                <td className="px-3 py-1.5 text-right text-green-600">{formatCurrency(e.firmMonthly)}</td>
-                                                <td className="px-3 py-1.5 text-right">{formatCurrency(e.totalMonthly)}</td>
-                                              </tr>
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                </tbody>
-                              </table>
-                            </td>
-                          </tr>
+                          <Fragment key={e.staffName}>
+                            <tr
+                              className="hover:bg-gray-50 cursor-pointer border-b"
+                              onClick={() => toggleExpanded(e.staffName)}
+                            >
+                              <td className="px-4 py-3 font-medium">
+                                <span className={`inline-block mr-1.5 text-gray-400 text-xs transition-transform ${isExpanded ? "rotate-90" : ""}`}>&#9654;</span>
+                                {e.staffName}
+                              </td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.medical.code || "-"}</td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.dental.code || "-"}</td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.vision.code || "-"}</td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.std.code || "-"}</td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.ltd.code || "-"}</td>
+                              <td className="px-2 py-3 text-center text-xs text-gray-600">{e.life.code || "-"}</td>
+                              <td className="px-4 py-3 text-right font-medium">{formatCurrency(e.totalMonthly)}</td>
+                              <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(e.eeMonthly)}</td>
+                              <td className="px-4 py-3 text-right text-green-600">{formatCurrency(e.firmMonthly)}</td>
+                              <td className="px-4 py-3 text-right">{formatCurrency(e.totalYearly)}</td>
+                            </tr>
+                            {isExpanded && (
+                              <tr className="border-b">
+                                <td colSpan={11} className="px-4 pb-3 pt-1 bg-white">
+                                  <div className="ml-6 bg-gray-50 rounded-lg border">
+                                    <table className="w-full text-xs">
+                                      <thead className="text-gray-500">
+                                        <tr>
+                                          <th className="text-left px-3 py-2">Benefit</th>
+                                          <th className="text-left px-3 py-2">Plan</th>
+                                          <th className="text-right px-3 py-2">EE $/mo</th>
+                                          <th className="text-right px-3 py-2">Firm $/mo</th>
+                                          <th className="text-right px-3 py-2">Total $/mo</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-gray-200">
+                                        {benefits.filter(b => b.code).map((b) => (
+                                          <tr key={b.label}>
+                                            <td className="px-3 py-1.5 text-gray-700">{b.label}</td>
+                                            <td className="px-3 py-1.5 font-mono text-gray-500">{b.code}</td>
+                                            <td className="px-3 py-1.5 text-right text-blue-600">{formatCurrency(b.cost.ee)}</td>
+                                            <td className="px-3 py-1.5 text-right text-green-600">{formatCurrency(b.cost.firm)}</td>
+                                            <td className="px-3 py-1.5 text-right font-medium">{formatCurrency(b.cost.total)}</td>
+                                          </tr>
+                                        ))}
+                                        <tr className="bg-gray-100 font-semibold text-xs">
+                                          <td className="px-3 py-1.5" colSpan={2}>Monthly Total</td>
+                                          <td className="px-3 py-1.5 text-right text-blue-600">{formatCurrency(e.eeMonthly)}</td>
+                                          <td className="px-3 py-1.5 text-right text-green-600">{formatCurrency(e.firmMonthly)}</td>
+                                          <td className="px-3 py-1.5 text-right">{formatCurrency(e.totalMonthly)}</td>
+                                        </tr>
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
                         );
                       })}
                     </tbody>
