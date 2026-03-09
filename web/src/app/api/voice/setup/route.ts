@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { phoneConfig } from "@/lib/phone-config";
+import { getAllNumberRouting } from "@/lib/phone-directory";
 
 /**
  * POST /api/voice/setup
@@ -86,7 +87,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const baseUrl = phoneConfig.baseUrl;
-    const voiceUrl = `${baseUrl}/api/voice/incoming`;
+    const defaultVoiceUrl = `${baseUrl}/api/voice/incoming`;
     const smsUrl = `${baseUrl}/api/voice/sms-incoming`;
 
     // Optionally target a specific number
@@ -99,6 +100,20 @@ export async function POST(request: NextRequest) {
     const targetNumber = body?.phoneNumber;
     // Allow overriding the voice URL (e.g., for temporary forwarding)
     const customVoiceUrl = body?.voiceUrl;
+
+    // Fetch routing config from Snowflake
+    let routingMap: Record<string, { routeType: string; forwardToNumber: string | null }> = {};
+    try {
+      const routingRows = await getAllNumberRouting();
+      for (const r of routingRows) {
+        routingMap[r.PHONE_NUMBER] = {
+          routeType: r.ROUTE_TYPE,
+          forwardToNumber: r.FORWARD_TO_NUMBER,
+        };
+      }
+    } catch (err) {
+      console.error("[voice/setup] Failed to fetch routing config, defaulting to main menu:", err);
+    }
 
     // List all numbers on the account
     const data = await twilioFetch("/IncomingPhoneNumbers.json");
@@ -121,7 +136,12 @@ export async function POST(request: NextRequest) {
         smsUrl: num.sms_url,
       };
 
-      const effectiveVoiceUrl = customVoiceUrl || voiceUrl;
+      // Determine voice URL based on routing config
+      let effectiveVoiceUrl = customVoiceUrl || defaultVoiceUrl;
+      const routing = routingMap[num.phone_number];
+      if (!customVoiceUrl && routing?.routeType === "forward" && routing.forwardToNumber) {
+        effectiveVoiceUrl = `${baseUrl}/api/voice/forward?to=${encodeURIComponent(routing.forwardToNumber)}`;
+      }
 
       // Update the phone number's webhooks
       await twilioFetch(`/IncomingPhoneNumbers/${num.sid}.json`, "POST", {
@@ -140,6 +160,7 @@ export async function POST(request: NextRequest) {
           voiceUrl: effectiveVoiceUrl,
           smsUrl,
         },
+        routeType: routing?.routeType || "main_menu",
         status: "configured",
       });
     }

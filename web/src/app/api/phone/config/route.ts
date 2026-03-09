@@ -5,6 +5,7 @@ import {
   getActiveDirectory,
   toClientEntries,
   getHuntGroupMembers,
+  getAllNumberRouting,
 } from "@/lib/phone-directory";
 
 interface TwilioPhoneNumber {
@@ -119,10 +120,25 @@ export async function GET() {
       };
     }
 
+    // Fetch number routing config from Snowflake
+    let numberRouting: { phoneNumber: string; routeType: string; forwardToNumber: string | null; forwardToName: string | null }[] = [];
+    try {
+      const rows = await getAllNumberRouting();
+      numberRouting = rows.map((r) => ({
+        phoneNumber: r.PHONE_NUMBER,
+        routeType: r.ROUTE_TYPE,
+        forwardToNumber: r.FORWARD_TO_NUMBER,
+        forwardToName: r.FORWARD_TO_NAME,
+      }));
+    } catch (err) {
+      console.error("[phone/config] Failed to fetch number routing:", err);
+    }
+
     return NextResponse.json({
       directory,
       huntGroups,
       twilioNumbers,
+      numberRouting,
       voicemailEmails: phoneConfig.voicemailEmails,
       voicemailMaxLength: phoneConfig.voicemailMaxLength,
     });

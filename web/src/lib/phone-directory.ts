@@ -138,3 +138,83 @@ export async function getAllHuntGroupMembers(): Promise<HuntGroupMemberRow[]> {
     `SELECT * FROM VC_HUNT_GROUP_MEMBERS ORDER BY GROUP_NAME, MEMBER_ID`
   );
 }
+
+// ─── Phone Number Routing ───────────────────────────────────────
+
+export interface NumberRoutingRow {
+  ROUTING_ID: number;
+  PHONE_NUMBER: string;
+  ROUTE_TYPE: "main_menu" | "forward";
+  FORWARD_TO_NUMBER: string | null;
+  FORWARD_TO_NAME: string | null;
+  CREATED_AT: string;
+  UPDATED_AT: string;
+}
+
+const CREATE_ROUTING_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS VC_PHONE_NUMBER_ROUTING (
+  ROUTING_ID NUMBER(38,0) AUTOINCREMENT PRIMARY KEY,
+  PHONE_NUMBER VARCHAR(20) NOT NULL UNIQUE,
+  ROUTE_TYPE VARCHAR(20) NOT NULL DEFAULT 'main_menu',
+  FORWARD_TO_NUMBER VARCHAR(20),
+  FORWARD_TO_NAME VARCHAR(200),
+  CREATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
+  UPDATED_AT TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+)`;
+
+let routingTableEnsured = false;
+
+export async function ensureRoutingTable() {
+  if (routingTableEnsured) return;
+  await execute(CREATE_ROUTING_TABLE_SQL);
+  routingTableEnsured = true;
+}
+
+/**
+ * Get routing config for all phone numbers.
+ */
+export async function getAllNumberRouting(): Promise<NumberRoutingRow[]> {
+  await ensureRoutingTable();
+  return query<NumberRoutingRow>(
+    `SELECT * FROM VC_PHONE_NUMBER_ROUTING ORDER BY PHONE_NUMBER`
+  );
+}
+
+/**
+ * Get routing config for a specific phone number.
+ */
+export async function getNumberRouting(phoneNumber: string): Promise<NumberRoutingRow | null> {
+  await ensureRoutingTable();
+  const rows = await query<NumberRoutingRow>(
+    `SELECT * FROM VC_PHONE_NUMBER_ROUTING WHERE PHONE_NUMBER = ?`,
+    [phoneNumber]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Set routing config for a phone number (upsert).
+ */
+export async function setNumberRouting(
+  phoneNumber: string,
+  routeType: "main_menu" | "forward",
+  forwardToNumber: string | null,
+  forwardToName: string | null
+): Promise<void> {
+  await ensureRoutingTable();
+  const existing = await getNumberRouting(phoneNumber);
+  if (existing) {
+    await execute(
+      `UPDATE VC_PHONE_NUMBER_ROUTING
+       SET ROUTE_TYPE = ?, FORWARD_TO_NUMBER = ?, FORWARD_TO_NAME = ?, UPDATED_AT = CURRENT_TIMESTAMP()
+       WHERE PHONE_NUMBER = ?`,
+      [routeType, forwardToNumber, forwardToName, phoneNumber]
+    );
+  } else {
+    await execute(
+      `INSERT INTO VC_PHONE_NUMBER_ROUTING (PHONE_NUMBER, ROUTE_TYPE, FORWARD_TO_NUMBER, FORWARD_TO_NAME)
+       VALUES (?, ?, ?, ?)`,
+      [phoneNumber, routeType, forwardToNumber, forwardToName]
+    );
+  }
+}

@@ -79,10 +79,18 @@ interface TwilioNumber {
   label: string;
 }
 
+interface NumberRouting {
+  phoneNumber: string;
+  routeType: "main_menu" | "forward";
+  forwardToNumber: string | null;
+  forwardToName: string | null;
+}
+
 interface ConfigData {
   directory: DirectoryEntry[];
   huntGroups: { sales: HuntGroup; operator: HuntGroup };
   twilioNumbers: TwilioNumber[];
+  numberRouting: NumberRouting[];
   voicemailEmails: string[];
   voicemailMaxLength: number;
 }
@@ -1136,6 +1144,8 @@ function ConfigTab({ config, onConfigChange }: { config: ConfigData | null; onCo
   const [saving, setSaving] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [error, setError] = useState("");
+  const [routingSaving, setRoutingSaving] = useState<string | null>(null); // phone number being saved
+  const [applyingWebhooks, setApplyingWebhooks] = useState(false);
 
   if (!config) {
     return (
@@ -1143,7 +1153,7 @@ function ConfigTab({ config, onConfigChange }: { config: ConfigData | null; onCo
     );
   }
 
-  const { huntGroups, twilioNumbers, voicemailEmails, voicemailMaxLength, directory } = config;
+  const { huntGroups, twilioNumbers, numberRouting, voicemailEmails, voicemailMaxLength, directory } = config;
 
   async function handleAddMember() {
     if (!addingTo || !selectedPerson) return;
@@ -1337,26 +1347,119 @@ function ConfigTab({ config, onConfigChange }: { config: ConfigData | null; onCo
         <HuntGroupCard group={huntGroups.operator} groupKey="operator" />
       </div>
 
-      {/* Twilio Numbers */}
+      {/* Twilio Numbers with Routing */}
       <div className="mt-8 border border-slate-200 rounded-xl overflow-hidden">
-        <div className="bg-slate-50 px-5 py-3 border-b border-slate-200">
-          <h3 className="text-sm font-semibold text-slate-900">Twilio Phone Numbers</h3>
+        <div className="bg-slate-50 px-5 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Twilio Phone Numbers</h3>
+            <p className="text-xs text-slate-500 mt-0.5">Set where each number routes incoming calls</p>
+          </div>
+          <button
+            onClick={async () => {
+              setApplyingWebhooks(true);
+              setError("");
+              try {
+                const res = await fetch("/api/voice/setup", { method: "POST" });
+                if (!res.ok) {
+                  const data = await res.json();
+                  setError(data.error || "Failed to apply webhooks.");
+                }
+              } catch {
+                setError("Network error applying webhooks.");
+              } finally {
+                setApplyingWebhooks(false);
+              }
+            }}
+            disabled={applyingWebhooks}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white rounded-md transition-colors disabled:opacity-50"
+            style={{ backgroundColor: brand.navy }}
+            title="Push routing config to Twilio webhooks"
+          >
+            {applyingWebhooks ? "Applying..." : "Apply to Twilio"}
+          </button>
         </div>
-        <div className="p-4">
+        <div className="p-4 space-y-3">
           {twilioNumbers.length === 0 && (
             <p className="text-sm text-slate-400">No phone numbers found</p>
           )}
-          {twilioNumbers.map((n) => (
-            <div key={n.sid} className="flex items-center justify-between py-2">
-              <div>
-                <span className="text-sm font-mono font-medium text-slate-900">
-                  {formatPhone(n.number)}
-                </span>
-                {n.label && <span className="text-xs text-slate-400 ml-2">{n.label}</span>}
+          {twilioNumbers.map((n) => {
+            const routing = (numberRouting || []).find((r) => r.phoneNumber === n.number);
+            const routeType = routing?.routeType || "main_menu";
+            const forwardTo = routing?.forwardToNumber || "";
+
+            return (
+              <div key={n.sid} className="border border-slate-200 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono font-medium text-slate-900">
+                      {formatPhone(n.number)}
+                    </span>
+                    {n.label && <span className="text-xs text-slate-400">{n.label}</span>}
+                  </div>
+                  <Badge variant={routeType === "main_menu" ? "green" : "blue"}>
+                    {routeType === "main_menu" ? "Main Menu" : "Forward"}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={routeType === "forward" ? forwardTo : "main_menu"}
+                    onChange={async (e) => {
+                      const val = e.target.value;
+                      const isMainMenu = val === "main_menu";
+                      const person = isMainMenu ? null : directory.find((d) => d.number === val);
+
+                      setRoutingSaving(n.number);
+                      setError("");
+                      try {
+                        const res = await fetch("/api/phone/number-routing", {
+                          method: "PUT",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            phoneNumber: n.number,
+                            routeType: isMainMenu ? "main_menu" : "forward",
+                            forwardToNumber: isMainMenu ? null : val,
+                            forwardToName: person ? `${person.firstName} ${person.lastName}` : null,
+                          }),
+                        });
+                        if (!res.ok) {
+                          const data = await res.json();
+                          setError(data.error || "Failed to save routing.");
+                        } else {
+                          onConfigChange();
+                        }
+                      } catch {
+                        setError("Network error saving routing.");
+                      } finally {
+                        setRoutingSaving(null);
+                      }
+                    }}
+                    disabled={routingSaving === n.number}
+                    className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#c2d6d6] focus:border-[#669999] bg-white"
+                  >
+                    <option value="main_menu">Main Menu (IVR)</option>
+                    <optgroup label="Forward to...">
+                      {(directory || []).map((p) => (
+                        <option key={p.number} value={p.number}>
+                          {p.firstName} {p.lastName} — {formatPhone(p.number)}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  {routingSaving === n.number && (
+                    <span className="text-xs text-slate-400">Saving...</span>
+                  )}
+                </div>
+                {routeType === "forward" && routing?.forwardToName && (
+                  <p className="text-xs text-slate-500 mt-2">
+                    Calls to this number ring {routing.forwardToName} directly (no IVR).
+                  </p>
+                )}
               </div>
-              <Badge variant="green">Active</Badge>
-            </div>
-          ))}
+            );
+          })}
+        </div>
+        <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 text-xs text-slate-500">
+          After changing routing, click &ldquo;Apply to Twilio&rdquo; to push the config to Twilio webhooks.
         </div>
       </div>
 
