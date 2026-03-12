@@ -148,14 +148,21 @@ function CompleteModal({ open, onClose, item, onConfirm }: {
 }) {
   const [note, setNote] = useState("");
   const [scheduleNext, setScheduleNext] = useState(false);
+  const [customDate, setCustomDate] = useState("");
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (open) { setNote(""); setScheduleNext(false); } }, [open]);
+  useEffect(() => {
+    if (open && item) {
+      setNote("");
+      const hasRecurring = !!(item.recurring && item.recurring !== "none");
+      setScheduleNext(hasRecurring);
+      setCustomDate(hasRecurring ? getNextDueDate(item.dueDate, item.recurring) : "");
+    }
+  }, [open, item]);
   if (!item) return null;
   const hasRecurring = item.recurring && item.recurring !== "none";
-  const nextDate = hasRecurring ? getNextDueDate(item.dueDate, item.recurring) : null;
   const handleConfirm = async () => {
     setSaving(true);
-    await onConfirm({ note, scheduleNext, nextDate });
+    await onConfirm({ note, scheduleNext, nextDate: scheduleNext ? customDate : null });
     setSaving(false);
   };
   return (
@@ -171,20 +178,33 @@ function CompleteModal({ open, onClose, item, onConfirm }: {
         <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Completion Note <span className="font-normal normal-case tracking-normal">(optional)</span></label>
         <textarea className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#336699] focus:border-transparent min-h-[56px] resize-y" value={note} onChange={e => setNote(e.target.value)} placeholder="e.g. Filed online, confirmation #12345" />
       </div>
-      {hasRecurring && nextDate && (
-        <div onClick={() => setScheduleNext(s => !s)} className={`p-4 rounded-lg cursor-pointer mb-5 flex items-center gap-3 transition-all border ${scheduleNext ? "bg-green-50 border-green-300" : "bg-gray-50 border-gray-200"}`}>
+      <div className={`p-4 rounded-lg mb-5 transition-all border ${scheduleNext ? "bg-green-50 border-green-300" : "bg-gray-50 border-gray-200"}`}>
+        <div onClick={() => setScheduleNext(s => !s)} className="flex items-center gap-3 cursor-pointer">
           <div className={`w-5 h-5 rounded flex-shrink-0 border-2 flex items-center justify-center transition-all ${scheduleNext ? "border-green-500 bg-green-500" : "border-gray-300 bg-white"}`}>
             {scheduleNext && <span className="text-white text-xs font-bold">{"\u2713"}</span>}
           </div>
-          <div>
-            <div className="text-sm text-gray-800 font-medium">{"\uD83D\uDD01"} Schedule next {RECURRING_LABELS[item.recurring]?.toLowerCase()} filing</div>
-            <div className="text-xs text-gray-500 mt-0.5">Next due: <span className={scheduleNext ? "text-green-600 font-medium" : ""}>{longDate(nextDate)}</span></div>
+          <div className="text-sm text-gray-800 font-medium">
+            {hasRecurring
+              ? `Schedule next ${RECURRING_LABELS[item.recurring]?.toLowerCase()} filing`
+              : "Schedule a follow-up task?"}
           </div>
         </div>
-      )}
+        <div className="mt-3 ml-8">
+          <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Next due date</label>
+          <input
+            type="date"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#336699] focus:border-transparent"
+            value={customDate}
+            onChange={e => setCustomDate(e.target.value)}
+          />
+          {hasRecurring && customDate && (
+            <div className="text-xs text-gray-400 mt-1">Auto-calculated from {item.recurring} recurrence. Edit if needed.</div>
+          )}
+        </div>
+      </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
-        <button disabled={saving} onClick={handleConfirm} className="px-4 py-2 text-sm font-semibold text-white rounded-lg bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed">
+        <button disabled={saving || (scheduleNext && !customDate)} onClick={handleConfirm} className="px-4 py-2 text-sm font-semibold text-white rounded-lg bg-green-500 hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed">
           {saving ? "Saving..." : scheduleNext ? "Complete & Schedule Next" : "Complete"}
         </button>
       </div>
