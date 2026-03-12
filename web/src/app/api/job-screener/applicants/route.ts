@@ -7,22 +7,16 @@ export const maxDuration = 60
 const JAZZ_BASE = 'https://api.resumatorapi.com/v1'
 const API_KEY = process.env.JAZZHR_API_KEY
 
-// Fetch applicant stubs for a job (paginated, supports partial fetching)
-async function fetchApplicantStubs(jobId: string, maxPages: number = 0): Promise<{ applicants: any[]; hasMore: boolean }> {
-  const applicants: any[] = []
+// Fetch applicant-to-job mappings for a specific job via /applicants2jobs endpoint
+async function fetchApplicantJobMappings(jobId: string): Promise<any[]> {
+  const mappings: any[] = []
   let page = 1
-  let hasMore = false
 
   while (true) {
-    if (maxPages > 0 && page > maxPages) {
-      hasMore = true
-      break
-    }
-
-    const url = `${JAZZ_BASE}/applicants/page/${page}?apikey=${API_KEY}&job_id=${jobId}`
+    const url = `${JAZZ_BASE}/applicants2jobs/page/${page}?apikey=${API_KEY}&job_id=${jobId}`
     const res = await fetch(url, {
       cache: 'no-store',
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(45000),
     })
 
     if (!res.ok) break
@@ -36,12 +30,12 @@ async function fetchApplicantStubs(jobId: string, maxPages: number = 0): Promise
     }
     if (!Array.isArray(data) || data.length === 0) break
 
-    applicants.push(...data)
+    mappings.push(...data)
     if (data.length < 100) break
     page++
   }
 
-  return { applicants, hasMore }
+  return mappings
 }
 
 // Fetch full applicant detail (includes questionnaire answers, resume, linkedin, etc.)
@@ -50,7 +44,7 @@ async function fetchApplicantDetail(applicantId: string): Promise<any | null> {
     const url = `${JAZZ_BASE}/applicants/${applicantId}?apikey=${API_KEY}`
     const res = await fetch(url, {
       next: { revalidate: 0 },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) return null
     return await res.json()
@@ -123,30 +117,6 @@ function statusBucket(status: string): 'Active' | 'New' | 'Not Hired' {
   return 'Active'
 }
 
-// Build applicant object from stub (no detail call)
-function buildApplicantFromStub(stub: any, jobId: string) {
-  return {
-    id: stub.id,
-    firstName: stub.first_name || '',
-    lastName: stub.last_name || '',
-    name: `${stub.first_name || ''} ${stub.last_name || ''}`.trim(),
-    email: stub.email || '',
-    location: '',
-    applyDate: stub.apply_date || '',
-    status: stub.status || '',
-    statusBucket: statusBucket(stub.status || ''),
-    resumeUrl: '',
-    linkedinUrl: '',
-    salaryRequirement: '',
-    usEligible: '',
-    education: [] as Array<{ degree: string; school: string }>,
-    jobId: stub.job_id || jobId,
-    jobTitle: stub.job_title || '',
-    rating: stub.rating || '',
-    detailLoaded: false,
-  }
-}
-
 // Build enriched applicant from stub + detail
 function buildEnrichedApplicant(stub: any, detail: any, jobId: string) {
   const merged = { ...stub, ...detail }
@@ -208,18 +178,35 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ applicant: enriched })
     }
 
-    // List applicants for a job — fetch 1 page at a time (100 per page)
-    const page = parseInt(searchParams.get('page') || '1', 10)
-    const { applicants: stubs, hasMore } = await fetchApplicantStubs(jobId!, page)
+    // List applicants for a job via applicants2jobs mapping
+    const mappings = await fetchApplicantJobMappings(jobId!)
 
-    const applicants = stubs.map((s) => buildApplicantFromStub(s, jobId!))
+    // Build stub-like objects from mappings (they include applicant_id, job_id, rating, etc.)
+    const applicants = mappings.map((m) => ({
+      id: m.applicant_id,
+      firstName: m.first_name || '',
+      lastName: m.last_name || '',
+      name: `${m.first_name || ''} ${m.last_name || ''}`.trim(),
+      email: '',
+      location: '',
+      applyDate: m.date || '',
+      status: m.workflow_step_name || m.status || '',
+      statusBucket: statusBucket(m.workflow_step_name || m.status || ''),
+      resumeUrl: '',
+      linkedinUrl: '',
+      salaryRequirement: '',
+      usEligible: '',
+      education: [] as Array<{ degree: string; school: string }>,
+      jobId: m.job_id || jobId,
+      jobTitle: m.job_title || '',
+      rating: m.rating || '',
+      detailLoaded: false,
+    }))
     sortApplicants(applicants)
 
     return NextResponse.json({
       applicants,
       total: applicants.length,
-      hasMore,
-      page,
     })
   } catch (err: any) {
     console.error('JazzHR applicants error:', err)

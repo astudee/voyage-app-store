@@ -69,6 +69,7 @@
 - Ticket Watcher → `/tickets` (support ticket snapshots by agent)
 - Job Screener → `/job-screener` (JazzHR applicant screening by job posting)
 - Phone Manager → `/phone` (call log, voicemails, SMS, click-to-call)
+- Compliance Tracker → `/apps/compliance-tracker` (state filings, licenses, annual reports)
 
 **What's Next:** Ongoing enhancements and maintenance
 
@@ -144,6 +145,7 @@ All 22 apps migrated. Streamlit has been completely removed from the project.
 | 20 | Ticket Watcher | Support ticket snapshots by agent | Snowflake |
 | 21 | Phone Manager | Call log, voicemails, SMS, click-to-call | Twilio API |
 | 22 | Job Screener | Screen JazzHR applicants by job posting | JazzHR API |
+| 23 | Compliance Tracker | State filings, licenses & annual reports | Snowflake |
 | 96 | Snowflake Test | Connection testing | Snowflake |
 | 97 | BigTime Client Lookup | Client search utility | BigTime API |
 | 98 | QuickBooks Token Refresh | OAuth token management | QuickBooks API |
@@ -352,6 +354,10 @@ A scratch folder for exchanging files between the user and Claude — uploads, s
 - `GET/POST/DELETE /api/phone/hunt-groups` - Hunt group member management (Snowflake-backed)
 - `GET /api/job-screener/jobs` - Fetch JazzHR jobs (open/closed status filter, paginated)
 - `GET /api/job-screener/applicants` - Fetch and enrich applicants for a job (questionnaire parsing)
+- `GET/POST /api/compliance` - List/create compliance items
+- `PUT/DELETE /api/compliance/[id]` - Update/delete compliance item
+- `POST /api/compliance/[id]/complete` - Mark complete with optional schedule-next
+- `POST /api/compliance/[id]/reopen` - Reopen a completed item
 
 ---
 

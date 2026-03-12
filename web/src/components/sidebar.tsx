@@ -43,6 +43,7 @@ const navigation = [
       { name: "Bonus Calculator", href: "/apps/bonus" },
       { name: "Bookings Tracker", href: "/apps/bookings" },
       { name: "Commission Calculator", href: "/apps/commission" },
+      { name: "Compliance Tracker", href: "/apps/compliance-tracker" },
       { name: "Contract Reviewer", href: "/apps/contract-review" },
       { name: "Contractor Fee Reviewer", href: "/apps/contractor-fees" },
       { name: "Document Manager", href: "/documents" },
